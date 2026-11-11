@@ -37,10 +37,20 @@ class Engine {
       const p = useStore.getState().project;
       this.bpm = p.bpm;
       this.mixer.sync(p.tracks, p.bpm);
+
+      // entrada de áudio: tudo que chega da placa passa por inputBus (mono)
+      this.inputBus = this.ctx.createGain();
+      this.inputAnalyser = this.ctx.createAnalyser();
+      this.inputAnalyser.fftSize = 1024;
+      this.monitorGain = this.ctx.createGain();
+      this.inputBus.connect(this.inputAnalyser);
+      this.inputBus.connect(this.monitorGain);
+
       useStore.subscribe((s, prev) => {
         const a = s.project, b = prev.project;
         if (a.bpm !== b.bpm) this.retime(a.bpm);
         if (a.tracks !== b.tracks || a.bpm !== b.bpm) this.mixer.sync(a.tracks, a.bpm);
+        this.routeMonitor();
       });
       this.ready = true;
     }
@@ -216,11 +226,12 @@ class Engine {
     if (!track) return;
     this.ensure();
     if (track.kind === 'audio') {
-      const rec = new Recorder(this.ctx);
+      if (!s.inputOpen && !(await this.openInput())) return;
+      const rec = new Recorder(this.ctx, this.inputBus);
       try {
         await rec.start();
       } catch (e) {
-        alert('Não foi possível acessar o microfone: ' + (e as Error).message);
+        alert('Não foi possível iniciar a gravação: ' + (e as Error).message);
         return;
       }
       this.recorder = rec;
@@ -259,6 +270,113 @@ class Engine {
       s.set({ selectedRegionId: r.id, editingRegionId: r.id });
     }
     this.recNotes = [];
+  }
+
+  // ---------- Entrada de áudio (placa de áudio, guitarra, microfone) ----------
+
+  private inputBus!: GainNode;
+  private inputAnalyser!: AnalyserNode;
+  private monitorGain!: GainNode;
+  private monitorTarget: string | null = null;
+  private inStream: MediaStream | null = null;
+  private inNodes: AudioNode[] = [];
+
+  /** Atualiza a lista de dispositivos de entrada (os nomes só aparecem depois da permissão de uso). */
+  async refreshInputs() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices
+        .filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
+        .map((d, i) => ({ id: d.deviceId, label: d.label || `Entrada ${i + 1}` }));
+      useStore.getState().set({ inputs });
+    } catch {
+      /* sem acesso a dispositivos */
+    }
+  }
+
+  /** Abre o dispositivo escolhido e liga o canal selecionado ao barramento de entrada. */
+  async openInput(): Promise<boolean> {
+    this.ensure();
+    this.closeInput();
+    const s = useStore.getState();
+    try {
+      this.inStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          // sem nenhum tratamento de voz: o sinal do instrumento tem que chegar cru
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: { ideal: 2 },
+          ...(s.inputDeviceId ? { deviceId: { exact: s.inputDeviceId } } : {}),
+        },
+      });
+    } catch (e) {
+      const err = e as DOMException;
+      alert(
+        err.name === 'OverconstrainedError' || err.name === 'NotFoundError'
+          ? 'O dispositivo de entrada escolhido não foi encontrado. Confira se a placa está conectada e escolha outro na lista.'
+          : err.name === 'NotAllowedError'
+            ? 'O acesso à entrada de áudio foi bloqueado. Libere o microfone para o app em Configurações do Windows › Privacidade e segurança › Microfone.'
+            : 'Não foi possível abrir a entrada de áudio: ' + err.message,
+      );
+      void this.refreshInputs();
+      return false;
+    }
+    const track = this.inStream.getAudioTracks()[0];
+    const channels = track.getSettings().channelCount ?? 1;
+    const src = this.ctx.createMediaStreamSource(this.inStream);
+    const split = this.ctx.createChannelSplitter(2);
+    src.connect(split);
+    // numa placa de 2 entradas a guitarra está só num dos canais; "2" (mix) soma os dois
+    if (channels < 2) split.connect(this.inputBus, 0);
+    else if (s.inputChannel === 2) {
+      split.connect(this.inputBus, 0);
+      split.connect(this.inputBus, 1);
+    } else split.connect(this.inputBus, s.inputChannel);
+    this.inNodes = [src, split];
+
+    track.onended = () => {
+      // placa desconectada
+      this.closeInput();
+      void this.refreshInputs();
+    };
+    // "muted" = o Windows não está entregando sinal (dispositivo no mudo nas configurações de som ou na tecla do notebook)
+    const reportMuted = () => useStore.getState().set({ inputMuted: track.muted });
+    track.onmute = track.onunmute = reportMuted;
+    s.set({ inputOpen: true, inputChannels: channels, inputMuted: track.muted });
+    await this.refreshInputs();
+    return true;
+  }
+
+  closeInput() {
+    if (!this.inStream) return;
+    for (const t of this.inStream.getTracks()) {
+      t.onended = t.onmute = t.onunmute = null;
+      t.stop();
+    }
+    this.inNodes.forEach((n) => n.disconnect());
+    this.inNodes = [];
+    this.inStream = null;
+    useStore.getState().set({ inputOpen: false, inputMuted: false });
+  }
+
+  /** Monitoração: manda a entrada para o canal da trilha de áudio selecionada (passa pelos efeitos dela). */
+  private routeMonitor() {
+    const s = useStore.getState();
+    const t = s.project.tracks.find((x) => x.id === s.selectedTrackId);
+    const target = s.monitor && s.inputOpen && t?.kind === 'audio' && this.mixer.strips.has(t.id) ? t.id : null;
+    if (target === this.monitorTarget) return;
+    this.monitorGain.disconnect();
+    if (target) this.monitorGain.connect(this.mixer.strips.get(target)!.input);
+    this.monitorTarget = target;
+  }
+
+  inputLevel(): number {
+    if (!this.ready || !this.inStream) return 0;
+    this.inputAnalyser.getFloatTimeDomainData(this.meterBuf);
+    let peak = 0;
+    for (let i = 0; i < this.meterBuf.length; i++) peak = Math.max(peak, Math.abs(this.meterBuf[i]));
+    return Math.min(1, peak);
   }
 
   // ---------- Importar áudio ----------

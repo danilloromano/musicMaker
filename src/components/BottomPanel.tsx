@@ -1,11 +1,11 @@
 import { engine } from '../audio/engine';
 import { DRUM_MAP, PRESETS } from '../audio/instruments';
 import { LOOPS, Loop, addLoop } from '../audio/loops';
-import { BottomTab, useStore } from '../store';
+import { BottomTab, savePref, useStore } from '../store';
 import { Track, TrackFx } from '../types';
 import { PianoRoll } from './PianoRoll';
 import { LOOP_MIME } from './Timeline';
-import { KIND_ICON, Slider, Spectrum } from './ui';
+import { KIND_ICON, Meter, Slider, Spectrum } from './ui';
 
 const TABS: [BottomTab, string][] = [
   ['loops', 'Loops'],
@@ -84,9 +84,10 @@ function Fx({ track: t }: { track: Track }) {
   const setFx = (patch: Partial<TrackFx>, history = false) => st.updateTrack(t.id, { fx: { ...t.fx, ...patch } }, history);
   return (
     <div className="fx">
+      {t.kind === 'audio' && <AudioInput />}
       <div className="fx-card wide">
         <h4>Espectro de frequências (Hz)</h4>
-        <Spectrum trackId={t.id} color={t.color} bars={96} labels className="big" />
+        <Spectrum trackId={t.id} color={t.color} points={160} labels className="big" />
       </div>
       {t.kind === 'instrument' && (
         <div className="fx-card wide">
@@ -115,6 +116,93 @@ function Fx({ track: t }: { track: Track }) {
           {t.fx.comp ? 'Ligado' : 'Desligado'}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Escolha da placa/entrada onde a guitarra ou o microfone estão ligados, com medidor e monitoração. */
+function AudioInput() {
+  const inputs = useStore((s) => s.inputs);
+  const deviceId = useStore((s) => s.inputDeviceId);
+  const channel = useStore((s) => s.inputChannel);
+  const channels = useStore((s) => s.inputChannels);
+  const open = useStore((s) => s.inputOpen);
+  const muted = useStore((s) => s.inputMuted);
+  const monitor = useStore((s) => s.monitor);
+  const set = useStore.getState().set;
+
+  // muda uma preferência e, se a entrada já estiver ligada, reabre com a nova configuração
+  const change = (patch: { inputDeviceId?: string | null; inputChannel?: number }) => {
+    set(patch);
+    if (patch.inputDeviceId !== undefined) savePref('mm.inputDevice', patch.inputDeviceId ?? '');
+    if (patch.inputChannel !== undefined) savePref('mm.inputChannel', String(patch.inputChannel));
+    if (open) void engine.openInput();
+  };
+  const missing = deviceId && inputs.length > 0 && !inputs.some((i) => i.id === deviceId);
+
+  return (
+    <div className="fx-card wide input-card">
+      <h4>Entrada de áudio — guitarra, microfone, placa de áudio</h4>
+      <div className="input-row">
+        <label>
+          Dispositivo
+          <select
+            value={deviceId ?? ''}
+            onChange={(e) => {
+              change({ inputDeviceId: e.target.value || null });
+              e.currentTarget.blur();
+            }}
+          >
+            <option value="">Padrão do sistema</option>
+            {inputs.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
+            {missing && <option value={deviceId}>(dispositivo desconectado)</option>}
+          </select>
+        </label>
+        <label>
+          Canal
+          <select
+            value={channel}
+            onChange={(e) => {
+              change({ inputChannel: +e.target.value });
+              e.currentTarget.blur();
+            }}
+          >
+            <option value={0}>Entrada 1</option>
+            <option value={1}>Entrada 2</option>
+            <option value={2}>1 + 2 (somadas)</option>
+          </select>
+        </label>
+        <button className={open ? 'toggle on' : 'toggle'} onClick={() => (open ? engine.closeInput() : void engine.openInput())}>
+          {open ? 'Entrada ligada' : 'Ligar entrada'}
+        </button>
+        <button
+          className={monitor ? 'toggle on' : 'toggle'}
+          title="Ouvir a entrada pela trilha selecionada, com os efeitos dela. Use fones para evitar microfonia."
+          onClick={() => {
+            set({ monitor: !monitor });
+            if (!monitor && !open) void engine.openInput();
+          }}
+        >
+          🎧 Monitorar
+        </button>
+        <div className="input-meter">
+          <small>Nível de entrada</small>
+          <Meter input />
+        </div>
+      </div>
+      {open && muted && (
+        <div className="input-warn">
+          ⚠ Esta entrada está no mudo no Windows, então não chega som nenhum ao app. Tire do mudo pela tecla de microfone do
+          teclado ou em Configurações › Sistema › Som › Entrada (ou escolha outro dispositivo acima).
+        </div>
+      )}
+      <small className="input-hint">
+        {open && channels < 2 && channel === 1
+          ? 'Este dispositivo só entrega 1 canal ao sistema, então está sendo usada a Entrada 1.'
+          : open
+            ? 'Toque o instrumento: o medidor deve se mexer. Se ficar parado, troque o canal (em placas de 2 entradas a guitarra entra só em uma) ou o dispositivo.'
+            : 'Conecte a placa, escolha-a na lista e clique em "Ligar entrada". Depois é só apertar ● para gravar nesta trilha.'}
+      </small>
     </div>
   );
 }

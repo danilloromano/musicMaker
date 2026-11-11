@@ -1,4 +1,4 @@
-// Gravação do microfone/entrada de linha em PCM bruto via AudioWorklet.
+// Grava em PCM bruto, via AudioWorklet, o sinal de um nó de áudio (a entrada já aberta pelo motor).
 
 const WORKLET = `
 class MMRecorder extends AudioWorkletProcessor {
@@ -15,37 +15,31 @@ const loaded = new WeakSet<AudioContext>();
 
 export class Recorder {
   private chunks: Float32Array[] = [];
-  private stream!: MediaStream;
-  private src!: MediaStreamAudioSourceNode;
   private node!: AudioWorkletNode;
   private sink!: GainNode;
 
-  constructor(private ctx: AudioContext) {}
+  constructor(private ctx: AudioContext, private source: AudioNode) {}
 
   async start() {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
     if (!loaded.has(this.ctx)) {
       const url = URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
       await this.ctx.audioWorklet.addModule(url);
       URL.revokeObjectURL(url);
       loaded.add(this.ctx);
     }
-    this.src = this.ctx.createMediaStreamSource(this.stream);
-    this.node = new AudioWorkletNode(this.ctx, 'mm-recorder');
+    this.node = new AudioWorkletNode(this.ctx, 'mm-recorder', { channelCount: 1, channelCountMode: 'explicit' });
     this.node.port.onmessage = (e) => this.chunks.push(e.data as Float32Array);
     this.sink = this.ctx.createGain();
-    this.sink.gain.value = 0; // mantém o nó ativo sem monitorar (evita microfonia)
-    this.src.connect(this.node).connect(this.sink).connect(this.ctx.destination);
+    this.sink.gain.value = 0; // mantém o nó ativo sem mandar som para a saída
+    this.source.connect(this.node);
+    this.node.connect(this.sink).connect(this.ctx.destination);
   }
 
   stop(): AudioBuffer | null {
-    this.src.disconnect();
+    this.source.disconnect(this.node);
     this.node.disconnect();
     this.sink.disconnect();
     this.node.port.onmessage = null;
-    this.stream.getTracks().forEach((t) => t.stop());
 
     const total = this.chunks.reduce((n, c) => n + c.length, 0);
     // compensa a latência de saída: o que o músico ouviu estava atrasado em relação ao relógio

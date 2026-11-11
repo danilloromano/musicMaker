@@ -97,9 +97,20 @@ function useMidiInput() {
   }, []);
 }
 
+/** Mantém a lista de entradas de áudio em dia: detecta placas conectadas/desconectadas com o app aberto. */
+function useAudioDevices() {
+  useEffect(() => {
+    const refresh = () => void engine.refreshInputs();
+    refresh();
+    navigator.mediaDevices?.addEventListener('devicechange', refresh);
+    return () => navigator.mediaDevices?.removeEventListener('devicechange', refresh);
+  }, []);
+}
+
 export function App() {
   useShortcuts();
   useMidiInput();
+  useAudioDevices();
   return (
     <div className="app">
       <Transport />

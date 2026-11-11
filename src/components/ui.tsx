@@ -44,11 +44,12 @@ export function Slider({ value, min, max, step, onChange, reset, title, classNam
   );
 }
 
-export function Meter({ trackId, className = '' }: { trackId?: string; className?: string }) {
+/** Medidor de nível de uma trilha, do master (sem props) ou da entrada de áudio (`input`). */
+export function Meter({ trackId, input = false, className = '' }: { trackId?: string; input?: boolean; className?: string }) {
   const fill = useRef<HTMLDivElement>(null);
   const val = useRef(0);
   useRaf(() => {
-    val.current = Math.max(engine.level(trackId), val.current * 0.88);
+    val.current = Math.max(input ? engine.inputLevel() : engine.level(trackId), val.current * 0.88);
     if (fill.current) fill.current.style.transform = `scaleX(${Math.min(1, val.current ** 0.6)})`;
   });
   return (
@@ -63,10 +64,10 @@ const F_LABELS: [number, string][] = [[50, '50'], [100, '100'], [200, '200'], [5
 const fx = (f: number) => Math.log(f / F_MIN) / Math.log(F_MAX / F_MIN); // posição 0..1 em escala logarítmica
 
 /** Analisador de espectro em tempo real (graves à esquerda, agudos à direita) de uma trilha ou do master. */
-export function Spectrum({ trackId, color, bars, labels = false, className = '' }: {
+export function Spectrum({ trackId, color, points, labels = false, className = '' }: {
   trackId?: string;
   color: string;
-  bars: number;
+  points: number;
   labels?: boolean;
   className?: string;
 }) {
@@ -109,17 +110,45 @@ export function Spectrum({ trackId, color, bars, labels = false, className = '' 
     }
     if (silent) return;
 
+    // Curva contínua: um ponto por fatia de frequência (escala log). Nos graves, onde as faixas
+    // da FFT são mais largas que a fatia, interpola entre faixas vizinhas para não formar degraus.
     const hzPerBin = engine.ctx.sampleRate / 2 / SPECTRUM_BINS;
-    const bw = w / bars;
-    g.fillStyle = color;
-    for (let i = 0; i < bars; i++) {
-      const lo = F_MIN * (F_MAX / F_MIN) ** (i / bars), hi = F_MIN * (F_MAX / F_MIN) ** ((i + 1) / bars);
-      const a = Math.floor(lo / hzPerBin), b = Math.max(a, Math.min(SPECTRUM_BINS - 1, Math.floor(hi / hzPerBin)));
-      let v = 0;
-      for (let k = a; k <= b; k++) v = Math.max(v, d[k]);
-      const bh = (v / 255) ** 1.6 * ph;
-      if (bh >= 1) g.fillRect(Math.round(i * bw), ph - bh, Math.max(1, Math.ceil(bw) - (bw > 3 ? 1 : 0)), bh);
+    const ys: number[] = [];
+    for (let i = 0; i <= points; i++) {
+      const lo = (F_MIN * (F_MAX / F_MIN) ** (i / points)) / hzPerBin;
+      const hi = (F_MIN * (F_MAX / F_MIN) ** ((i + 1) / points)) / hzPerBin;
+      let v: number;
+      if (hi - lo < 1) {
+        const k = Math.min(SPECTRUM_BINS - 2, Math.floor(lo));
+        v = d[k] + (d[k + 1] - d[k]) * (lo - k);
+      } else {
+        v = 0;
+        for (let k = Math.floor(lo); k <= Math.min(SPECTRUM_BINS - 1, Math.floor(hi)); k++) v = Math.max(v, d[k]);
+      }
+      ys.push(ph - (v / 255) ** 1.6 * (ph - 2 * dpr));
     }
+    // suaviza (média móvel) e traça passando pelos pontos médios com curvas quadráticas
+    const sm = ys.map((y, i) => (ys[Math.max(0, i - 1)] + 2 * y + ys[Math.min(points, i + 1)]) / 4);
+    const step = w / points;
+    g.beginPath();
+    g.moveTo(0, sm[0]);
+    for (let i = 1; i < points; i++) g.quadraticCurveTo(i * step, sm[i], (i + 0.5) * step, (sm[i] + sm[i + 1]) / 2);
+    g.lineTo(w, sm[points]);
+    g.lineWidth = (labels ? 2 : 1.25) * dpr;
+    g.lineJoin = 'round';
+    g.strokeStyle = color;
+    g.stroke();
+    // preenchimento em degradê sob a curva
+    g.lineTo(w, ph);
+    g.lineTo(0, ph);
+    g.closePath();
+    const grad = g.createLinearGradient(0, 0, 0, ph);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, 'transparent');
+    g.globalAlpha = 0.45;
+    g.fillStyle = grad;
+    g.fill();
+    g.globalAlpha = 1;
   });
 
   return <canvas className={`spectrum ${className}`} ref={ref} />;

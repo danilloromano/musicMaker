@@ -120,7 +120,10 @@ export function Timeline() {
     st.set({ selectedRegionId: r.id, selectedTrackId: t.id, editingRegionId: r.id, bottomTab: 'editor' });
   };
 
-  const add = (kind: TrackKind) => st.addTrack(kind);
+  const add = (kind: TrackKind) => {
+    st.addTrack(kind);
+    if (kind === 'audio') st.set({ bottomTab: 'fx' }); // mostra a escolha da entrada de áudio
+  };
 
   return (
     <div className="arrange" ref={scroll} onDragOver={allowDrop} onDrop={(e) => drop(e)}>
@@ -216,14 +219,29 @@ function TrackHeader({ track: t }: { track: Track }) {
             {Object.entries(PRESETS).map(([id, p]) => <option key={id} value={id}>{p.name}</option>)}
           </select>
         ) : (
-          <span className="th-kind">{t.kind === 'drums' ? 'Kit eletrônico' : 'Áudio'}</span>
+          t.kind === 'drums' ? <span className="th-kind">Kit eletrônico</span> : <InputButton />
+
         )}
         <Slider className="vol" title="Volume" min={0} max={1} step={0.01} value={t.volume} reset={0.8} onChange={(v) => up({ volume: v })} />
         <Slider className="pan" title="Pan (duplo clique centraliza)" min={-1} max={1} step={0.05} value={t.pan} reset={0} onChange={(v) => up({ pan: v })} />
       </div>
       <Meter trackId={t.id} />
-      <Spectrum trackId={t.id} color={t.color} bars={44} />
+      <Spectrum trackId={t.id} color={t.color} points={64} />
     </div>
+  );
+}
+
+/** Atalho no cabeçalho das trilhas de áudio para a configuração da entrada (aba Efeitos). */
+function InputButton() {
+  const open = useStore((s) => s.inputOpen);
+  return (
+    <button
+      className={`th-input ${open ? 'on' : ''}`}
+      title="Escolher a entrada de áudio (placa, guitarra, microfone)"
+      onClick={() => useStore.getState().set({ bottomTab: 'fx' })}
+    >
+      {open ? '● Entrada ligada' : 'Entrada…'}
+    </button>
   );
 }
 

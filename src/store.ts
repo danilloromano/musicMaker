@@ -31,6 +31,22 @@ export function defaultProject(): Project {
   };
 }
 
+function pref(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function savePref(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* armazenamento indisponível */
+  }
+}
+
 export type BottomTab = 'editor' | 'fx' | 'loops' | 'keys';
 
 interface State {
@@ -46,6 +62,15 @@ interface State {
   ppb: number; // pixels por tempo na timeline
   bottomTab: BottomTab;
   octave: number;
+
+  // entrada de áudio (preferências do computador, não fazem parte do projeto)
+  inputs: { id: string; label: string }[];
+  inputDeviceId: string | null; // null = padrão do sistema
+  inputChannel: number; // 0 = entrada 1, 1 = entrada 2, 2 = soma das duas
+  inputChannels: number; // quantos canais o dispositivo aberto entrega
+  inputOpen: boolean;
+  inputMuted: boolean; // aberta, mas o sistema não entrega sinal (dispositivo no mudo)
+  monitor: boolean;
 
   set: (patch: Partial<State>) => void;
   /** Guarda o estado atual no histórico de desfazer. */
@@ -80,6 +105,14 @@ export const useStore = create<State>((set, get) => ({
   ppb: 24,
   bottomTab: 'loops',
   octave: 4,
+
+  inputs: [],
+  inputDeviceId: pref('mm.inputDevice') || null,
+  inputChannel: +(pref('mm.inputChannel') ?? 0) || 0,
+  inputChannels: 1,
+  inputOpen: false,
+  inputMuted: false,
+  monitor: false,
 
   set: (patch) => set(patch),
 
