@@ -284,3 +284,8 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .aed .hint { min-width: 0; flex: 1; }
 @media (max-width: 1500px) { .zoom input { width: 70px; } .meter.master { width: 60px; } }
 .meter.master { flex: none; }
+
+/* barra superior: em telas mais estreitas os botões de alternância ficam só com o ícone; no limite, quebra em 2 linhas */
+.transport { flex-wrap: wrap; row-gap: 6px; }
+.proj-name { flex: 0 1 150px; min-width: 80px; }
+@media (max-width: 1500px) { .transport .lbl { display: none; } }

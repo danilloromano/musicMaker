@@ -57,6 +57,7 @@ interface State {
   selectedRegionId: string | null;
   editingRegionId: string | null;
   audioEditId: string | null; // região de áudio aberta no editor de áudio
+  audioSel: { trackId: string; start: number; end: number } | null; // trecho selecionado no editor de áudio (tempos)
   selectedNoteId: string | null;
   playing: boolean;
   recording: { trackId: string; startBeat: number } | null;
@@ -91,6 +92,8 @@ interface State {
   removeRegion: (id: string) => void;
   duplicateRegion: (id: string) => void;
   splitRegion: (id: string, beat: number) => void;
+  /** Apaga o trecho [start, end) (em tempos) de todas as regiões de áudio da trilha, deixando silêncio no lugar. */
+  deleteAudioRange: (trackId: string, start: number, end: number) => void;
   /** Liga/desliga o loop; se ainda não há trecho, usa a região selecionada ou 4 compassos a partir do cursor. */
   toggleLoop: (cursorBeat: number) => void;
   setNotes: (regionId: string, notes: Note[], history?: boolean) => void;
@@ -104,6 +107,7 @@ export const useStore = create<State>((set, get) => ({
   selectedRegionId: null,
   editingRegionId: null,
   audioEditId: null,
+  audioSel: null,
   selectedNoteId: null,
   playing: false,
   recording: null,
@@ -154,6 +158,7 @@ export const useStore = create<State>((set, get) => ({
       selectedRegionId: null,
       editingRegionId: null,
       audioEditId: null,
+      audioSel: null,
       selectedNoteId: null,
     }),
 
@@ -236,6 +241,48 @@ export const useStore = create<State>((set, get) => ({
       };
     }
     get().update((pr) => ({ ...pr, regions: pr.regions.flatMap((x) => (x.id === id ? [left, right] : [x])) }));
+  },
+
+  deleteAudioRange: (trackId, a, b) => {
+    const p = get().project;
+    const spb = 60 / p.bpm;
+    let changed = false;
+    const regions = p.regions.flatMap((r): Region[] => {
+      if (r.trackId !== trackId || !r.bufferId) return [r];
+      const rs = r.start;
+      const re = rs + regionLen(r, p.bpm);
+      if (re <= a || rs >= b) return [r];
+      changed = true;
+      const out: Region[] = [];
+      // pedaço antes do trecho (mantém o id e o fade-in)
+      if (rs < a) out.push(fitFades({ ...r, duration: (a - rs) * spb, fadeOut: 0 }));
+      // pedaço depois do trecho (mantém o fade-out)
+      if (re > b) {
+        const cut = (b - rs) * spb;
+        out.push(
+          fitFades({
+            ...r,
+            id: rs < a ? uid() : r.id,
+            start: b,
+            offset: (r.offset ?? 0) + cut,
+            duration: (r.duration ?? 0) - cut,
+            fadeIn: 0,
+          }),
+        );
+      }
+      return out;
+    });
+    if (!changed) return;
+    get().update((pr) => ({ ...pr, regions }));
+    // se a região aberta no editor sumiu, abre a mais próxima da mesma trilha
+    const s = get();
+    if (!regions.some((r) => r.id === s.audioEditId)) {
+      const near = regions
+        .filter((r) => r.trackId === trackId && r.bufferId)
+        .sort((x, y) => Math.abs(x.start - a) - Math.abs(y.start - a))[0];
+      set({ audioEditId: near?.id ?? null, selectedRegionId: near?.id ?? null });
+    }
+    set({ audioSel: null });
   },
 
   toggleLoop: (cursorBeat) => {

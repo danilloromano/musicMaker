@@ -53,7 +53,11 @@ function useShortcuts() {
       if (k === 'enter') engine.seek(0);
       else if (k === 'c' && !e.repeat) s.toggleLoop(engine.getBeat());
       else if (k === 'r' && !e.repeat) void engine.toggleRecord();
-      else if (k === 'delete' || k === 'backspace') {
+      else if (k === 'escape') s.set({ audioSel: null });
+      else if ((k === 'delete' || k === 'backspace') && s.audioSel && s.bottomTab === 'audio') {
+        // trecho selecionado no editor de áudio: apaga só ele
+        s.deleteAudioRange(s.audioSel.trackId, s.audioSel.start, s.audioSel.end);
+      } else if (k === 'delete' || k === 'backspace') {
         const region = s.project.regions.find((r) => r.id === s.editingRegionId);
         if (s.selectedNoteId && region?.notes?.some((n) => n.id === s.selectedNoteId)) {
           s.setNotes(region.id, region.notes.filter((n) => n.id !== s.selectedNoteId));

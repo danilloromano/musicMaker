@@ -111,10 +111,10 @@ export function Transport() {
       </div>
       <button
         className={project.metronome ? 'toggle on' : 'toggle'}
-        title="Metrônomo"
+        title="Metrônomo (clique em cada tempo)"
         onClick={() => st.update((p) => ({ ...p, metronome: !p.metronome }), false)}
       >
-        Metrônomo
+        <span className="ico">♩</span><span className="lbl"> Metrônomo</span>
       </button>
       <button
         className={countIn ? 'toggle on' : 'toggle'}
@@ -124,14 +124,14 @@ export function Transport() {
           savePref('mm.countIn', countIn ? '0' : '1');
         }}
       >
-        Contagem
+        <span className="ico">①</span><span className="lbl"> Contagem</span>
       </button>
       <button
         className={loopOn ? 'toggle on' : 'toggle'}
         title="Tocar um trecho em repetição (C). Ajuste o trecho arrastando a faixa na régua; Shift + arrastar na régua marca um novo trecho."
         onClick={() => st.toggleLoop(engine.getBeat())}
       >
-        🔁 Loop
+        <span className="ico">🔁</span><span className="lbl"> Loop</span>
       </button>
 
       <div className="spacer" />
