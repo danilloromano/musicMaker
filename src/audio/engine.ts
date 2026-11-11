@@ -311,9 +311,21 @@ class Engine {
     for (let i = 0; i < this.meterBuf.length; i++) peak = Math.max(peak, Math.abs(this.meterBuf[i]));
     return Math.min(1, peak);
   }
+
+  /** Preenche `out` com o espectro (0..255 por faixa) de uma trilha ou do master. Devolve false se não há áudio ainda. */
+  spectrum(out: Uint8Array<ArrayBuffer>, trackId?: string): boolean {
+    if (!this.ready) return false;
+    const an = trackId ? this.mixer.strips.get(trackId)?.analyser : this.mixer.analyser;
+    if (!an) return false;
+    an.getByteFrequencyData(out);
+    return true;
+  }
 }
 
 export const engine = new Engine();
+
+/** Número de faixas de frequência devolvidas por `engine.spectrum` (fftSize / 2). */
+export const SPECTRUM_BINS = 1024;
 
 // ---------- Exportação (mixdown offline para WAV) ----------
 

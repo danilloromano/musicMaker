@@ -92,7 +92,9 @@ input:not([type]):hover, input:not([type]):focus { border-color: var(--line); ba
 }
 .ruler span { position: absolute; top: 6px; padding-left: 5px; color: var(--dim); font-size: 11px; pointer-events: none; }
 
-.row { display: flex; height: 76px; flex: none; }
+.row { display: flex; height: 100px; flex: none; }
+.spectrum { display: block; width: 100%; height: 20px; flex: none; background: #0d0e11; border-radius: 3px; }
+.spectrum.big { height: 110px; border-radius: 6px; }
 .th {
   position: sticky; left: 0; z-index: 5; flex: none;
   display: flex; flex-direction: column; justify-content: center; gap: 6px;
@@ -121,7 +123,7 @@ input:not([type]):hover, input:not([type]):focus { border-color: var(--line); ba
   background-size: calc(var(--ppb) * 4) 100%, var(--ppb) 100%;
 }
 .row.sel .lane { background-color: #1d1f25; }
-.lane-hint { position: absolute; left: 12px; top: 28px; color: #5d6370; font-size: 12px; pointer-events: none; white-space: nowrap; }
+.lane-hint { position: absolute; left: 12px; top: 40px; color: #5d6370; font-size: 12px; pointer-events: none; white-space: nowrap; }
 
 .region {
   position: absolute; top: 4px; bottom: 4px;
@@ -143,10 +145,16 @@ svg.region-body rect { fill: rgba(0, 0, 0, 0.6); }
 
 .dropzone { flex: 1; min-height: 60px; display: flex; align-items: center; padding-left: 16px; color: #4d525e; font-size: 12px; }
 .playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: #fff; z-index: 4; pointer-events: none; will-change: transform; }
-.arr-inner > .playhead::before {
-  content: ''; position: absolute; top: 18px; left: -5px;
-  border: 5px solid transparent; border-top: 8px solid #fff;
+/* a linha do cursor pode ser agarrada: área de toque maior que o traço de 1px */
+.arr-inner > .playhead { pointer-events: auto; cursor: ew-resize; }
+.arr-inner > .playhead::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 9px; }
+.arr-inner > .playhead:hover, body.scrubbing .arr-inner > .playhead { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.45); }
+.ruler-head {
+  position: absolute; left: -7px; bottom: 0; width: 15px; height: 13px;
+  background: #fff; clip-path: polygon(0 0, 100% 0, 100% 45%, 50% 100%, 0 45%);
+  cursor: ew-resize; will-change: transform;
 }
+body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 
 /* ---------- Painel inferior ---------- */
 .bottom { flex: none; height: 320px; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid #000; }

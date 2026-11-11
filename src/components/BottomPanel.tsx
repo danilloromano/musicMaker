@@ -5,7 +5,7 @@ import { BottomTab, useStore } from '../store';
 import { Track, TrackFx } from '../types';
 import { PianoRoll } from './PianoRoll';
 import { LOOP_MIME } from './Timeline';
-import { KIND_ICON, Slider } from './ui';
+import { KIND_ICON, Slider, Spectrum } from './ui';
 
 const TABS: [BottomTab, string][] = [
   ['loops', 'Loops'],
@@ -84,6 +84,10 @@ function Fx({ track: t }: { track: Track }) {
   const setFx = (patch: Partial<TrackFx>, history = false) => st.updateTrack(t.id, { fx: { ...t.fx, ...patch } }, history);
   return (
     <div className="fx">
+      <div className="fx-card wide">
+        <h4>Espectro de frequências (Hz)</h4>
+        <Spectrum trackId={t.id} color={t.color} bars={96} labels className="big" />
+      </div>
       {t.kind === 'instrument' && (
         <div className="fx-card wide">
           <h4>Instrumento</h4>

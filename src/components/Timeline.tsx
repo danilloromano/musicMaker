@@ -4,7 +4,7 @@ import { LOOPS, addLoop } from '../audio/loops';
 import { PRESETS } from '../audio/instruments';
 import { useStore } from '../store';
 import { BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
-import { KIND_ICON, Meter, Slider, useRaf } from './ui';
+import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
 
 const HEADER_W = 264;
 export const LOOP_MIME = 'application/x-mm-loop';
@@ -23,11 +23,13 @@ export function Timeline() {
 
   const scroll = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
+  const rulerHead = useRef<HTMLDivElement>(null);
   const recEl = useRef<HTMLDivElement>(null);
 
   useRaf(() => {
     const b = engine.getBeat();
     if (head.current) head.current.style.transform = `translateX(${b * ppb}px)`;
+    if (rulerHead.current) rulerHead.current.style.transform = `translateX(${b * ppb}px)`;
     if (recEl.current && recording) {
       recEl.current.style.left = `${recording.startBeat * ppb}px`;
       recEl.current.style.width = `${Math.max(2, (b - recording.startBeat) * ppb)}px`;
@@ -44,12 +46,29 @@ export function Timeline() {
     return Math.max(0, (clientX - sc.getBoundingClientRect().left - HEADER_W + sc.scrollLeft) / ppb);
   };
 
+  /** Arrasta o cursor de reprodução (pela régua ou pela própria linha). Alt = movimento livre, sem grade. */
   const scrub = (e: React.PointerEvent) => {
-    const go = (x: number) => engine.seek(Math.round(beatAt(x)));
-    go(e.clientX);
-    const move = (ev: PointerEvent) => go(ev.clientX);
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    document.body.classList.add('scrubbing');
+    let last = -1;
+    const go = (ev: { clientX: number; altKey: boolean }) => {
+      const b = beatAt(ev.clientX);
+      const beat = ev.altKey ? b : Math.round(b * 4) / 4;
+      if (beat !== last) engine.seek((last = beat));
+    };
+    go(e);
+    const move = (ev: PointerEvent) => go(ev);
     window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', () => window.removeEventListener('pointermove', move), { once: true });
+    window.addEventListener(
+      'pointerup',
+      () => {
+        window.removeEventListener('pointermove', move);
+        document.body.classList.remove('scrubbing');
+      },
+      { once: true },
+    );
   };
 
   const dragRegion = (e: React.PointerEvent, r: Region, mode: 'move' | 'resize') => {
@@ -117,6 +136,7 @@ export function Timeline() {
             {Array.from({ length: Math.ceil(bars / barStep) }, (_, i) => (
               <span key={i} style={{ left: i * barStep * BEATS_PER_BAR * ppb }}>{i * barStep + 1}</span>
             ))}
+            <div className="ruler-head" ref={rulerHead} />
           </div>
         </div>
 
@@ -161,7 +181,7 @@ export function Timeline() {
         <div className="dropzone" style={{ marginLeft: HEADER_W }}>
           Arraste loops ou arquivos de áudio para cá para criar uma nova trilha
         </div>
-        <div className="playhead" ref={head} style={{ left: HEADER_W }} />
+        <div className="playhead" ref={head} style={{ left: HEADER_W }} onPointerDown={scrub} title="Arraste para mover o cursor" />
       </div>
     </div>
   );
@@ -202,6 +222,7 @@ function TrackHeader({ track: t }: { track: Track }) {
         <Slider className="pan" title="Pan (duplo clique centraliza)" min={-1} max={1} step={0.05} value={t.pan} reset={0} onChange={(v) => up({ pan: v })} />
       </div>
       <Meter trackId={t.id} />
+      <Spectrum trackId={t.id} color={t.color} bars={44} />
     </div>
   );
 }

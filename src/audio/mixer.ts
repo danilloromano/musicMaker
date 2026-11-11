@@ -41,7 +41,8 @@ export class Mixer {
     limiter.attack.value = 0.002;
     limiter.release.value = 0.1;
     this.analyser = ctx.createAnalyser();
-    this.analyser.fftSize = 512;
+    this.analyser.fftSize = 2048;
+    this.analyser.smoothingTimeConstant = 0.78;
     this.master.connect(limiter).connect(dest);
     limiter.connect(this.analyser);
 
@@ -78,7 +79,8 @@ export class Mixer {
     const revSend = c.createGain();
     const dlySend = c.createGain();
     const analyser = c.createAnalyser();
-    analyser.fftSize = 256;
+    analyser.fftSize = 2048; // resolução suficiente para o espectro nos graves
+    analyser.smoothingTimeConstant = 0.78;
     input.connect(low).connect(mid).connect(high).connect(comp).connect(gain).connect(pan).connect(this.master);
     pan.connect(revSend).connect(this.reverb);
     pan.connect(dlySend).connect(this.delay);
