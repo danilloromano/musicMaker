@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { engine, renderWav } from '../audio/engine';
 import { download, openProjectFile, saveProjectFile } from '../audio/persist';
-import { defaultProject, useStore } from '../store';
+import { defaultProject, savePref, useStore } from '../store';
 import { BEATS_PER_BAR } from '../types';
 import { Meter, useRaf } from './ui';
 
@@ -16,6 +16,8 @@ export function Transport() {
   const ppb = useStore((s) => s.ppb);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
+  const countIn = useStore((s) => s.countIn);
+  const loopOn = useStore((s) => !!s.project.loop?.on);
   const st = useStore.getState();
 
   const lcd = useRef<HTMLSpanElement>(null);
@@ -113,6 +115,23 @@ export function Transport() {
         onClick={() => st.update((p) => ({ ...p, metronome: !p.metronome }), false)}
       >
         Metrônomo
+      </button>
+      <button
+        className={countIn ? 'toggle on' : 'toggle'}
+        title="Contar 1 compasso no metrônomo antes de começar a gravar"
+        onClick={() => {
+          st.set({ countIn: !countIn });
+          savePref('mm.countIn', countIn ? '0' : '1');
+        }}
+      >
+        Contagem
+      </button>
+      <button
+        className={loopOn ? 'toggle on' : 'toggle'}
+        title="Tocar um trecho em repetição (C). Ajuste o trecho arrastando a faixa na régua; Shift + arrastar na régua marca um novo trecho."
+        onClick={() => st.toggleLoop(engine.getBeat())}
+      >
+        🔁 Loop
       </button>
 
       <div className="spacer" />

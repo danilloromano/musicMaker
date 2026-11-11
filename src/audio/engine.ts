@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { BEATS_PER_BAR, Note, Project, projectEnd, uid } from '../types';
+import { BEATS_PER_BAR, Note, Project, Region, projectEnd, regionGainAt, uid } from '../types';
 import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments';
 import { Mixer } from './mixer';
 import { saveBufferLocal } from './persist';
@@ -68,22 +68,30 @@ class Engine {
 
   getBeat(): number {
     if (!this.playing) return this.position;
-    return Math.max(0, this.startBeat + ((this.ctx.currentTime - this.startTime) * this.bpm) / 60);
+    const now = this.ctx.currentTime;
+    // volta do loop já agendada mas ainda não alcançada: continua no trecho anterior
+    const seg = this.prevSeg && now < this.startTime ? this.prevSeg : { t: this.startTime, b: this.startBeat };
+    return Math.max(0, seg.b + ((now - seg.t) * this.bpm) / 60);
   }
 
   private timeAt(beat: number) {
     return this.startTime + ((beat - this.startBeat) * 60) / this.bpm;
   }
 
-  play() {
+  /** Trecho de reprodução anterior à última volta do loop (até a volta acontecer de fato). */
+  private prevSeg: { t: number; b: number } | null = null;
+
+  /** Começa a tocar do cursor. `delay` = segundos até o início (a contagem antes de gravar usa um compasso). */
+  play(delay = 0.06) {
     this.ensure();
     if (this.playing) return;
     this.stopPreview();
     this.startBeat = this.position;
-    this.startTime = this.ctx.currentTime + 0.06;
+    this.startTime = this.ctx.currentTime + delay;
+    this.prevSeg = null;
     this.scheduledUntil = this.startBeat;
     this.playing = true;
-    this.startAudioRegions();
+    this.startAudioRegions(this.startTime);
     this.timer = window.setInterval(() => this.tick(), TICK_MS);
     this.tick();
     useStore.getState().set({ playing: true });
@@ -119,30 +127,58 @@ class Engine {
     if (was) this.play();
   }
 
-  private startAudioRegions() {
+  /** Agenda as regiões de áudio a partir do instante `ref` (o início da reprodução ou de uma volta do loop). */
+  private startAudioRegions(ref: number) {
     const { project } = useStore.getState();
-    const now = this.ctx.currentTime;
     for (const r of project.regions) {
       const buf = r.bufferId && this.buffers.get(r.bufferId);
       const strip = this.mixer.strips.get(r.trackId);
       if (!buf || !strip) continue;
-      const dur = r.duration ?? buf.duration;
       const at = this.timeAt(r.start);
-      const late = Math.max(0, now - at);
-      if (late >= dur) continue;
-      const src = this.ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(strip.input);
-      src.start(Math.max(at, now), (r.offset ?? 0) + late, dur - late);
-      this.sources.push(src);
+      const late = Math.max(0, ref - at);
+      const src = playAudioRegion(this.ctx, strip.input, r, buf, Math.max(at, ref), late);
+      if (src) this.sources.push(src);
     }
   }
 
+  /** Loop ativo para a reprodução atual (não vale durante a gravação nem se a música começou depois do trecho). */
+  private activeLoop() {
+    const s = useStore.getState();
+    const l = s.project.loop;
+    if (!l?.on || s.recording || l.end - l.start < 0.25 || this.startBeat >= l.end) return null;
+    return l;
+  }
+
   private tick() {
-    const { project } = useStore.getState();
-    const from = this.scheduledUntil;
-    const until = this.startBeat + ((this.ctx.currentTime + LOOKAHEAD - this.startTime) * this.bpm) / 60;
+    let loop = this.activeLoop();
+    let until = this.startBeat + ((this.ctx.currentTime + LOOKAHEAD - this.startTime) * this.bpm) / 60;
+    // agenda até o fim do trecho e já emenda a próxima volta, sem buraco no som
+    for (let guard = 0; loop && until >= loop.end && guard < 8; guard++) {
+      this.schedule(this.scheduledUntil, loop.end);
+      const wrap = Math.max(this.timeAt(loop.end), this.ctx.currentTime + 0.02);
+      for (const s of this.sources) {
+        try {
+          s.stop(wrap);
+        } catch {
+          /* já terminou */
+        }
+      }
+      this.sources = [];
+      this.prevSeg = { t: this.startTime, b: this.startBeat };
+      this.startTime = wrap;
+      this.startBeat = loop.start;
+      this.scheduledUntil = loop.start;
+      this.startAudioRegions(wrap);
+      until = this.startBeat + ((this.ctx.currentTime + LOOKAHEAD - this.startTime) * this.bpm) / 60;
+      loop = this.activeLoop();
+    }
+    this.schedule(this.scheduledUntil, until);
+  }
+
+  /** Agenda notas e cliques do metrônomo no intervalo [from, until) em tempos. */
+  private schedule(from: number, until: number) {
     if (until <= from) return;
+    const { project } = useStore.getState();
     const spb = 60 / this.bpm;
     const tracks = new Map(project.tracks.map((t) => [t.id, t]));
 
@@ -238,9 +274,25 @@ class Engine {
     }
     this.recNotes = [];
     this.recHeld.clear();
-    s.set({ recording: { trackId: track.id, startBeat: this.getBeat() } });
-    this.play();
+    const startBeat = this.getBeat();
+    s.set({ recording: { trackId: track.id, startBeat } });
+    if (this.playing) {
+      // já tocando: grava a partir de agora
+      this.recFrom = this.ctx.currentTime;
+      return;
+    }
+    if (s.countIn) {
+      // um compasso de metrônomo antes de a música (e a gravação) começar
+      const spb = 60 / this.bpm;
+      const t0 = this.ctx.currentTime + 0.1;
+      for (let i = 0; i < BEATS_PER_BAR; i++) this.click(t0 + i * spb, i === 0);
+      this.play(0.1 + BEATS_PER_BAR * spb);
+    } else this.play();
+    this.recFrom = this.startTime;
   }
+
+  /** Instante (relógio do AudioContext) em que a gravação começa de fato. */
+  private recFrom = 0;
 
   private finishRecording() {
     const s = useStore.getState();
@@ -251,7 +303,7 @@ class Engine {
     s.set({ recording: null });
 
     if (this.recorder) {
-      const buf = this.recorder.stop();
+      const buf = this.recorder.stop(this.recFrom);
       this.recorder = null;
       if (buf) {
         const bufferId = uid();
@@ -445,6 +497,38 @@ export const engine = new Engine();
 /** Número de faixas de frequência devolvidas por `engine.spectrum` (fftSize / 2). */
 export const SPECTRUM_BINS = 1024;
 
+// ---------- Regiões de áudio (ganho e fades) ----------
+
+const EDGE_FADE = 0.003; // micro-fade nas bordas de toda região: evita estalos em cortes fora do zero
+
+/** Toca uma região de áudio em `when`, começando `late` segundos dentro dela, com ganho e fades. */
+export function playAudioRegion(
+  ctx: BaseAudioContext,
+  dest: AudioNode,
+  r: Region,
+  buf: AudioBuffer,
+  when: number,
+  late = 0,
+): AudioBufferSourceNode | null {
+  const d = Math.min(r.duration ?? buf.duration, buf.duration - (r.offset ?? 0));
+  if (late >= d || d <= 0) return null;
+  const fi = Math.min(Math.max(r.fadeIn ?? 0, EDGE_FADE), d / 2);
+  const fo = Math.min(Math.max(r.fadeOut ?? 0, EDGE_FADE), d - fi);
+  const env = { ...r, duration: d, fadeIn: fi, fadeOut: fo };
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const g = ctx.createGain();
+  const p = g.gain;
+  p.setValueAtTime(regionGainAt(env, late), when);
+  if (fi > late) p.linearRampToValueAtTime(regionGainAt(env, fi), when + fi - late);
+  const foStart = d - fo;
+  if (foStart > late) p.setValueAtTime(regionGainAt(env, foStart), when + foStart - late);
+  p.linearRampToValueAtTime(0, when + d - late);
+  src.connect(g).connect(dest);
+  src.start(when, (r.offset ?? 0) + late, d - late);
+  return src;
+}
+
 // ---------- Exportação (mixdown offline para WAV) ----------
 
 export async function renderWav(project: Project, buffers: Map<string, AudioBuffer>): Promise<Blob> {
@@ -461,12 +545,7 @@ export async function renderWav(project: Project, buffers: Map<string, AudioBuff
     const strip = mixer.strips.get(r.trackId);
     if (!track || !strip) continue;
     const buf = r.bufferId && buffers.get(r.bufferId);
-    if (buf) {
-      const src = off.createBufferSource();
-      src.buffer = buf;
-      src.connect(strip.input);
-      src.start(r.start * spb, r.offset ?? 0, r.duration ?? buf.duration);
-    }
+    if (buf) playAudioRegion(off, strip.input, r, buf, r.start * spb);
     for (const n of r.notes ?? []) {
       if (n.start >= r.length) continue;
       const dur = Math.min(n.duration, r.length - n.start) * spb;

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Note, Project, Region, Track, TrackKind, regionLen, uid } from './types';
+import { BEATS_PER_BAR, Note, Project, Region, Track, TrackKind, fitFades, regionLen, uid } from './types';
 
 const COLORS = ['#4f9cf9', '#f97362', '#5fd08a', '#f5c04e', '#b584f5', '#4fd1c5', '#f58fc3', '#a3b1c2'];
 
@@ -62,6 +62,7 @@ interface State {
   recording: { trackId: string; startBeat: number } | null;
   ppb: number; // pixels por tempo na timeline
   bottomTab: BottomTab;
+  countIn: boolean; // conta 1 compasso no metrônomo antes de gravar
   octave: number;
 
   // entrada de áudio (preferências do computador, não fazem parte do projeto)
@@ -90,6 +91,8 @@ interface State {
   removeRegion: (id: string) => void;
   duplicateRegion: (id: string) => void;
   splitRegion: (id: string, beat: number) => void;
+  /** Liga/desliga o loop; se ainda não há trecho, usa a região selecionada ou 4 compassos a partir do cursor. */
+  toggleLoop: (cursorBeat: number) => void;
   setNotes: (regionId: string, notes: Note[], history?: boolean) => void;
 }
 
@@ -106,6 +109,7 @@ export const useStore = create<State>((set, get) => ({
   recording: null,
   ppb: 24,
   bottomTab: 'loops',
+  countIn: pref('mm.countIn') === '1',
   octave: 4,
 
   inputs: [],
@@ -180,7 +184,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   updateRegion: (id, patch, history = true) =>
-    get().update((p) => ({ ...p, regions: p.regions.map((r) => (r.id === id ? { ...r, ...patch } : r)) }), history),
+    get().update((p) => ({ ...p, regions: p.regions.map((r) => (r.id === id ? fitFades({ ...r, ...patch }) : r)) }), history),
 
   removeRegion: (id) => {
     get().update((p) => ({ ...p, regions: p.regions.filter((r) => r.id !== id) }));
@@ -213,8 +217,9 @@ export const useStore = create<State>((set, get) => ({
     let left: Region, right: Region;
     if (r.bufferId) {
       const cutSec = (cut * 60) / p.bpm;
-      left = { ...r, duration: cutSec };
-      right = { ...r, id: uid(), start: beat, offset: (r.offset ?? 0) + cutSec, duration: (r.duration ?? 0) - cutSec };
+      // o fade-in fica na parte da esquerda e o fade-out na da direita
+      left = fitFades({ ...r, duration: cutSec, fadeOut: 0 });
+      right = fitFades({ ...r, id: uid(), start: beat, offset: (r.offset ?? 0) + cutSec, duration: (r.duration ?? 0) - cutSec, fadeIn: 0 });
     } else {
       const notes = r.notes ?? [];
       left = {
@@ -231,6 +236,20 @@ export const useStore = create<State>((set, get) => ({
       };
     }
     get().update((pr) => ({ ...pr, regions: pr.regions.flatMap((x) => (x.id === id ? [left, right] : [x])) }));
+  },
+
+  toggleLoop: (cursorBeat) => {
+    const s = get();
+    const p = s.project;
+    let loop = p.loop;
+    if (!loop) {
+      const r = p.regions.find((x) => x.id === s.selectedRegionId);
+      const bar = (b: number, up: boolean) => (up ? Math.ceil(b / BEATS_PER_BAR) : Math.floor(b / BEATS_PER_BAR)) * BEATS_PER_BAR;
+      const start = r ? bar(r.start, false) : bar(cursorBeat, false);
+      const end = r ? Math.max(start + BEATS_PER_BAR, bar(r.start + regionLen(r, p.bpm), true)) : start + 4 * BEATS_PER_BAR;
+      loop = { start, end, on: false };
+    }
+    s.update((pr) => ({ ...pr, loop: { ...loop, on: !loop.on } }), false);
   },
 
   setNotes: (regionId, notes, history = true) => get().updateRegion(regionId, { notes }, history),

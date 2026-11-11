@@ -90,7 +90,7 @@ input:not([type]):hover, input:not([type]):focus { border-color: var(--line); ba
   background-image: linear-gradient(to right, var(--line) 1px, transparent 1px);
   background-size: calc(var(--ppb) * 4) 100%;
 }
-.ruler span { position: absolute; top: 6px; padding-left: 5px; color: var(--dim); font-size: 11px; pointer-events: none; }
+.ruler span { position: absolute; top: 9px; padding-left: 5px; color: var(--dim); font-size: 11px; pointer-events: none; }
 
 .row { display: flex; height: 100px; flex: none; }
 .spectrum { display: block; width: 100%; height: 22px; flex: none; background: #0d0e11; border-radius: 3px; }
@@ -251,3 +251,36 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .aed-scroll { position: absolute; inset: 0; overflow-x: auto; overflow-y: hidden; cursor: text; }
 .aed-canvas { position: sticky; left: 0; display: block; }
 .aed-head { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: #fff; pointer-events: none; z-index: 2; will-change: transform; }
+
+/* Loop */
+.loop-band {
+  position: absolute; top: 0; height: 9px; z-index: 1; cursor: grab;
+  background: rgba(160, 168, 184, 0.35); border-radius: 0 0 3px 3px;
+}
+.loop-band.on { background: rgba(245, 192, 78, 0.85); }
+.loop-edge { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+.loop-edge.l { left: -3px; }
+.loop-edge.r { right: -3px; }
+.loop-shade {
+  position: absolute; top: 28px; bottom: 0; z-index: 3; pointer-events: none;
+  background: rgba(245, 192, 78, 0.06); border-left: 1px solid rgba(245, 192, 78, 0.5); border-right: 1px solid rgba(245, 192, 78, 0.5);
+}
+
+/* Fades nas regiões de áudio */
+.fade-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.fade-svg path { fill: rgba(0, 0, 0, 0.35); stroke: rgba(255, 255, 255, 0.85); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.fade-h {
+  position: absolute; top: 0; width: 9px; height: 9px; z-index: 2; cursor: ew-resize;
+  background: #fff; border: 1px solid rgba(0, 0, 0, 0.6); border-radius: 2px; opacity: 0; transition: opacity 0.1s;
+}
+.region:hover .fade-h, .region.sel .fade-h { opacity: 0.9; }
+.aed-gain { width: 110px; }
+.aed-db { color: var(--dim); min-width: 52px; }
+
+/* botões não quebram linha; quem cede espaço são os espaçadores e a dica */
+.transport button, .aed .roll-bar button { white-space: nowrap; }
+.aed .roll-bar { gap: 10px; }
+.aed .roll-bar label { white-space: nowrap; }
+.aed .hint { min-width: 0; flex: 1; }
+@media (max-width: 1500px) { .zoom input { width: 70px; } .meter.master { width: 60px; } }
+.meter.master { flex: none; }

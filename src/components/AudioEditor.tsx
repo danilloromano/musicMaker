@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
-import { Region } from '../types';
-import { useRaf } from './ui';
+import { Region, regionGainAt } from '../types';
+import { gainDb } from './Timeline';
+import { Slider, useRaf } from './ui';
 
 const RULER_H = 20;
+const HANDLE = 10; // alça de fade (px)
+const EDGE = 5; // distância (px) para agarrar a borda de uma região
 const MAX_PPS = 40000; // pixels por segundo no zoom máximo (amostras individuais visíveis)
 const MAX_WIDTH = 30_000_000; // limite de largura de elemento do navegador
 const STEPS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
@@ -188,8 +191,10 @@ export function AudioEditor() {
             if (v < lo) lo = v;
             if (v > hi) hi = v;
           }
-          const yHi = mid - Math.min(1, hi * vzoom) * (amp / vzoom);
-          const yLo = mid - Math.max(-1, lo * vzoom) * (amp / vzoom);
+          // mostra o som como vai tocar: com o volume e os fades da região
+          const env = regionGainAt(r, view0 + (x + 0.5) / dpps - rs);
+          const yHi = mid - Math.min(1, hi * env * vzoom) * (amp / vzoom);
+          const yLo = mid - Math.max(-1, lo * env * vzoom) * (amp / vzoom);
           g.fillRect(x, yHi, 1, Math.max(1, yLo - yHi));
         }
       } else {
@@ -197,7 +202,8 @@ export function AudioEditor() {
         const a = Math.max(first, Math.floor(sampleAt(view0 + x0 / dpps)) - 1);
         const b = Math.min(last - 1, Math.ceil(sampleAt(view0 + x1 / dpps)) + 1);
         const xs = (i: number) => xOf(rs + (i / sr - off));
-        const ys = (i: number) => mid - Math.max(-1, Math.min(1, data[i] * vzoom)) * (amp / vzoom);
+        const ys = (i: number) =>
+          mid - Math.max(-1, Math.min(1, data[i] * regionGainAt(r, i / sr - off) * vzoom)) * (amp / vzoom);
         g.lineWidth = Math.max(1, dpr);
         g.beginPath();
         for (let i = a; i <= b; i++) (i === a ? g.moveTo : g.lineTo).call(g, xs(i), ys(i));
@@ -211,7 +217,27 @@ export function AudioEditor() {
       g.fillRect(Math.round(xOf(rs + dur)) - 1, top, Math.max(1, dpr * (sel ? 2 : 1)), H - top);
       g.fillStyle = '#d7dbe3';
       g.font = `${11 * dpr}px system-ui, sans-serif`;
-      g.fillText(r.name, Math.max(x0, 0) + 6 * dpr, top + 14 * dpr);
+      g.fillText(r.name, Math.max(x0, 0) + 6 * dpr, top + 26 * dpr);
+
+      // curvas de fade e alças (quadrados no alto, arrastáveis)
+      const fi = r.fadeIn ?? 0;
+      const fo = r.fadeOut ?? 0;
+      g.strokeStyle = 'rgba(255,255,255,0.8)';
+      g.lineWidth = dpr;
+      g.beginPath();
+      if (fi > 0) {
+        g.moveTo(xOf(rs), H);
+        g.lineTo(xOf(rs + fi), top);
+      }
+      if (fo > 0) {
+        g.moveTo(xOf(rs + dur - fo), top);
+        g.lineTo(xOf(rs + dur), H);
+      }
+      g.stroke();
+      const hs = HANDLE * dpr;
+      g.fillStyle = '#fff';
+      g.fillRect(xOf(rs + fi), top + dpr, hs, hs);
+      g.fillRect(xOf(rs + dur - fo) - hs, top + dpr, hs, hs);
     }
 
     // linha do zero
@@ -263,9 +289,75 @@ export function AudioEditor() {
     head.current.style.transform = `translateX(${vx}px)`;
   });
 
+  type Grab = { r: Region; part: 'fadeIn' | 'fadeOut' | 'start' | 'end' };
+
+  /** O que está sob o mouse: alça de fade (no alto da região) ou borda da região. */
+  const grabAt = (clientX: number, clientY: number): Grab | null => {
+    const sc = scroll.current!;
+    const rect = sc.getBoundingClientRect();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    const px = (sec: number) => sec * pps - sc.scrollLeft;
+    const inHandleRow = my >= RULER_H && my <= RULER_H + HANDLE + 4;
+    // a região selecionada tem prioridade quando duas bordas se encostam
+    const sel = useStore.getState().audioEditId;
+    const list = [...trackRegions].sort((a, b) => (a.id === sel ? -1 : b.id === sel ? 1 : 0));
+    for (const r of list) {
+      const rs = r.start * spb;
+      const d = r.duration ?? 0;
+      if (inHandleRow) {
+        const a = px(rs + (r.fadeIn ?? 0));
+        if (mx >= a - 2 && mx <= a + HANDLE + 2) return { r, part: 'fadeIn' };
+        const b = px(rs + d - (r.fadeOut ?? 0));
+        if (mx >= b - HANDLE - 2 && mx <= b + 2) return { r, part: 'fadeOut' };
+      }
+    }
+    if (my < RULER_H) return null;
+    for (const r of list) {
+      const rs = r.start * spb;
+      if (Math.abs(mx - px(rs)) <= EDGE) return { r, part: 'start' };
+      if (Math.abs(mx - px(rs + (r.duration ?? 0))) <= EDGE) return { r, part: 'end' };
+    }
+    return null;
+  };
+
+  /** Arrasta alça de fade ou borda (corte), sem grade: precisão de amostra conforme o zoom. */
+  const dragGrab = (e: React.PointerEvent, { r, part }: Grab) => {
+    st.set({ audioEditId: r.id, selectedRegionId: r.id, selectedTrackId: r.trackId });
+    fitted.current = r.id;
+    const x0 = e.clientX;
+    const rs = r.start * spb;
+    const off = r.offset ?? 0;
+    const d = r.duration ?? 0;
+    const bufDur = engine.buffers.get(r.bufferId!)?.duration ?? d + off;
+    const MIN = 0.01;
+    let snapped = false;
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - x0) / pps;
+      let patch: Partial<Region>;
+      if (part === 'fadeIn') patch = { fadeIn: Math.max(0, (r.fadeIn ?? 0) + dx) };
+      else if (part === 'fadeOut') patch = { fadeOut: Math.max(0, (r.fadeOut ?? 0) - dx) };
+      else if (part === 'end') patch = { duration: Math.min(bufDur - off, Math.max(MIN, d + dx)) };
+      else {
+        // o início não pode passar do começo do áudio gravado nem do zero da música
+        const shift = Math.min(d - MIN, Math.max(-off, -rs, dx));
+        patch = { start: (rs + shift) / spb, offset: off + shift, duration: d - shift };
+      }
+      if (!snapped) {
+        st.snapshot();
+        snapped = true;
+      }
+      st.updateRegion(r.id, patch, false);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', () => window.removeEventListener('pointermove', move), { once: true });
+  };
+
   // clique posiciona o cursor exatamente (sem grade) e seleciona a região clicada; arrastar = mover o cursor
   const press = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    const grab = grabAt(e.clientX, e.clientY);
+    if (grab) return dragGrab(e, grab);
     const sc = scroll.current!;
     const secAt = (cx: number) => Math.max(0, (cx - sc.getBoundingClientRect().left + sc.scrollLeft) / pps);
     const sec = secAt(e.clientX);
@@ -276,6 +368,13 @@ export function AudioEditor() {
     const move = (ev: PointerEvent) => engine.seek(secAt(ev.clientX) / spb);
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', () => window.removeEventListener('pointermove', move), { once: true });
+  };
+
+  // cursor do mouse indica o que dá para arrastar
+  const hover = (e: React.PointerEvent) => {
+    if (e.buttons) return;
+    const g = grabAt(e.clientX, e.clientY);
+    e.currentTarget.setAttribute('style', g ? 'cursor: ew-resize' : '');
   };
 
   if (!region || !track) {
@@ -317,7 +416,7 @@ export function AudioEditor() {
       <div className="roll-bar">
         <strong className="roll-name" title={track.name}>{region.name}</strong>
         <div className="aed-group">
-          <button title="Cortar a região no cursor (Ctrl+T)" onClick={split}>✂ Cortar no cursor</button>
+          <button title="Cortar a região no cursor (Ctrl+T)" onClick={split}>✂ Cortar</button>
           <button title="Apagar o trecho entre o início da região e o cursor" onClick={trimBefore}>⇤ Apagar antes</button>
           <button title="Apagar o trecho entre o cursor e o fim da região" onClick={trimAfter}>Apagar depois ⇥</button>
           <button title="Excluir a região selecionada (Delete)" onClick={() => st.removeRegion(region.id)}>🗑</button>
@@ -328,16 +427,31 @@ export function AudioEditor() {
           <button title="Enquadrar a região inteira" onClick={fit}>Ajustar</button>
           <small className="aed-info">{visible >= 1 ? `${visible.toFixed(1)} s` : `${(visible * 1000).toFixed(visible < 0.01 ? 2 : 0)} ms`} na tela</small>
         </div>
+        <label title="Volume desta região (duplo clique volta a 0 dB)">
+          Volume
+          <Slider
+            className="aed-gain"
+            min={-24}
+            max={12}
+            step={0.5}
+            value={Math.round(20 * Math.log10(Math.max(region.gain ?? 1, 1e-4)) * 2) / 2}
+            reset={0}
+            onChange={(db) => st.updateRegion(region.id, { gain: Math.pow(10, db / 20) }, false)}
+          />
+          <small className="aed-db">{gainDb(region.gain ?? 1)}</small>
+        </label>
         <label>
           Altura
           <select value={vzoom} onChange={(e) => { setVzoom(+e.target.value); e.currentTarget.blur(); }}>
             {[1, 2, 4, 8, 16].map((v) => <option key={v} value={v}>{v}×</option>)}
           </select>
         </label>
-        <span className="hint">Clique = posicionar o cursor · Roda = zoom · Shift+roda = rolar · Espaço = tocar</span>
+        <span className="hint">
+          Clique = cursor · Arraste as bordas para aparar e os quadrados do alto para os fades · Roda = zoom · Shift+roda = rolar
+        </span>
       </div>
       <div className="aed-view">
-        <div className="aed-scroll" ref={scroll} onPointerDown={press}>
+        <div className="aed-scroll" ref={scroll} onPointerDown={press} onPointerMove={hover}>
           <div style={{ width: totalSec * pps, height: '100%' }}>
             <canvas ref={canvas} className="aed-canvas" />
           </div>

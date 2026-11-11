@@ -51,6 +51,7 @@ function useShortcuts() {
       if (e.altKey) return;
 
       if (k === 'enter') engine.seek(0);
+      else if (k === 'c' && !e.repeat) s.toggleLoop(engine.getBeat());
       else if (k === 'r' && !e.repeat) void engine.toggleRecord();
       else if (k === 'delete' || k === 'backspace') {
         const region = s.project.regions.find((r) => r.id === s.editingRegionId);
