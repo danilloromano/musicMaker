@@ -75,6 +75,8 @@ export function Timeline() {
     if (e.button !== 0) return;
     e.stopPropagation();
     st.set({ selectedRegionId: r.id, selectedTrackId: r.trackId, selectedNoteId: null });
+    // região de áudio: abre no editor de áudio (forma de onda com zoom, para cortes precisos)
+    if (r.bufferId) st.set({ audioEditId: r.id, bottomTab: 'audio' });
     const x0 = e.clientX;
     const bpm = project.bpm;
     let snapped = false;

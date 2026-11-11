@@ -242,3 +242,12 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 ::-webkit-scrollbar { width: 12px; height: 12px; }
 ::-webkit-scrollbar-thumb { background: #3c404b; border-radius: 6px; border: 3px solid var(--bg); }
 ::-webkit-scrollbar-corner, ::-webkit-scrollbar-track { background: var(--bg); }
+
+/* Editor de áudio */
+.aed { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.aed-group { display: flex; align-items: center; gap: 4px; }
+.aed-info { color: var(--dim); min-width: 84px; margin-left: 4px; }
+.aed-view { position: relative; flex: 1; min-height: 0; }
+.aed-scroll { position: absolute; inset: 0; overflow-x: auto; overflow-y: hidden; cursor: text; }
+.aed-canvas { position: sticky; left: 0; display: block; }
+.aed-head { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: #fff; pointer-events: none; z-index: 2; will-change: transform; }

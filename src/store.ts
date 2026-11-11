@@ -47,7 +47,7 @@ export function savePref(key: string, value: string) {
   }
 }
 
-export type BottomTab = 'editor' | 'fx' | 'loops' | 'keys';
+export type BottomTab = 'editor' | 'fx' | 'loops' | 'keys' | 'audio';
 
 interface State {
   project: Project;
@@ -56,6 +56,7 @@ interface State {
   selectedTrackId: string | null;
   selectedRegionId: string | null;
   editingRegionId: string | null;
+  audioEditId: string | null; // região de áudio aberta no editor de áudio
   selectedNoteId: string | null;
   playing: boolean;
   recording: { trackId: string; startBeat: number } | null;
@@ -99,6 +100,7 @@ export const useStore = create<State>((set, get) => ({
   selectedTrackId: null,
   selectedRegionId: null,
   editingRegionId: null,
+  audioEditId: null,
   selectedNoteId: null,
   playing: false,
   recording: null,
@@ -147,6 +149,7 @@ export const useStore = create<State>((set, get) => ({
       selectedTrackId: p.tracks[0]?.id ?? null,
       selectedRegionId: null,
       editingRegionId: null,
+      audioEditId: null,
       selectedNoteId: null,
     }),
 

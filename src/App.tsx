@@ -11,11 +11,25 @@ const isTyping = (el: EventTarget | null) => {
   return el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
 };
 
+// campos onde a barra de espaço digita um espaço de verdade
+const typesText = (el: EventTarget | null) =>
+  el instanceof HTMLTextAreaElement ||
+  (el instanceof HTMLElement && el.isContentEditable) ||
+  (el instanceof HTMLInputElement && ['text', 'search', 'email', 'url', 'tel', 'password'].includes(el.type));
+
 function useShortcuts() {
   useEffect(() => {
     const held = new Map<string, number>(); // tecla → nota que ela disparou
 
     const down = (e: KeyboardEvent) => {
+      // Espaço toca/pausa de qualquer lugar (lista de entradas, BPM, botões…), exceto ao digitar texto
+      if (e.code === 'Space' && !e.ctrlKey && !e.metaKey && !e.altKey && !typesText(e.target)) {
+        e.preventDefault();
+        if (e.repeat) return;
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        engine.toggle();
+        return;
+      }
       if (isTyping(e.target)) return;
       const s = useStore.getState();
       const k = e.key.toLowerCase();
@@ -25,18 +39,18 @@ function useShortcuts() {
         else if (k === 'y') s.redo();
         else if (k === 's') saveProject();
         else if (k === 'd' && s.selectedRegionId) s.duplicateRegion(s.selectedRegionId);
-        else if (k === 't' && s.selectedRegionId) s.splitRegion(s.selectedRegionId, Math.round(engine.getBeat() * 4) / 4);
+        else if (k === 't' && s.selectedRegionId) {
+          // áudio é cortado exatamente no cursor; MIDI, na grade de 1/16
+          const audio = s.project.regions.find((r) => r.id === s.selectedRegionId)?.bufferId;
+          s.splitRegion(s.selectedRegionId, audio ? engine.getBeat() : Math.round(engine.getBeat() * 4) / 4);
+        }
         else return;
         e.preventDefault();
         return;
       }
       if (e.altKey) return;
 
-      if (k === ' ') {
-        e.preventDefault();
-        (document.activeElement as HTMLElement | null)?.blur?.();
-        engine.toggle();
-      } else if (k === 'enter') engine.seek(0);
+      if (k === 'enter') engine.seek(0);
       else if (k === 'r' && !e.repeat) void engine.toggleRecord();
       else if (k === 'delete' || k === 'backspace') {
         const region = s.project.regions.find((r) => r.id === s.editingRegionId);

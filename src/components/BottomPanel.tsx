@@ -3,6 +3,7 @@ import { DRUM_MAP, PRESETS } from '../audio/instruments';
 import { LOOPS, Loop, addLoop } from '../audio/loops';
 import { BottomTab, savePref, useStore } from '../store';
 import { Track, TrackFx } from '../types';
+import { AudioEditor } from './AudioEditor';
 import { PianoRoll } from './PianoRoll';
 import { LOOP_MIME } from './Timeline';
 import { KIND_ICON, Meter, Slider, Spectrum } from './ui';
@@ -12,6 +13,7 @@ const TABS: [BottomTab, string][] = [
   ['editor', 'Piano Roll'],
   ['fx', 'Efeitos'],
   ['keys', 'Teclado'],
+  ['audio', 'Editor de Áudio'],
 ];
 
 export function BottomPanel() {
@@ -29,6 +31,7 @@ export function BottomPanel() {
       <div className="bottom-body">
         {tab === 'editor' && <PianoRoll />}
         {tab === 'loops' && <Loops />}
+        {tab === 'audio' && <AudioEditor />}
         {tab === 'fx' && (track ? <Fx track={track} /> : <div className="empty">Selecione uma trilha.</div>)}
         {tab === 'keys' && (track && track.kind !== 'audio' ? <Keys track={track} /> : <div className="empty">Selecione uma trilha de instrumento ou bateria para tocar.</div>)}
       </div>
