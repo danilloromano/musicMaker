@@ -522,3 +522,5 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .stomp-toggle .lever.left::after { left: -1px; }
 .stomp-toggle .lever.right::after { left: 13px; }
 .stomp-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stomp-toggles { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.stomp-toggles .stomp-toggle { width: 112px; justify-content: space-between; }

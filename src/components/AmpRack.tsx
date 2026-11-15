@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { PEDALS, PedalDef, RIG_PRESETS, defaultRig, pedalOf } from '../audio/amp';
+import { PEDALS, PedalDef, RIG_PRESETS, defaultRig, pedalDefaults, pedalOf } from '../audio/amp';
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
 import { AmpRig, Track } from '../types';
@@ -53,30 +53,35 @@ export function AmpRack({ track: t }: { track: Track }) {
             />
           ))}
         </div>
-        {d.toggle && (() => {
-          const tg = d.toggle;
-          const idx = d.params.length;
-          const side = (ps.p[idx] ?? tg.def) >= 0.5 ? 1 : 0;
-          return (
-            <button
-              className="stomp-toggle"
-              role="switch"
-              aria-checked={side === 1}
-              aria-label={`${tg.titles[side]} (clique para ${tg.titles[1 - side].toLowerCase()})`}
-              title={`${tg.titles[side]} · clique para trocar`}
-              onClick={() => {
-                const p = [...ps.p];
-                while (p.length < idx) p.push(d.params[p.length].def);
-                p[idx] = 1 - side;
-                setPedal(d, { p }, true);
-              }}
-            >
-              <span className={side === 0 ? 'on' : ''}>{tg.labels[0]}</span>
-              <i className={`lever ${side ? 'right' : 'left'}`} />
-              <span className={side === 1 ? 'on' : ''}>{tg.labels[1]}</span>
-            </button>
-          );
-        })()}
+        {d.toggles && (
+          <div className="stomp-toggles">
+            {d.toggles.map((tg, ti) => {
+              const idx = d.params.length + ti;
+              const side = (ps.p[idx] ?? tg.def) >= 0.5 ? 1 : 0;
+              return (
+                <button
+                  key={tg.labels.join()}
+                  className="stomp-toggle"
+                  role="switch"
+                  aria-checked={side === 1}
+                  aria-label={`${tg.titles[side]}. Clique para trocar para ${tg.labels[1 - side]}.`}
+                  title={`${tg.titles[side]} · clique para trocar`}
+                  onClick={() => {
+                    const p = [...ps.p];
+                    const defs = pedalDefaults(d);
+                    while (p.length <= idx) p.push(defs[p.length]);
+                    p[idx] = 1 - side;
+                    setPedal(d, { p }, true);
+                  }}
+                >
+                  <span className={side === 0 ? 'on' : ''}>{tg.labels[0]}</span>
+                  <i className={`lever ${side ? 'right' : 'left'}`} />
+                  <span className={side === 1 ? 'on' : ''}>{tg.labels[1]}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <i className="stomp-led" />
         <span className="stomp-name">{d.name}</span>
         <button

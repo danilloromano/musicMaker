@@ -15,11 +15,11 @@ export interface PedalDef {
   desc?: string;
   params: { label: string; def: number }[];
   /** chave de dois lados (como as mini-chaves de pedal): guardada como 0/1 logo depois dos botões */
-  toggle?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 };
+  toggles?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 }[];
 }
 
 /** Valores padrão de um pedal: botões e, se houver, a chave. */
-export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ...(d.toggle ? [d.toggle.def] : [])];
+export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ...(d.toggles ?? []).map((t) => t.def)];
 
 export const PEDALS: PedalDef[] = [
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
@@ -38,13 +38,18 @@ export const PEDALS: PedalDef[] = [
   { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true, params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }] },
   { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
   { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
-  { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, params: [{ label: 'Tempo', def: 0.35 }, { label: 'Repetições', def: 0.35 }, { label: 'Mix', def: 0.3 }] },
+  { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong',
+    params: [{ label: 'Tempo', def: 0.35 }, { label: 'Ecos', def: 0.35 }, { label: 'Mix', def: 0.3 }],
+    toggles: [
+      { labels: ['Fita', 'Digital'], titles: ['Delay de fita', 'Delay digital'], def: 0 },
+      { labels: ['Mono', 'Estéreo'], titles: ['Mono: repetições no centro', 'Estéreo: repetições alternando entre esquerda e direita'], def: 0 },
+    ] },
   { id: 'reverb', name: 'Reverb', color: '#3f8fe0', post: true, desc: 'Mola: o "boing" metálico dos amps antigos · Sala: cauda lisa e escura',
     params: [{ label: 'Tempo', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Mix', def: 0.35 }],
-    toggle: { labels: ['Mola', 'Sala'], titles: ['Reverb de mola', 'Reverb sem mola (sala)'], def: 0 } },
+    toggles: [{ labels: ['Mola', 'Sala'], titles: ['Reverb de mola', 'Reverb sem mola: sala'], def: 0 }] },
 ];
 
-type Curve = 'soft' | 'hard' | 'asym' | 'germ';
+type Curve = 'soft' | 'hard' | 'asym' | 'germ' | 'tape';
 
 export { AMPS } from './ampCircuits';
 
@@ -91,7 +96,7 @@ function preset(amp: string, knobs: Partial<AmpRig['knobs']>, cab: string, pedal
 export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
   { name: 'Limpo Cristalino', make: () => preset('clean', { gain: 0.2, treble: 0.6 }, '2x12', { comp: [0.4, 0.5], chorus: [0.25, 0.4, 0.35], reverb: [0.5, 0.55, 0.3, 1] }) },
   { name: 'Funk', make: () => preset('clean', { gain: 0.15, bass: 0.4, mid: 0.45, treble: 0.7, presence: 0.65 }, '1x12', { comp: [0.75, 0.5] }) },
-  { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2], reverb: [0.35, 0.5, 0.25, 0] }) },
+  { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2, 0, 0], reverb: [0.35, 0.5, 0.25, 0] }) },
   { name: 'Surf', make: () => preset('clean', { gain: 0.3, bass: 0.45, treble: 0.7 }, '2x12', { reverb: [0.65, 0.6, 0.6, 0], tremolo: [0.45, 0.3] }) },
   { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { odGreen: [0.3, 0.45, 0.6], reverb: [0.3, 0.45, 0.2, 0] }) },
   { name: 'Rock Clássico', make: () => preset('crunch', { gain: 0.6, mid: 0.55, treble: 0.55 }, '4x12') },
@@ -173,6 +178,8 @@ function curve(kind: Curve) {
       c[i] =
         kind === 'soft' ? Math.tanh(2.5 * x) / Math.tanh(2.5)
         : kind === 'hard' ? (7 * x) / (1 + 6 * Math.abs(x))
+        // fita: ganho 1 nos sinais baixos (não realimenta o laço do delay), comprime só os picos
+        : kind === 'tape' ? Math.tanh(1.5 * x) / 1.5
         : kind === 'germ' ? Math.tanh(1.4 * x) / Math.tanh(1.4) // diodo de germânio: joelho baixo e bem macio
         : x >= 0 ? Math.tanh(3 * x) / Math.tanh(3) : (-0.7 * Math.tanh(-6 * x)) / Math.tanh(6);
     }
@@ -505,6 +512,121 @@ function reverbPedal(ctx: BaseAudioContext, put: Put): Fx {
   };
 }
 
+// ---------- Delay: fita ou digital, mono ou estéreo (ping-pong) ----------
+
+interface DelayNet {
+  input: GainNode;
+  output: GainNode;
+  oscs: OscillatorNode[];
+  set(time: number, rep: number, put: Put): void;
+}
+
+/**
+ * Uma rede de delay. Fita: repetições cada vez mais escuras e finas, saturação da fita no laço e
+ * variação de velocidade (wow lento + flutter rápido). Digital: repetições limpas e iguais.
+ * Estéreo: ping-pong, a 1ª repetição na esquerda, a seguinte na direita e assim por diante.
+ */
+function delayNet(ctx: BaseAudioContext, tape: boolean, stereo: boolean): DelayNet {
+  const input = ctx.createGain(), output = ctx.createGain();
+  const oscs: OscillatorNode[] = [];
+  const line = () => {
+    const d = ctx.createDelay(2.5);
+    const hp = filter(ctx, 'highpass', tape ? 140 : 20);
+    const lp = filter(ctx, 'lowpass', tape ? 2600 : 12000);
+    const fb = ctx.createGain();
+    let node: AudioNode = d.connect(hp).connect(lp);
+    if (tape) node = node.connect(shaper(ctx, 'tape')); // a fita satura e comprime as repetições
+    return { d, out: node, fb };
+  };
+  const lines = stereo ? [line(), line()] : [line()];
+  if (stereo) {
+    const [L, R] = lines;
+    const merge = ctx.createChannelMerger(2);
+    input.connect(L.d);
+    L.out.connect(merge, 0, 0);
+    R.out.connect(merge, 0, 1);
+    L.out.connect(L.fb).connect(R.d); // esquerda → direita
+    R.out.connect(R.fb).connect(L.d); // direita → esquerda
+    merge.connect(output);
+  } else {
+    const [M] = lines;
+    input.connect(M.d);
+    M.out.connect(M.fb).connect(M.d);
+    M.out.connect(output);
+  }
+  // fita: wow (0,5 Hz) e flutter (6 Hz) mexem no tempo do delay → leve oscilação de afinação
+  const wowDepth = ctx.createGain(), flutDepth = ctx.createGain();
+  if (tape) {
+    for (const [f, g] of [[0.5, wowDepth], [6.2, flutDepth]] as const) {
+      const o = ctx.createOscillator();
+      o.frequency.value = f;
+      o.connect(g);
+      for (const l of lines) g.connect(l.d.delayTime);
+      o.start(0);
+      oscs.push(o);
+    }
+  }
+  return {
+    input, output, oscs,
+    set: (time, rep, put) => {
+      const t = 0.06 + time * 0.94;
+      for (const l of lines) {
+        put(l.d.delayTime, t);
+        put(l.fb.gain, rep * (tape ? 0.95 : 0.85)); // a saturação da fita segura o laço, então dá para ir mais longe
+      }
+      if (tape) {
+        put(wowDepth.gain, 0.0012 + t * 0.002);
+        put(flutDepth.gain, 0.00015);
+      }
+    },
+  };
+}
+
+/** Pedal de delay: troca de tipo/saída monta outra rede e faz crossfade com a anterior. */
+function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
+  inp.connect(out); // sinal seco
+  wet.connect(out);
+  let cur: { net: DelayNet; g: GainNode } | null = null;
+  let key = '';
+  const fx: Fx = {
+    in: inp,
+    out,
+    oscs: [],
+    set: ([time, rep, mix, kind, side]) => {
+      put(wet.gain, mix);
+      const tape = (kind ?? 0) < 0.5;
+      const stereo = (side ?? 0) >= 0.5;
+      const k = `${tape}|${stereo}`;
+      if (k !== key) {
+        key = k;
+        const net = delayNet(ctx, tape, stereo);
+        const g = ctx.createGain();
+        inp.connect(net.input);
+        net.output.connect(g).connect(wet);
+        const old = cur;
+        cur = { net, g };
+        fx.oscs = net.oscs;
+        if (old) {
+          // as repetições antigas morrem aos poucos enquanto as novas entram
+          const now = ctx.currentTime;
+          inp.disconnect(old.net.input);
+          g.gain.setValueAtTime(0, now);
+          g.gain.linearRampToValueAtTime(1, now + 0.05);
+          old.g.gain.setTargetAtTime(0, now + 0.05, 0.25);
+          setTimeout(() => {
+            old.g.disconnect();
+            old.net.output.disconnect();
+            for (const o of old.net.oscs) o.stop();
+          }, 2500);
+        }
+      }
+      cur!.net.set(time, rep, put);
+    },
+  };
+  return fx;
+}
+
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
     case 'reverb': return reverbPedal(ctx, put);
@@ -592,23 +714,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
         },
       };
     }
-    default: {
-      // delay
-      const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain(), fb = ctx.createGain();
-      const d = ctx.createDelay(2);
-      const damp = filter(ctx, 'lowpass', 2800);
-      inp.connect(out);
-      inp.connect(d).connect(damp).connect(fb).connect(d);
-      damp.connect(wet).connect(out);
-      return {
-        in: inp, out,
-        set: ([time, rep, mix]) => {
-          put(d.delayTime, 0.06 + time * 0.94);
-          put(fb.gain, rep * 0.85);
-          put(wet.gain, mix);
-        },
-      };
-    }
+    default: return delayPedal(ctx, put);
   }
 }
 
