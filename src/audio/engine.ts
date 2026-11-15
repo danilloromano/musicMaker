@@ -33,7 +33,7 @@ class Engine {
   ensure() {
     if (!this.ready) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
-      this.mixer = new Mixer(this.ctx, this.ctx.destination);
+      this.mixer = new Mixer(this.ctx, this.ctx.destination, (id) => this.buffers.get(id));
       const p = useStore.getState().project;
       this.bpm = p.bpm;
       this.mixer.sync(p.tracks, p.bpm);
@@ -451,6 +451,29 @@ class Engine {
     useStore.getState().addRegion({ trackId: target.id, name, start: beat, length: 0, bufferId, offset: 0, duration: buf.duration });
   }
 
+  /** Carrega um arquivo de impulse response (.wav de caixa/microfone) para o rack da trilha. */
+  async loadIr(file: File, trackId: string) {
+    this.ensure();
+    let buf: AudioBuffer;
+    try {
+      buf = await this.ctx.decodeAudioData(await file.arrayBuffer());
+    } catch {
+      alert(`Não foi possível ler "${file.name}" como impulse response.`);
+      return;
+    }
+    if (buf.duration > 3) {
+      alert(`"${file.name}" tem ${buf.duration.toFixed(1)} s: isso parece uma música, não um impulse response. IRs de caixa costumam ter menos de 1 segundo.`);
+      return;
+    }
+    const s = useStore.getState();
+    const t = s.project.tracks.find((x) => x.id === trackId);
+    if (!t?.amp) return;
+    const irId = uid();
+    this.buffers.set(irId, buf);
+    void saveBufferLocal(irId, buf);
+    s.updateTrack(trackId, { amp: { ...t.amp, cab: 'user', irId, irName: file.name.replace(/\.[^.]+$/, '') } });
+  }
+
   // ---------- Prévia de loops ----------
 
   stopPreview() {
@@ -536,7 +559,7 @@ export async function renderWav(project: Project, buffers: Map<string, AudioBuff
   const spb = 60 / project.bpm;
   const seconds = projectEnd(project) * spb + 3;
   const off = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
-  const mixer = new Mixer(off, off.destination);
+  const mixer = new Mixer(off, off.destination, (id) => buffers.get(id));
   mixer.sync(project.tracks, project.bpm);
   const tracks = new Map(project.tracks.map((t) => [t.id, t]));
 

@@ -17,6 +17,14 @@ function fromRaw(r: RawBuffer): AudioBuffer {
   return b;
 }
 
+/** Áudios que o projeto usa: das regiões e dos IRs carregados nos racks de amp. */
+function bufferIds(p: Project): string[] {
+  const ids = new Set<string>();
+  for (const r of p.regions) if (r.bufferId) ids.add(r.bufferId);
+  for (const t of p.tracks) if (t.amp?.irId) ids.add(t.amp.irId);
+  return [...ids];
+}
+
 // ---------- IndexedDB ----------
 
 let dbp: Promise<IDBDatabase> | null = null;
@@ -44,13 +52,11 @@ export const saveProjectLocal = (p: Project) => idb('readwrite', (s) => s.put(p,
 export async function loadLocal(buffers: Map<string, AudioBuffer>): Promise<Project | null> {
   const p = (await idb('readonly', (s) => s.get('project'))) as Project | undefined;
   if (!p) return null;
-  const used = new Set<string>();
-  for (const r of p.regions) {
-    if (!r.bufferId) continue;
-    used.add(r.bufferId);
-    if (buffers.has(r.bufferId)) continue;
-    const raw = (await idb('readonly', (s) => s.get(`buf:${r.bufferId}`))) as RawBuffer | undefined;
-    if (raw) buffers.set(r.bufferId, fromRaw(raw));
+  const used = new Set(bufferIds(p));
+  for (const id of used) {
+    if (buffers.has(id)) continue;
+    const raw = (await idb('readonly', (s) => s.get(`buf:${id}`))) as RawBuffer | undefined;
+    if (raw) buffers.set(id, fromRaw(raw));
   }
   p.regions = p.regions.filter((r) => !r.bufferId || buffers.has(r.bufferId));
   // limpa áudios que nenhuma região usa mais
@@ -87,12 +93,11 @@ export function download(blob: Blob, filename: string) {
 
 export function saveProjectFile(p: Project, buffers: Map<string, AudioBuffer>) {
   const out: Record<string, { sampleRate: number; channels: string[] }> = {};
-  for (const r of p.regions) {
-    const b = r.bufferId && buffers.get(r.bufferId);
-    if (r.bufferId && b && !out[r.bufferId]) {
-      const raw = toRaw(b);
-      out[r.bufferId] = { sampleRate: raw.sampleRate, channels: raw.channels.map(f32ToB64) };
-    }
+  for (const id of bufferIds(p)) {
+    const b = buffers.get(id);
+    if (!b) continue;
+    const raw = toRaw(b);
+    out[id] = { sampleRate: raw.sampleRate, channels: raw.channels.map(f32ToB64) };
   }
   const json = JSON.stringify({ version: 1, project: p, buffers: out });
   download(new Blob([json], { type: 'application/json' }), `${p.name || 'projeto'}.mmproj`);

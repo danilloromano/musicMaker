@@ -41,6 +41,24 @@ export interface TrackFx {
   comp: boolean;
 }
 
+/** Um pedal da pedaleira: ligado/desligado e os botões (0..1, na ordem definida em amp.ts). */
+export interface PedalState {
+  on: boolean;
+  p: number[];
+}
+
+/** Rack de guitarra/baixo: pedais → amplificador → caixa (impulse response) → pedais de modulação/tempo. */
+export interface AmpRig {
+  on: boolean;
+  pedals: Record<string, PedalState>;
+  amp: string; // modelo do amplificador ('none' = sem amp)
+  knobs: { gain: number; bass: number; mid: number; treble: number; presence: number; master: number }; // 0..1
+  cab: string; // caixa: 'none', uma das embutidas ou 'user' (IR carregado pelo usuário)
+  cabMix: number; // 0..1
+  irId?: string; // buffer do IR do usuário
+  irName?: string;
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -52,6 +70,7 @@ export interface Track {
   solo: boolean;
   color: string;
   fx: TrackFx;
+  amp?: AmpRig;
 }
 
 export interface Project {

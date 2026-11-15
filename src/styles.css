@@ -301,3 +301,39 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .transport { flex-wrap: wrap; row-gap: 6px; }
 .proj-name { flex: 0 1 150px; min-width: 80px; }
 @media (max-width: 1500px) { .transport .lbl { display: none; } }
+
+/* ---------- Amp & Pedais ---------- */
+.rack { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.rack-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); flex: none; min-width: 0; }
+.rack-bar .presets { flex-wrap: nowrap; overflow-x: auto; min-width: 0; }
+.rack-bar .presets button { white-space: nowrap; padding: 3px 9px; font-size: 12px; }
+.rack-bar .hint { flex: 0 1 auto; min-width: 0; }
+.rack-lbl { color: var(--dim); font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+.rack-chain { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 18px; padding: 12px 14px; overflow-x: auto; }
+.rack.off .rack-chain { opacity: 0.35; filter: grayscale(1); }
+.rack-chain > * { position: relative; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--panel2); border: 1px solid var(--line); }
+/* setinha do cabo entre um bloco e o próximo */
+.rack-chain > * + *::before {
+  content: ''; position: absolute; left: -15px; top: 50%; width: 12px; height: 1px; background: #55575d;
+}
+.rack-chain h5 { margin: 0; font: 700 10px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--text); }
+
+.pedal { width: 128px; border-top: 3px solid var(--c) !important; }
+.pedal h5 { color: var(--c); }
+.pedal .foot { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 6px; font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
+.led { width: 7px; height: 7px; border-radius: 50%; background: #3a3b3f; display: inline-block; }
+.pedal.on { background: color-mix(in srgb, var(--c) 9%, var(--panel2)); border-color: color-mix(in srgb, var(--c) 45%, var(--line)); }
+.pedal.on .foot { color: var(--text); }
+.pedal.on .led { background: var(--c); box-shadow: 0 0 6px var(--c); }
+
+.knob { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 6px; color: var(--dim); font-size: 11px; }
+.knob input { grid-column: 1 / -1; width: 100%; }
+.knob span { grid-row: 1; }
+.knob b { grid-row: 1; grid-column: 2; font: 500 11px var(--mono); color: var(--text); }
+
+.amp-head { width: 340px; border-top: 3px solid var(--accent) !important; background: #1b1c1f !important; }
+.amp-head select, .cab select { padding: 4px 6px; color: var(--text); }
+.amp-head small, .cab small { color: var(--dim); font-size: 11px; }
+.amp-knobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 12px; }
+.cab { width: 190px; border-top: 3px solid #8a8a82 !important; }
+.cab .warn { color: var(--solo); }

@@ -47,7 +47,7 @@ export function savePref(key: string, value: string) {
   }
 }
 
-export type BottomTab = 'editor' | 'fx' | 'loops' | 'keys' | 'audio';
+export type BottomTab = 'editor' | 'fx' | 'amp' | 'loops' | 'keys' | 'audio';
 
 interface State {
   project: Project;
