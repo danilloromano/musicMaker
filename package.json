@@ -11,20 +11,42 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "start": "npm run build && electron .",
-    "dist": "npm run build && electron-builder --win"
+    "dist": "npm run build && electron-builder --win",
+    "icon": "node scripts/make-icon.cjs"
   },
   "build": {
     "appId": "com.musicmaker.app",
     "productName": "MusicMaker",
     "files": [
       "dist/**",
-      "electron/**"
+      "electron/**",
+      "build/icon.ico"
     ],
     "directories": {
       "output": "release"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MusicMaker",
+      "runAfterFinish": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "include": "build/installer.nsh",
+      "language": "1046",
+      "installerLanguages": [
+        "pt_BR"
+      ],
+      "artifactName": "MusicMaker-Setup-${version}.exe",
+      "uninstallDisplayName": "MusicMaker"
     }
   },
   "dependencies": {

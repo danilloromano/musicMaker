@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { engine, renderWav } from '../audio/engine';
 import { download, openProjectFile, saveProjectFile } from '../audio/persist';
-import { defaultProject, useStore } from '../store';
+import { defaultProject, savePref, useStore } from '../store';
 import { BEATS_PER_BAR } from '../types';
 import { Meter, useRaf } from './ui';
 
@@ -16,6 +16,8 @@ export function Transport() {
   const ppb = useStore((s) => s.ppb);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
+  const countIn = useStore((s) => s.countIn);
+  const loopOn = useStore((s) => !!s.project.loop?.on);
   const st = useStore.getState();
 
   const lcd = useRef<HTMLSpanElement>(null);
@@ -69,18 +71,6 @@ export function Transport() {
         onChange={(e) => st.update((p) => ({ ...p, name: e.target.value }), false)}
       />
       <div className="group">
-        <button title="Novo projeto" onClick={newProject}>Novo</button>
-        <button title="Abrir projeto (.mmproj)" onClick={() => openRef.current?.click()}>Abrir</button>
-        <button title="Salvar projeto em arquivo (Ctrl+S)" onClick={saveProject}>Salvar</button>
-      </div>
-      <div className="group">
-        <button title="Desfazer (Ctrl+Z)" disabled={!canUndo} onClick={st.undo}>↶</button>
-        <button title="Refazer (Ctrl+Y)" disabled={!canRedo} onClick={st.redo}>↷</button>
-      </div>
-
-      <div className="spacer" />
-
-      <div className="group">
         <button className="tbtn" title="Voltar ao início (Enter)" onClick={() => engine.seek(0)}>⏮</button>
         <button className={`tbtn ${playing ? 'on' : ''}`} title="Tocar / parar (Espaço)" onClick={() => engine.toggle()}>
           {playing ? '■' : '▶'}
@@ -109,14 +99,40 @@ export function Transport() {
       </div>
       <button
         className={project.metronome ? 'toggle on' : 'toggle'}
-        title="Metrônomo"
+        title="Metrônomo (clique em cada tempo)"
         onClick={() => st.update((p) => ({ ...p, metronome: !p.metronome }), false)}
       >
-        Metrônomo
+        <span className="ico">♩</span><span className="lbl"> Metrônomo</span>
+      </button>
+      <button
+        className={countIn ? 'toggle on' : 'toggle'}
+        title="Contar 1 compasso no metrônomo antes de começar a gravar"
+        onClick={() => {
+          st.set({ countIn: !countIn });
+          savePref('mm.countIn', countIn ? '0' : '1');
+        }}
+      >
+        <span className="ico">①</span><span className="lbl"> Contagem</span>
+      </button>
+      <button
+        className={loopOn ? 'toggle on' : 'toggle'}
+        title="Tocar um trecho em repetição (C). Ajuste o trecho arrastando a faixa na régua; Shift + arrastar na régua marca um novo trecho."
+        onClick={() => st.toggleLoop(engine.getBeat())}
+      >
+        <span className="ico">🔁</span><span className="lbl"> Loop</span>
       </button>
 
       <div className="spacer" />
 
+      <div className="group">
+        <button title="Desfazer (Ctrl+Z)" disabled={!canUndo} onClick={st.undo}>↶</button>
+        <button title="Refazer (Ctrl+Y)" disabled={!canRedo} onClick={st.redo}>↷</button>
+      </div>
+      <div className="group">
+        <button title="Novo projeto" onClick={newProject}>Novo</button>
+        <button title="Abrir projeto (.mmproj)" onClick={() => openRef.current?.click()}>Abrir</button>
+        <button title="Salvar projeto em arquivo (Ctrl+S)" onClick={saveProject}>Salvar</button>
+      </div>
       <label className="zoom" title="Zoom da timeline">
         🔍
         <input type="range" min={8} max={80} step={1} value={ppb} onChange={(e) => st.set({ ppb: +e.target.value })} />

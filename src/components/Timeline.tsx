@@ -15,6 +15,7 @@ export function Timeline() {
   const selectedTrackId = useStore((s) => s.selectedTrackId);
   const selectedRegionId = useStore((s) => s.selectedRegionId);
   const recording = useStore((s) => s.recording);
+  const loop = project.loop;
   const st = useStore.getState();
 
   const bars = Math.max(32, Math.ceil(projectEnd(project) / BEATS_PER_BAR) + 8);
@@ -46,9 +47,42 @@ export function Timeline() {
     return Math.max(0, (clientX - sc.getBoundingClientRect().left - HEADER_W + sc.scrollLeft) / ppb);
   };
 
+  /**
+   * Arrasta o trecho de loop: 'move' (a faixa inteira), 'start'/'end' (as bordas) ou 'new' (Shift + arrastar na régua).
+   * Encaixa nos tempos; com Alt, em 1/4 de tempo.
+   */
+  const dragLoop = (e: React.PointerEvent, mode: 'move' | 'start' | 'end' | 'new') => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const l0 = useStore.getState().project.loop ?? { start: 0, end: 0, on: true };
+    const b0 = beatAt(e.clientX);
+    const move = (ev: { clientX: number; altKey: boolean }) => {
+      const snap = (b: number) => Math.max(0, Math.round(b / (ev.altKey ? 0.25 : 1)) * (ev.altKey ? 0.25 : 1));
+      const b = beatAt(ev.clientX);
+      let { start, end } = l0;
+      if (mode === 'move') {
+        const d = snap(l0.start + b - b0) - l0.start;
+        start += d;
+        end += d;
+      } else if (mode === 'start') start = Math.min(snap(b), end - 1);
+      else if (mode === 'end') end = Math.max(snap(b), start + 1);
+      else {
+        const a = snap(b0), z = snap(b);
+        if (Math.abs(z - a) < 1) return;
+        [start, end] = a < z ? [a, z] : [z, a];
+      }
+      st.update((p) => ({ ...p, loop: { start, end, on: mode === 'new' ? true : l0.on } }), false);
+    };
+    const pm = (ev: PointerEvent) => move(ev);
+    window.addEventListener('pointermove', pm);
+    window.addEventListener('pointerup', () => window.removeEventListener('pointermove', pm), { once: true });
+  };
+
   /** Arrasta o cursor de reprodução (pela régua ou pela própria linha). Alt = movimento livre, sem grade. */
   const scrub = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    if (e.shiftKey) return dragLoop(e, 'new');
     e.preventDefault();
     e.stopPropagation();
     document.body.classList.add('scrubbing');
@@ -141,9 +175,22 @@ export function Timeline() {
             {Array.from({ length: Math.ceil(bars / barStep) }, (_, i) => (
               <span key={i} style={{ left: i * barStep * BEATS_PER_BAR * ppb }}>{i * barStep + 1}</span>
             ))}
+            {loop && (
+              <div
+                className={`loop-band ${loop.on ? 'on' : ''}`}
+                style={{ left: loop.start * ppb, width: (loop.end - loop.start) * ppb }}
+                title="Trecho do loop: arraste para mover, pelas bordas para ajustar. Duplo clique liga/desliga."
+                onPointerDown={(e) => dragLoop(e, 'move')}
+                onDoubleClick={() => st.toggleLoop(engine.getBeat())}
+              >
+                <div className="loop-edge l" onPointerDown={(e) => dragLoop(e, 'start')} />
+                <div className="loop-edge r" onPointerDown={(e) => dragLoop(e, 'end')} />
+              </div>
+            )}
             <div className="ruler-head" ref={rulerHead} />
           </div>
         </div>
+        {loop?.on && <div className="loop-shade" style={{ left: HEADER_W + loop.start * ppb, width: (loop.end - loop.start) * ppb }} />}
 
         {project.tracks.map((t) => (
           <div className={`row ${t.id === selectedTrackId ? 'sel' : ''}`} key={t.id}>
@@ -160,15 +207,19 @@ export function Timeline() {
                 <div
                   key={r.id}
                   className={`region ${r.id === selectedRegionId ? 'sel' : ''}`}
-                  style={{ left: r.start * ppb, width: Math.max(6, regionLen(r, project.bpm) * ppb), background: t.color }}
+                  style={{ left: r.start * ppb, width: Math.max(6, regionLen(r, project.bpm) * ppb), ['--c' as string]: t.color }}
                   onPointerDown={(e) => dragRegion(e, r, 'move')}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     openEditor(r);
                   }}
                 >
-                  <div className="region-name">{r.name}</div>
-                  {r.notes ? <NotePreview region={r} /> : <Wave region={r} />}
+                  <div className="region-name">
+                    {r.name}
+                    {r.gain !== undefined && r.gain !== 1 && <small> · {gainDb(r.gain)}</small>}
+                  </div>
+                  {r.notes ? <NotePreview region={r} /> : <Wave region={r} color={t.color} />}
+                  {r.bufferId && <Fades region={r} pxPerSec={(ppb * project.bpm) / 60} />}
                   <div className="region-grip" onPointerDown={(e) => dragRegion(e, r, 'resize')} />
                 </div>
               ))}
@@ -265,7 +316,66 @@ function NotePreview({ region: r }: { region: Region }) {
   );
 }
 
-function Wave({ region: r }: { region: Region }) {
+export const gainDb = (g: number) => {
+  const db = 20 * Math.log10(Math.max(g, 1e-4));
+  return `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
+};
+
+/** Curvas de fade sobre a região e as alças (cantos de cima) para arrastá-las. Duplo clique na alça zera o fade. */
+function Fades({ region: r, pxPerSec }: { region: Region; pxPerSec: number }) {
+  const st = useStore.getState();
+  const d = r.duration ?? 0;
+  const fi = r.fadeIn ?? 0;
+  const fo = r.fadeOut ?? 0;
+  const drag = (e: React.PointerEvent, which: 'fadeIn' | 'fadeOut') => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const x0 = e.clientX;
+    const v0 = which === 'fadeIn' ? fi : fo;
+    let snapped = false;
+    const move = (ev: PointerEvent) => {
+      const dx = (ev.clientX - x0) / pxPerSec;
+      if (!snapped) {
+        st.snapshot();
+        snapped = true;
+      }
+      st.updateRegion(r.id, { [which]: Math.max(0, v0 + (which === 'fadeIn' ? dx : -dx)) }, false);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', () => window.removeEventListener('pointermove', move), { once: true });
+  };
+  const reset = (e: React.MouseEvent, which: 'fadeIn' | 'fadeOut') => {
+    e.stopPropagation();
+    st.updateRegion(r.id, { [which]: 0 });
+  };
+  return (
+    <>
+      {d > 0 && (fi > 0 || fo > 0) && (
+        <svg className="fade-svg" viewBox={`0 0 ${d} 1`} preserveAspectRatio="none">
+          {fi > 0 && <path d={`M0 0 L${fi} 0 L0 1 Z`} />}
+          {fo > 0 && <path d={`M${d - fo} 0 L${d} 0 L${d} 1 Z`} />}
+        </svg>
+      )}
+      <div
+        className="fade-h"
+        style={{ left: Math.min(fi * pxPerSec, d * pxPerSec - 9) }}
+        title="Fade-in: arraste para a direita (duplo clique zera)"
+        onPointerDown={(e) => drag(e, 'fadeIn')}
+        onDoubleClick={(e) => reset(e, 'fadeIn')}
+      />
+      <div
+        className="fade-h"
+        style={{ right: Math.min(fo * pxPerSec, d * pxPerSec - 9) }}
+        title="Fade-out: arraste para a esquerda (duplo clique zera)"
+        onPointerDown={(e) => drag(e, 'fadeOut')}
+        onDoubleClick={(e) => reset(e, 'fadeOut')}
+      />
+    </>
+  );
+}
+
+function Wave({ region: r, color }: { region: Region; color: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -275,7 +385,7 @@ function Wave({ region: r }: { region: Region }) {
     const h = (cv.height = 48);
     const g = cv.getContext('2d')!;
     g.clearRect(0, 0, w, h);
-    g.fillStyle = 'rgba(0,0,0,0.55)';
+    g.fillStyle = color;
     const data = buf.getChannelData(0);
     const from = Math.floor((r.offset ?? 0) * buf.sampleRate);
     const count = Math.floor((r.duration ?? 0) * buf.sampleRate);
@@ -291,6 +401,6 @@ function Wave({ region: r }: { region: Region }) {
       }
       g.fillRect(x, (1 - max) * (h / 2), 1, Math.max(1, (max - min) * (h / 2)));
     }
-  }, [r.bufferId, r.offset, r.duration]);
+  }, [r.bufferId, r.offset, r.duration, color]);
   return <canvas className="region-body" ref={ref} />;
 }

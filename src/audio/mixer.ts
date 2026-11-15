@@ -1,4 +1,5 @@
 import { Track } from '../types';
+import { Rig, rigKey } from './amp';
 
 export interface Strip {
   input: GainNode;
@@ -11,6 +12,7 @@ export interface Strip {
   revSend: GainNode;
   dlySend: GainNode;
   analyser: AnalyserNode;
+  rig?: Rig;
 }
 
 function impulse(ctx: BaseAudioContext, seconds: number): AudioBuffer {
@@ -31,7 +33,11 @@ export class Mixer {
   private reverb: ConvolverNode;
   private delay: DelayNode;
 
-  constructor(public ctx: BaseAudioContext, dest: AudioNode) {
+  constructor(
+    public ctx: BaseAudioContext,
+    dest: AudioNode,
+    private getBuffer: (id: string) => AudioBuffer | undefined = () => undefined,
+  ) {
     this.master = ctx.createGain();
     this.master.gain.value = 0.75;
     const limiter = ctx.createDynamicsCompressor();
@@ -88,6 +94,25 @@ export class Mixer {
     return { input, low, mid, high, comp, gain, pan, revSend, dlySend, analyser };
   }
 
+  /** Rack de amp/pedais entre a entrada do canal e o EQ: remonta só quando muda amp, caixa ou IR. */
+  private syncRig(s: Strip, t: Track) {
+    const want = t.amp?.on ? t.amp : null;
+    const ir = want?.cab === 'user' && want.irId ? this.getBuffer(want.irId) : undefined;
+    const key = want && rigKey(want, !!ir);
+    if (s.rig && s.rig.key !== key) {
+      s.input.disconnect();
+      s.rig.dispose();
+      s.rig = undefined;
+      s.input.connect(s.low);
+    }
+    if (want && key && !s.rig) {
+      s.rig = new Rig(this.ctx, key, want, ir);
+      s.input.disconnect();
+      s.input.connect(s.rig.input);
+      s.rig.output.connect(s.low);
+    } else if (want) s.rig?.update(want);
+  }
+
   /** Cria/remove/atualiza os canais para refletir as trilhas do projeto. */
   sync(tracks: Track[], bpm: number) {
     const now = this.ctx.currentTime;
@@ -98,6 +123,7 @@ export class Mixer {
       if (!tracks.some((t) => t.id === id)) {
         s.pan.disconnect();
         s.input.disconnect();
+        s.rig?.dispose();
         this.strips.delete(id);
       }
     }
@@ -118,6 +144,7 @@ export class Mixer {
       s.comp.ratio.value = t.fx.comp ? 4 : 1;
       smooth(s.revSend.gain, t.fx.reverb);
       smooth(s.dlySend.gain, t.fx.delay);
+      this.syncRig(s, t);
     }
   }
 }

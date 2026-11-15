@@ -7,7 +7,8 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 640,
-    backgroundColor: '#17181c',
+    backgroundColor: '#0f1011',
+    icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     autoHideMenuBar: true,
     title: 'MusicMaker',
     webPreferences: {

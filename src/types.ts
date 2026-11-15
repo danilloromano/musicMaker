@@ -20,6 +20,16 @@ export interface Region {
   bufferId?: string;
   offset?: number; // segundos dentro do buffer
   duration?: number; // segundos
+  gain?: number; // volume da região (linear, 1 = original)
+  fadeIn?: number; // segundos
+  fadeOut?: number; // segundos
+}
+
+/** Trecho tocado em repetição (em tempos). */
+export interface LoopRange {
+  start: number;
+  end: number;
+  on: boolean;
 }
 
 export interface TrackFx {
@@ -29,6 +39,24 @@ export interface TrackFx {
   reverb: number; // 0..1
   delay: number; // 0..1
   comp: boolean;
+}
+
+/** Um pedal da pedaleira: ligado/desligado e os botões (0..1, na ordem definida em amp.ts). */
+export interface PedalState {
+  on: boolean;
+  p: number[];
+}
+
+/** Rack de guitarra/baixo: pedais → amplificador → caixa (impulse response) → pedais de modulação/tempo. */
+export interface AmpRig {
+  on: boolean;
+  pedals: Record<string, PedalState>;
+  amp: string; // modelo do amplificador ('none' = sem amp)
+  knobs: { gain: number; bass: number; mid: number; treble: number; presence: number; master: number }; // 0..1
+  cab: string; // caixa: 'none', uma das embutidas ou 'user' (IR carregado pelo usuário)
+  cabMix: number; // 0..1
+  irId?: string; // buffer do IR do usuário
+  irName?: string;
 }
 
 export interface Track {
@@ -42,12 +70,14 @@ export interface Track {
   solo: boolean;
   color: string;
   fx: TrackFx;
+  amp?: AmpRig;
 }
 
 export interface Project {
   name: string;
   bpm: number;
   metronome: boolean;
+  loop?: LoopRange;
   tracks: Track[];
   regions: Region[];
 }
@@ -59,6 +89,26 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 /** Comprimento da região em tempos (áudio depende do BPM). */
 export function regionLen(r: Region, bpm: number): number {
   return r.bufferId ? ((r.duration ?? 0) * bpm) / 60 : r.length;
+}
+
+/** Mantém os fades de uma região de áudio dentro da duração dela (sem se sobreporem). */
+export function fitFades(r: Region): Region {
+  if (!r.bufferId) return r;
+  const d = r.duration ?? 0;
+  const fadeIn = Math.min(Math.max(0, r.fadeIn ?? 0), d);
+  const fadeOut = Math.min(Math.max(0, r.fadeOut ?? 0), d - fadeIn);
+  return fadeIn === (r.fadeIn ?? 0) && fadeOut === (r.fadeOut ?? 0) ? r : { ...r, fadeIn, fadeOut };
+}
+
+/** Volume (linear) de uma região de áudio a `x` segundos do início dela, com ganho e fades. */
+export function regionGainAt(r: Region, x: number): number {
+  const d = r.duration ?? 0;
+  const fi = r.fadeIn ?? 0;
+  const fo = r.fadeOut ?? 0;
+  let g = r.gain ?? 1;
+  if (fi > 0 && x < fi) g *= Math.max(0, x / fi);
+  if (fo > 0 && x > d - fo) g *= Math.max(0, (d - x) / fo);
+  return g;
 }
 
 export function projectEnd(p: Project): number {
