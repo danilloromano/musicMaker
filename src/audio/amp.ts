@@ -14,6 +14,7 @@ export interface PedalDef {
 }
 
 export const PEDALS: PedalDef[] = [
+  { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
   { id: 'comp', name: 'Compressor', color: '#38d9c0', post: false, params: [{ label: 'Sustain', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
   { id: 'boost', name: 'Booster', color: '#e0b48a', post: false, params: [{ label: 'Ganho', def: 0.4 }, { label: 'Brilho', def: 0.3 }] },
   { id: 'od', name: 'Overdrive', color: '#9be15d', post: false, params: [{ label: 'Drive', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
@@ -94,8 +95,8 @@ export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
   { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2] }) },
   { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { od: [0.3, 0.45, 0.6] }) },
   { name: 'Rock Clássico', make: () => preset('crunch', { gain: 0.6, mid: 0.55, treble: 0.55 }, '4x12') },
-  { name: 'Hard Rock', make: () => preset('crunch', { gain: 0.8, bass: 0.55, mid: 0.6 }, '4x12', { boost: [0.5, 0.2] }) },
-  { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { od: [0, 0.6, 0.9] }) },
+  { name: 'Hard Rock', make: () => preset('crunch', { gain: 0.8, bass: 0.55, mid: 0.6 }, '4x12', { gate: [0.45, 0.25], boost: [0.5, 0.2] }) },
+  { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { gate: [0.55, 0.2], od: [0, 0.6, 0.9] }) },
   { name: 'Fuzz Anos 60', make: () => preset('clean', { gain: 0.3 }, '2x12', { fuzz: [0.7, 0.45, 0.5] }) },
   { name: 'Lo-fi', make: () => preset('crunch', { gain: 0.4, bass: 0.3 }, '1x8', { tremolo: [0.35, 0.35] }) },
   { name: 'Baixo', make: () => preset('bass', { gain: 0.25, bass: 0.55 }, '8x10b', { comp: [0.5, 0.5] }) },
@@ -234,8 +235,68 @@ function drivePedal(ctx: BaseAudioContext, put: Put, hp: number, range: number, 
   };
 }
 
+/**
+ * Noise gate com nós nativos (funciona igual ao vivo e na exportação):
+ * sinal → ganho (põe o limiar em ~0,4) → retificador |x| → passa-baixas (envelope) → curva de abertura.
+ * A abertura segue por dois caminhos: um rápido (ataque, ~3,5 ms medido em simulação) e um lento (release). A soma, limitada
+ * em 1, se comporta como o maior dos dois: abre na hora da palhetada e fecha devagar quando a nota morre.
+ */
+function noiseGate(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain();
+  const vca = ctx.createGain();
+  vca.gain.value = 0;
+  const pre = ctx.createGain();
+  const rect = ctx.createWaveShaper();
+  rect.curve = gateCurve('rect');
+  const env = filter(ctx, 'lowpass', 150);
+  const open = ctx.createWaveShaper();
+  open.curve = gateCurve('open');
+  const fast = filter(ctx, 'lowpass', 1 / (2 * Math.PI * 0.001));
+  const rel = filter(ctx, 'lowpass', 5);
+  const sum = ctx.createGain();
+  const clamp = ctx.createWaveShaper();
+  clamp.curve = gateCurve('clamp');
+  inp.connect(vca);
+  inp.connect(pre).connect(rect).connect(env).connect(open);
+  open.connect(fast).connect(sum);
+  open.connect(rel).connect(sum);
+  sum.connect(clamp).connect(vca.gain);
+  return {
+    in: inp,
+    out: vca,
+    set: ([thr, release]) => {
+      const db = -80 + thr * 50; // -80 dB a -30 dB
+      put(pre.gain, 0.4 / 10 ** (db / 20));
+      put(rel.frequency, 1 / (2 * Math.PI * (0.02 + release * 0.38))); // release de 20 ms a 400 ms
+    },
+  };
+}
+
+const gateCurves = new Map<string, Float32Array<ArrayBuffer>>();
+function gateCurve(kind: 'rect' | 'open' | 'clamp') {
+  let c = gateCurves.get(kind);
+  if (!c) {
+    const n = 2048;
+    c = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;
+      if (kind === 'rect') c[i] = Math.abs(x);
+      // entradas acima de 1 ficam no último ponto da curva (1): é o limite da soma dos caminhos
+      else if (kind === 'clamp') c[i] = Math.max(0, x);
+      else {
+        // fechado abaixo de 0,15, aberto acima de 0,35, transição suave no meio
+        const t = Math.min(1, Math.max(0, (x - 0.15) / 0.2));
+        c[i] = t * t * (3 - 2 * t);
+      }
+    }
+    gateCurves.set(kind, c);
+  }
+  return c;
+}
+
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
+    case 'gate': return noiseGate(ctx, put);
     case 'comp': {
       const c = ctx.createDynamicsCompressor();
       c.knee.value = 6;

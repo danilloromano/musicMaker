@@ -37,12 +37,14 @@ export function AmpRack({ track: t }: { track: Track }) {
   }
 
   const set = (patch: Partial<AmpRig>, history = false) => st.updateTrack(t.id, { amp: { ...rig, ...patch } }, history);
-  const setPedal = (id: string, patch: { on?: boolean; p?: number[] }, history = false) =>
-    set({ pedals: { ...rig.pedals, [id]: { ...rig.pedals[id], ...patch } } }, history);
+  // projetos antigos podem não ter um pedal novo (ex.: noise gate): parte dos valores padrão
+  const pedalState = (d: PedalDef) => rig.pedals[d.id] ?? { on: false, p: d.params.map((x) => x.def) };
+  const setPedal = (d: PedalDef, patch: { on?: boolean; p?: number[] }, history = false) =>
+    set({ pedals: { ...rig.pedals, [d.id]: { ...pedalState(d), ...patch } } }, history);
   const amp = AMPS.find((a) => a.id === rig.amp);
 
   const pedal = (d: PedalDef) => {
-    const ps = rig.pedals[d.id] ?? { on: false, p: d.params.map((x) => x.def) };
+    const ps = pedalState(d);
     return (
       <div key={d.id} className={`pedal ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: d.color }}>
         <h5>{d.name}</h5>
@@ -52,10 +54,10 @@ export function AmpRack({ track: t }: { track: Track }) {
             label={x.label}
             value={ps.p[i] ?? x.def}
             reset={x.def}
-            onChange={(v) => setPedal(d.id, { p: ps.p.map((o, j) => (j === i ? v : o)) })}
+            onChange={(v) => setPedal(d, { p: ps.p.map((o, j) => (j === i ? v : o)) })}
           />
         ))}
-        <button className="foot" title="Liga/desliga o pedal" onClick={() => setPedal(d.id, { on: !ps.on }, true)}>
+        <button className="foot" title="Liga/desliga o pedal" onClick={() => setPedal(d, { on: !ps.on }, true)}>
           <i className="led" /> {ps.on ? 'Ligado' : 'Desligado'}
         </button>
       </div>
