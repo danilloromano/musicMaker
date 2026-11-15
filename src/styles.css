@@ -229,7 +229,7 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .keys { position: sticky; left: 0; z-index: 3; width: 56px; flex: none; }
 .keys.drums { width: 130px; }
 .key {
-  background: #e9eaee; color: #333; font-size: 10px; line-height: 15px; text-align: right; padding-right: 4px;
+  background: #e9eaee; color: #333; font-size: 10px; line-height: 21px; text-align: right; padding-right: 4px;
   border-bottom: 1px solid #b9bcc4; border-right: 1px solid #000; cursor: pointer;
 }
 .key.black { background: #23252b; border-bottom-color: #23252b; }
@@ -242,11 +242,18 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
     linear-gradient(to right, var(--grid-beat) 1px, transparent 1px),
     linear-gradient(to right, var(--grid-sub) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-sub) 1px, transparent 1px);
-  background-size: calc(var(--ppb) * 4) 100%, var(--ppb) 100%, calc(var(--ppb) / 4) 100%, 100% 16px;
+  background-size: calc(var(--ppb) * 4) 100%, var(--ppb) 100%, calc(var(--ppb) / 4) 100%, 100% 22px;
   border-right: 2px solid var(--grid-bar);
 }
 .grid-black { position: absolute; left: 0; right: 0; background: rgba(0, 0, 0, 0.22); pointer-events: none; }
-.note { position: absolute; border-radius: 1px; border: 1px solid rgba(0, 0, 0, 0.6); cursor: grab; }
+/* nota = caixinha na cor da trilha com a forma de onda do som dentro */
+.note {
+  position: absolute; border-radius: 2px; cursor: grab; overflow: hidden;
+  background: color-mix(in srgb, var(--c) 22%, #1d2024); border: 1px solid color-mix(in srgb, var(--c) 75%, transparent);
+}
+.note-wave { display: block; pointer-events: none; }
+.note-hull { fill: color-mix(in srgb, var(--c) 28%, transparent); }
+.note-line { fill: none; stroke: var(--c); stroke-width: 1.1; stroke-linejoin: round; filter: drop-shadow(0 0 1.5px var(--c)); }
 .note.sel { outline: 2px solid #fff; outline-offset: -1px; }
 
 /* Teclado na tela */

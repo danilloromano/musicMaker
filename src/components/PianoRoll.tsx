@@ -3,10 +3,11 @@ import { engine } from '../audio/engine';
 import { DRUM_MAP } from '../audio/instruments';
 import { useStore } from '../store';
 import { Note, uid } from '../types';
+import { NoteWave } from './NoteWave';
 import { useRaf } from './ui';
 
 const PPB = 80; // pixels por tempo
-const RH = 16; // altura da linha
+const RH = 22; // altura da linha (alta o bastante para a onda de cada nota ficar legível)
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const HI = 96, LO = 24;
 
@@ -14,6 +15,7 @@ export function PianoRoll() {
   const region = useStore((s) => s.project.regions.find((r) => r.id === s.editingRegionId));
   const track = useStore((s) => s.project.tracks.find((t) => t.id === region?.trackId));
   const selectedNoteId = useStore((s) => s.selectedNoteId);
+  const bpm = useStore((s) => s.project.bpm);
   const st = useStore.getState();
   const [snap, setSnap] = useState(0.25);
   const lastDur = useRef<number | null>(null);
@@ -186,15 +188,26 @@ export function PianoRoll() {
                     top: row * RH + 1,
                     width: Math.max(5, n.duration * PPB - 1),
                     height: RH - 2,
-                    background: track.color,
-                    opacity: 0.45 + (0.55 * n.velocity) / 127,
+                    ['--c' as string]: track.color,
                   }}
+                  title={`Força ${n.velocity}`}
                   onPointerDown={(e) => dragNote(e, n)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     removeNote(n.id);
                   }}
-                />
+                >
+                  <NoteWave
+                    width={Math.max(5, n.duration * PPB - 1) - 2}
+                    height={RH - 4}
+                    pitch={n.pitch}
+                    velocity={n.velocity}
+                    secPerPx={60 / bpm / PPB}
+                    instrument={track.instrument}
+                    drums={isDrums}
+                    seed={n.pitch * 7.13 + n.start * 3.7}
+                  />
+                </div>
               );
             })}
             <div className="playhead" ref={head} />
