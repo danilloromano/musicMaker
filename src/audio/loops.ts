@@ -71,6 +71,63 @@ export const LOOPS: Loop[] = [
   drums('d-funk', 'Funk Sincopado', 2, { 36: 'x..x..x...x..x..', 38: '....x..o.o..x..o', 42: 'xoxoxoxoxoxoxoxo' }),
   drums('d-trap', 'Trap', 2, { 36: 'x......x..x.....', 39: '........x.......', 42: 'x.x.x.xxx.x.xxxx' }),
   drums('d-dembow', 'Dembow', 2, { 36: 'x...x...x...x...', 38: '...x..x....x..x.', 42: 'x.x.x.x.x.x.x.x.' }),
+  // Funk americano (estilo anos 70): bumbo sincopado, caixa com ghost notes, chimbal em semicolcheias.
+  drums('d-funk-us', 'Funk Americano', 2, {
+    36: 'x.x.......x..x..x.x....x..x..x..',
+    38: '....x..o.o.ox..o....x..o.o..x..o',
+    42: 'xoxoxoxoxoxoxo.oxoxoxoxoxoxoxoxo',
+    46: '..............x.................',
+  }),
+  drums('d-funk-break', 'Funk Breakbeat', 2, {
+    36: 'x.x.......x.....x.x.......x..x..',
+    38: '....x..o.o..x..o....x..o.o..x...',
+    42: 'x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.',
+    46: '...............................x',
+  }),
+  // Hardcore: andamento rápido, "skank beat" (bumbo/caixa alternados) e d-beat.
+  drums('d-hc-skank', 'Hardcore Skank', 2, {
+    36: 'x...x...x...x...',
+    38: '..x...x...x...x.',
+    42: 'x.x.x.x.x.x.x.x.',
+    49: 'x...............................',
+  }),
+  drums('d-hc-dbeat', 'Hardcore D-Beat', 2, {
+    36: 'x.....x.x.....x.',
+    38: '....x.......x...',
+    46: 'x.x.x.x.x.x.x.x.',
+    49: 'x...............................',
+  }),
+  // Hard rock: groove pesado com chimbal aberto e prato no início.
+  drums('d-hardrock', 'Hard Rock', 2, {
+    36: 'x.....x.x.x.....x.....x.x...x.x.',
+    38: '....x.......x.......x.......x...',
+    46: 'x.o.x.o.x.o.x.o.x.o.x.o.x.o.x.o.',
+    49: 'x...............................',
+  }),
+  drums('d-hardrock-half', 'Hard Rock Meio Tempo', 2, {
+    36: 'x.....x...x.....x.....x.x.......',
+    38: '........x...............x.....oo',
+    46: 'x...x...x...x...x...x...x...x...',
+    49: 'x...............................',
+  }),
+  // Reggae: one drop (bumbo + caixa só no 3º tempo), rockers e steppers.
+  drums('d-reggae-onedrop', 'Reggae One Drop', 2, {
+    36: '........x.......',
+    38: '........x.......',
+    42: 'x.ox.oxox.ox.oxo',
+    46: '..............x.',
+  }),
+  drums('d-reggae-rockers', 'Reggae Rockers', 2, {
+    36: 'x.......x.......',
+    38: '........x.......',
+    42: '..x...x...x...x.',
+    56: '..............................o.',
+  }),
+  drums('d-reggae-steppers', 'Reggae Steppers', 2, {
+    36: 'x...x...x...x...',
+    38: '........x.......',
+    42: 'x.ox.oxox.ox.oxo',
+  }),
   drums('d-toms', 'Virada de Tons', 1, { 36: 'x...x...x...x...', 50: 'xx.x............', 48: '....xx.x........', 45: '........xx.xx.x.', 49: '...............x' }),
 
   mel('b-pop', 'Baixo Pop', 'Baixo', 'bass', 4, eighths([36, 31, 33, 29])),
