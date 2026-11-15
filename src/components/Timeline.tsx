@@ -207,7 +207,7 @@ export function Timeline() {
                 <div
                   key={r.id}
                   className={`region ${r.id === selectedRegionId ? 'sel' : ''}`}
-                  style={{ left: r.start * ppb, width: Math.max(6, regionLen(r, project.bpm) * ppb), background: t.color }}
+                  style={{ left: r.start * ppb, width: Math.max(6, regionLen(r, project.bpm) * ppb), ['--c' as string]: t.color }}
                   onPointerDown={(e) => dragRegion(e, r, 'move')}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
@@ -218,7 +218,7 @@ export function Timeline() {
                     {r.name}
                     {r.gain !== undefined && r.gain !== 1 && <small> · {gainDb(r.gain)}</small>}
                   </div>
-                  {r.notes ? <NotePreview region={r} /> : <Wave region={r} />}
+                  {r.notes ? <NotePreview region={r} /> : <Wave region={r} color={t.color} />}
                   {r.bufferId && <Fades region={r} pxPerSec={(ppb * project.bpm) / 60} />}
                   <div className="region-grip" onPointerDown={(e) => dragRegion(e, r, 'resize')} />
                 </div>
@@ -375,7 +375,7 @@ function Fades({ region: r, pxPerSec }: { region: Region; pxPerSec: number }) {
   );
 }
 
-function Wave({ region: r }: { region: Region }) {
+function Wave({ region: r, color }: { region: Region; color: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -385,7 +385,7 @@ function Wave({ region: r }: { region: Region }) {
     const h = (cv.height = 48);
     const g = cv.getContext('2d')!;
     g.clearRect(0, 0, w, h);
-    g.fillStyle = 'rgba(0,0,0,0.55)';
+    g.fillStyle = color;
     const data = buf.getChannelData(0);
     const from = Math.floor((r.offset ?? 0) * buf.sampleRate);
     const count = Math.floor((r.duration ?? 0) * buf.sampleRate);
@@ -401,6 +401,6 @@ function Wave({ region: r }: { region: Region }) {
       }
       g.fillRect(x, (1 - max) * (h / 2), 1, Math.max(1, (max - min) * (h / 2)));
     }
-  }, [r.bufferId, r.offset, r.duration]);
+  }, [r.bufferId, r.offset, r.duration, color]);
   return <canvas className="region-body" ref={ref} />;
 }

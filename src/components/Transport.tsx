@@ -71,18 +71,6 @@ export function Transport() {
         onChange={(e) => st.update((p) => ({ ...p, name: e.target.value }), false)}
       />
       <div className="group">
-        <button title="Novo projeto" onClick={newProject}>Novo</button>
-        <button title="Abrir projeto (.mmproj)" onClick={() => openRef.current?.click()}>Abrir</button>
-        <button title="Salvar projeto em arquivo (Ctrl+S)" onClick={saveProject}>Salvar</button>
-      </div>
-      <div className="group">
-        <button title="Desfazer (Ctrl+Z)" disabled={!canUndo} onClick={st.undo}>↶</button>
-        <button title="Refazer (Ctrl+Y)" disabled={!canRedo} onClick={st.redo}>↷</button>
-      </div>
-
-      <div className="spacer" />
-
-      <div className="group">
         <button className="tbtn" title="Voltar ao início (Enter)" onClick={() => engine.seek(0)}>⏮</button>
         <button className={`tbtn ${playing ? 'on' : ''}`} title="Tocar / parar (Espaço)" onClick={() => engine.toggle()}>
           {playing ? '■' : '▶'}
@@ -136,6 +124,15 @@ export function Transport() {
 
       <div className="spacer" />
 
+      <div className="group">
+        <button title="Desfazer (Ctrl+Z)" disabled={!canUndo} onClick={st.undo}>↶</button>
+        <button title="Refazer (Ctrl+Y)" disabled={!canRedo} onClick={st.redo}>↷</button>
+      </div>
+      <div className="group">
+        <button title="Novo projeto" onClick={newProject}>Novo</button>
+        <button title="Abrir projeto (.mmproj)" onClick={() => openRef.current?.click()}>Abrir</button>
+        <button title="Salvar projeto em arquivo (Ctrl+S)" onClick={saveProject}>Salvar</button>
+      </div>
       <label className="zoom" title="Zoom da timeline">
         🔍
         <input type="range" min={8} max={80} step={1} value={ppb} onChange={(e) => st.set({ ppb: +e.target.value })} />

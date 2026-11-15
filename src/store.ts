@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { BEATS_PER_BAR, Note, Project, Region, Track, TrackKind, fitFades, regionLen, uid } from './types';
 
-const COLORS = ['#4f9cf9', '#f97362', '#5fd08a', '#f5c04e', '#b584f5', '#4fd1c5', '#f58fc3', '#a3b1c2'];
+const COLORS = ['#ff7a45', '#38d9c0', '#b98cff', '#ffcf3f', '#ff5fa2', '#5fb4ff', '#9be15d', '#e0b48a'];
 
 const KIND_NAME: Record<TrackKind, string> = { instrument: 'Instrumento', drums: 'Bateria', audio: 'Áudio' };
 

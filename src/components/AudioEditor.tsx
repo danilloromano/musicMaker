@@ -143,7 +143,7 @@ export function AudioEditor() {
     const mid = top + (H - top) / 2;
     const amp = ((H - top) / 2 - 4 * dpr) * vzoom;
 
-    g.fillStyle = '#1b1d22';
+    g.fillStyle = '#121315';
     g.fillRect(0, 0, W, H);
 
     // grade de tempos e compassos
@@ -152,7 +152,7 @@ export function AudioEditor() {
       const b0 = Math.floor(view0 / spb);
       const b1 = Math.ceil((view0 + W / dpps) / spb);
       for (let b = b0; b <= b1; b++) {
-        g.fillStyle = b % 4 === 0 ? '#3a3f4b' : '#2a2d35';
+        g.fillStyle = b % 4 === 0 ? '#36383d' : '#222326';
         g.fillRect(Math.round(xOf(b * spb)), top, 1, H - top);
       }
     }
@@ -251,20 +251,20 @@ export function AudioEditor() {
     if (sel && sel.trackId === track.id) {
       const a = xOf(sel.start * spb);
       const b = xOf(sel.end * spb);
-      g.fillStyle = 'rgba(79,156,249,0.28)';
+      g.fillStyle = 'rgba(200,240,49,0.18)';
       g.fillRect(a, top, b - a, H - top);
-      g.fillStyle = 'rgba(79,156,249,0.9)';
+      g.fillStyle = 'rgba(200,240,49,0.9)';
       g.fillRect(Math.round(a), top, dpr, H - top);
       g.fillRect(Math.round(b), top, dpr, H - top);
     }
 
     // régua em segundos
-    g.fillStyle = '#22242a';
+    g.fillStyle = '#17181a';
     g.fillRect(0, 0, W, top);
-    g.fillStyle = '#000';
+    g.fillStyle = '#2e3034';
     g.fillRect(0, top - 1, W, 1);
     const step = STEPS.find((s) => s * pps >= 80) ?? 600;
-    g.fillStyle = '#8b92a0';
+    g.fillStyle = '#8a8a82';
     g.font = `${10 * dpr}px system-ui, sans-serif`;
     for (let t = Math.floor(view0 / step) * step; t <= view0 + W / dpps; t += step) {
       const x = Math.round(xOf(t));
