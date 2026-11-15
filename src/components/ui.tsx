@@ -104,7 +104,7 @@ export function Spectrum({ trackId, color, points, labels = false, className = '
         const x = Math.round(fx(f) * w);
         g.fillStyle = 'rgba(255,255,255,0.08)';
         g.fillRect(x, 0, 1, ph);
-        g.fillStyle = '#8d93a0';
+        g.fillStyle = '#a7aaa6';
         g.fillText(text, x, h - 2 * dpr);
       }
     }

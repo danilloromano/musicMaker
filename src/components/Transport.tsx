@@ -3,6 +3,8 @@ import { engine, renderWav } from '../audio/engine';
 import { download, openProjectFile, saveProjectFile } from '../audio/persist';
 import { defaultProject, savePref, useStore } from '../store';
 import { BEATS_PER_BAR } from '../types';
+import { importFiles } from '../audio/importFiles';
+import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
 
 export function saveProject() {
@@ -48,7 +50,8 @@ export function Transport() {
   const exportWav = async () => {
     setExporting(true);
     try {
-      download(await renderWav(project, engine.buffers), `${project.name || 'musica'}.wav`);
+      const wav = await withLoading('Exportando WAV…', (progress) => renderWav(project, engine.buffers, progress));
+      download(wav, `${project.name || 'musica'}.wav`);
     } catch (e) {
       alert('Falha ao exportar: ' + (e as Error).message);
     }
@@ -158,7 +161,7 @@ export function Transport() {
           if (!f) return;
           try {
             engine.stop();
-            st.loadProject(await openProjectFile(f, engine.buffers));
+            st.loadProject(await withLoading('Abrindo projeto…', () => openProjectFile(f, engine.buffers)));
             engine.seek(0);
           } catch (err) {
             alert('Não foi possível abrir o projeto: ' + (err as Error).message);
@@ -174,7 +177,8 @@ export function Transport() {
         onChange={async (e) => {
           const files = [...(e.target.files ?? [])];
           e.target.value = '';
-          for (const f of files) await engine.importAudio(f, Math.floor(engine.getBeat() / BEATS_PER_BAR) * BEATS_PER_BAR);
+          const at = Math.floor(engine.getBeat() / BEATS_PER_BAR) * BEATS_PER_BAR;
+          await importFiles(files, at);
         }}
       />
     </header>

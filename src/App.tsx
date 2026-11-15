@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { engine } from './audio/engine';
 import { BottomPanel, KEY_ROW } from './components/BottomPanel';
+import { LoadingOverlay } from './components/ShipProgress';
 import { Timeline } from './components/Timeline';
 import { Transport, saveProject } from './components/Transport';
 import { useStore } from './store';
@@ -135,6 +136,7 @@ export function App() {
       <Transport />
       <Timeline />
       <BottomPanel />
+      <LoadingOverlay />
     </div>
   );
 }

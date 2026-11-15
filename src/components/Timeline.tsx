@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { engine } from '../audio/engine';
+import { importFiles } from '../audio/importFiles';
 import { LOOPS, addLoop } from '../audio/loops';
 import { PRESETS } from '../audio/instruments';
 import { useStore } from '../store';
@@ -144,7 +145,7 @@ export function Timeline() {
     const loop = LOOPS.find((l) => l.id === e.dataTransfer.getData(LOOP_MIME));
     if (loop) return addLoop(loop, beat, trackId);
     void (async () => {
-      for (const f of [...e.dataTransfer.files]) await engine.importAudio(f, beat, trackId);
+      await importFiles([...e.dataTransfer.files], beat, trackId);
     })();
   };
   const allowDrop = (e: React.DragEvent) => e.preventDefault();

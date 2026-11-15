@@ -4,6 +4,7 @@ import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments
 import { Mixer } from './mixer';
 import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
+import { withLoading } from '../loading';
 
 const LOOKAHEAD = 0.12; // s de antecedência com que as notas são agendadas
 const TICK_MS = 25;
@@ -456,7 +457,7 @@ class Engine {
     this.ensure();
     let buf: AudioBuffer;
     try {
-      buf = await this.ctx.decodeAudioData(await file.arrayBuffer());
+      buf = await withLoading('Carregando impulse response…', async () => this.ctx.decodeAudioData(await file.arrayBuffer()));
     } catch {
       alert(`Não foi possível ler "${file.name}" como impulse response.`);
       return;
@@ -554,7 +555,8 @@ export function playAudioRegion(
 
 // ---------- Exportação (mixdown offline para WAV) ----------
 
-export async function renderWav(project: Project, buffers: Map<string, AudioBuffer>): Promise<Blob> {
+/** Mixdown offline. `onProgress` (0..1) é chamado durante a renderização: ela pausa em pontos fixos para medir. */
+export async function renderWav(project: Project, buffers: Map<string, AudioBuffer>, onProgress?: (p: number) => void): Promise<Blob> {
   const sr = 44100;
   const spb = 60 / project.bpm;
   const seconds = projectEnd(project) * spb + 3;
@@ -575,7 +577,20 @@ export async function renderWav(project: Project, buffers: Map<string, AudioBuff
       triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, (r.start + n.start) * spb, dur, n.velocity);
     }
   }
-  return encodeWav(await off.startRendering());
+  if (onProgress) {
+    const steps = 40;
+    for (let k = 1; k < steps; k++) {
+      // a renderização pausa em cada ponto, avisa o progresso e continua (o último 5% fica para gerar o arquivo)
+      void off.suspend((seconds * k) / steps).then(() => {
+        onProgress((k / steps) * 0.95);
+        void off.resume();
+      });
+    }
+  }
+  const rendered = await off.startRendering();
+  const wav = encodeWav(rendered);
+  onProgress?.(1);
+  return wav;
 }
 
 function encodeWav(buf: AudioBuffer): Blob {

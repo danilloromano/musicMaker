@@ -143,7 +143,7 @@ export function AudioEditor() {
     const mid = top + (H - top) / 2;
     const amp = ((H - top) / 2 - 4 * dpr) * vzoom;
 
-    g.fillStyle = '#121315';
+    g.fillStyle = '#25282c';
     g.fillRect(0, 0, W, H);
 
     // grade de tempos e compassos
@@ -152,7 +152,7 @@ export function AudioEditor() {
       const b0 = Math.floor(view0 / spb);
       const b1 = Math.ceil((view0 + W / dpps) / spb);
       for (let b = b0; b <= b1; b++) {
-        g.fillStyle = b % 4 === 0 ? '#36383d' : '#222326';
+        g.fillStyle = b % 4 === 0 ? '#4b4f56' : '#34373c';
         g.fillRect(Math.round(xOf(b * spb)), top, 1, H - top);
       }
     }
@@ -215,7 +215,7 @@ export function AudioEditor() {
       }
 
       // bordas e nome
-      g.fillStyle = sel ? track.color : '#5a606d';
+      g.fillStyle = sel ? track.color : '#6a6f77';
       g.fillRect(Math.round(xOf(rs)), top, Math.max(1, dpr * (sel ? 2 : 1)), H - top);
       g.fillRect(Math.round(xOf(rs + dur)) - 1, top, Math.max(1, dpr * (sel ? 2 : 1)), H - top);
       g.fillStyle = '#d7dbe3';
@@ -259,12 +259,12 @@ export function AudioEditor() {
     }
 
     // régua em segundos
-    g.fillStyle = '#17181a';
+    g.fillStyle = '#33363b';
     g.fillRect(0, 0, W, top);
-    g.fillStyle = '#2e3034';
+    g.fillStyle = '#4a4e55';
     g.fillRect(0, top - 1, W, 1);
     const step = STEPS.find((s) => s * pps >= 80) ?? 600;
-    g.fillStyle = '#8a8a82';
+    g.fillStyle = '#a7aaa6';
     g.font = `${10 * dpr}px system-ui, sans-serif`;
     for (let t = Math.floor(view0 / step) * step; t <= view0 + W / dpps; t += step) {
       const x = Math.round(xOf(t));

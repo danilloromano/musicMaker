@@ -65,6 +65,8 @@ interface State {
   bottomTab: BottomTab;
   countIn: boolean; // conta 1 compasso no metrônomo antes de gravar
   octave: number;
+  /** carregamento em andamento (mostra a nave): progresso 0..1, ou null quando não dá para medir */
+  loading: { label: string; progress: number | null } | null;
 
   // entrada de áudio (preferências do computador, não fazem parte do projeto)
   inputs: { id: string; label: string }[];
@@ -115,6 +117,7 @@ export const useStore = create<State>((set, get) => ({
   bottomTab: 'loops',
   countIn: pref('mm.countIn') === '1',
   octave: 4,
+  loading: null,
 
   inputs: [],
   inputDeviceId: pref('mm.inputDevice') || null,
