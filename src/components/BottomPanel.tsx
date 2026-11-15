@@ -1,5 +1,5 @@
 import { engine } from '../audio/engine';
-import { DRUM_MAP, PRESETS } from '../audio/instruments';
+import { DRUM_MAP, presetGroups } from '../audio/instruments';
 import { LOOPS, Loop, addLoop } from '../audio/loops';
 import { BottomTab, savePref, useStore } from '../store';
 import { Track, TrackFx } from '../types';
@@ -99,13 +99,18 @@ function Fx({ track: t }: { track: Track }) {
       {t.kind === 'instrument' && (
         <div className="fx-card wide">
           <h4>Instrumento</h4>
-          <div className="presets">
-            {Object.entries(PRESETS).map(([id, p]) => (
-              <button key={id} className={t.instrument === id ? 'on' : ''} onClick={() => st.updateTrack(t.id, { instrument: id })}>
-                {p.name}
-              </button>
-            ))}
-          </div>
+          {presetGroups().map((g) => (
+            <div key={g.group} className="preset-group">
+              <small>{g.group}</small>
+              <div className="presets">
+                {g.items.map(([id, p]) => (
+                  <button key={id} className={t.instrument === id ? 'on' : ''} onClick={() => st.updateTrack(t.id, { instrument: id })}>
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
       {FX.map((f) => (

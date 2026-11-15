@@ -19,8 +19,12 @@ const WAVES: Record<string, (p: number) => number> = {
 function timbre(preset: SynthPreset, x: number) {
   let sum = 0, total = 0;
   for (const o of preset.oscs) {
-    const fn = WAVES[o.type] ?? WAVES.sine;
-    sum += o.gain * fn(frac(x * 2 ** o.octave + o.detune / 1200));
+    const ph = frac(x * 2 ** o.octave + o.detune / 1200);
+    // receita de harmônicos: soma das senoides (normalizada pelo total, como o PeriodicWave)
+    const v = o.partials
+      ? o.partials.reduce((acc, a, i) => acc + a * Math.sin(TAU * (i + 1) * ph), 0) / o.partials.reduce((acc, a) => acc + a, 0)
+      : (WAVES[o.type] ?? WAVES.sine)(ph);
+    sum += o.gain * v;
     total += o.gain;
   }
   return total ? sum / total : 0;

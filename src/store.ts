@@ -10,7 +10,7 @@ export function newTrack(kind: TrackKind, index: number, patch: Partial<Track> =
     id: uid(),
     name: `${KIND_NAME[kind]} ${index + 1}`,
     kind,
-    instrument: kind === 'instrument' ? 'epiano' : kind,
+    instrument: kind === 'instrument' ? 'grand' : kind,
     volume: 0.8,
     pan: 0,
     mute: false,

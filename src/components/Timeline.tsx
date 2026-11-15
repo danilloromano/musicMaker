@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { engine } from '../audio/engine';
 import { importFiles } from '../audio/importFiles';
 import { DRUM_STYLES, LOOPS, addLoop, applyDrumStyle } from '../audio/loops';
-import { PRESETS } from '../audio/instruments';
+import { presetGroups } from '../audio/instruments';
 import { useStore } from '../store';
 import { BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
@@ -305,7 +305,11 @@ function TrackHeader({ track: t }: { track: Track }) {
               e.currentTarget.blur();
             }}
           >
-            {Object.entries(PRESETS).map(([id, p]) => <option key={id} value={id}>{p.name}</option>)}
+            {presetGroups().map((g) => (
+              <optgroup key={g.group} label={g.group}>
+                {g.items.map(([id, p]) => <option key={id} value={id}>{p.name}</option>)}
+              </optgroup>
+            ))}
           </select>
         ) : (
           t.kind === 'drums' ? <DrumStylePicker track={t} /> : <InputButton />
