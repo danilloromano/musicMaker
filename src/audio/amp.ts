@@ -1,6 +1,7 @@
 // Rack de guitarra/baixo: pedais → amplificador → caixa (impulse response) → pedais de modulação e tempo.
 // Tudo roda no canal da trilha, então a gravação continua seca e o timbre pode ser trocado depois (re-amp).
 import { AmpRig } from '../types';
+import { AMPS, AmpModel, ToneStackParts, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from './ampCircuits';
 
 // ---------- Definições ----------
 
@@ -37,26 +38,7 @@ export const PEDALS: PedalDef[] = [
 
 type Curve = 'soft' | 'hard' | 'asym' | 'germ';
 
-interface AmpModel {
-  id: string;
-  name: string;
-  desc: string;
-  hp: number; // corte de graves na entrada (Hz)
-  range1: number; // ganho máximo do 1º estágio
-  range2: number; // ganho máximo do 2º estágio (0 = só um estágio)
-  curve: Curve;
-  lp: number; // filtro entre estágios (Hz)
-  voice: [number, number, number]; // timbre próprio do amp: graves, médios, agudos (dB)
-  out: number;
-}
-
-export const AMPS: AmpModel[] = [
-  { id: 'clean', name: 'Limpo Americano', desc: 'Limpo e brilhante, médios cavados', hp: 70, range1: 5, range2: 0, curve: 'soft', lp: 9000, voice: [1, -3, 2], out: 0.9 },
-  { id: 'jazz', name: 'Jazz Limpo', desc: 'Redondo e quente, sem brilho', hp: 60, range1: 3, range2: 0, curve: 'soft', lp: 5000, voice: [2, 1, -4], out: 1 },
-  { id: 'crunch', name: 'Crunch Britânico', desc: 'Médios na cara, sujeira de válvula', hp: 100, range1: 40, range2: 0, curve: 'soft', lp: 7000, voice: [0, 3, 1], out: 0.35 },
-  { id: 'high', name: 'Alto Ganho', desc: 'Distorção pesada e grave apertado', hp: 140, range1: 30, range2: 25, curve: 'hard', lp: 5500, voice: [3, -4, 2], out: 0.25 },
-  { id: 'bass', name: 'Baixo Valvulado', desc: 'Grave cheio para baixo elétrico', hp: 30, range1: 6, range2: 0, curve: 'soft', lp: 6000, voice: [4, 0, -2], out: 0.8 },
-];
+export { AMPS } from './ampCircuits';
 
 interface CabSpec {
   id: string;
@@ -491,35 +473,114 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   }
 }
 
-function makeAmp(ctx: BaseAudioContext, m: AmpModel, put: Put) {
-  const h = filter(ctx, 'highpass', m.hp);
-  const pre1 = ctx.createGain();
-  const sh1 = shaper(ctx, m.curve);
-  const lp = filter(ctx, 'lowpass', m.lp);
-  let node: AudioNode = h.connect(pre1).connect(sh1).connect(lp);
-  let pre2: GainNode | null = null;
-  if (m.range2) {
-    pre2 = ctx.createGain();
-    node = node.connect(pre2).connect(shaper(ctx, m.curve)).connect(filter(ctx, 'highpass', 30));
+/** Curvas das válvulas (pré e potência), amostradas uma vez. */
+const tubeCurves = new Map<string, Float32Array<ArrayBuffer>>();
+function tubeShaper(ctx: BaseAudioContext, kind: 'triode' | 'power') {
+  let c = tubeCurves.get(kind);
+  if (!c) {
+    const n = 4096, fn = kind === 'triode' ? triode : powerTube;
+    c = new Float32Array(n);
+    for (let i = 0; i < n; i++) c[i] = fn((i / (n - 1)) * 2 - 1);
+    tubeCurves.set(kind, c);
   }
-  const bass = filter(ctx, 'lowshelf', 120);
-  const mid = filter(ctx, 'peaking', 650, 0.7);
-  const treble = filter(ctx, 'highshelf', 3000);
-  const presence = filter(ctx, 'peaking', 5000, 0.9);
-  const master = ctx.createGain();
-  node.connect(bass).connect(mid).connect(treble).connect(presence).connect(master);
-  const db = (v: number) => (v - 0.5) * 24;
+  const s = ctx.createWaveShaper();
+  s.curve = c;
+  s.oversample = '4x';
+  return s;
+}
+
+/**
+ * Tone stack passivo como filtro IIR de 3ª ordem. O IIRFilterNode não aceita trocar os coeficientes,
+ * então cada mudança de botão cria um filtro novo e faz um crossfade curto com o anterior.
+ */
+class ToneStack {
+  input: GainNode;
+  output: GainNode;
+  private cur: { f: IIRFilterNode; g: GainNode } | null = null;
+  private last = '';
+  private makeup: number;
+  constructor(private ctx: BaseAudioContext, private parts: ToneStackParts) {
+    this.input = ctx.createGain();
+    this.output = ctx.createGain();
+    // com os botões no meio, 1 kHz passa com ganho 1 (o circuito passivo real perde uns 20 dB)
+    const z = toneStackZ(parts, 0.5, 0.5, 0.5, ctx.sampleRate);
+    this.makeup = 1 / magnitude(z.b, z.a, 1000, ctx.sampleRate);
+    this.output.gain.value = this.makeup;
+  }
+  set(bass: number, mid: number, treble: number) {
+    const key = `${bass}|${mid}|${treble}`;
+    if (key === this.last) return;
+    this.last = key;
+    const z = toneStackZ(this.parts, bass, mid, treble, this.ctx.sampleRate);
+    const f = this.ctx.createIIRFilter(z.b, z.a);
+    const g = this.ctx.createGain();
+    this.input.connect(f).connect(g).connect(this.output);
+    const old = this.cur;
+    this.cur = { f, g };
+    if (!old) return;
+    const now = this.ctx.currentTime;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(1, now + 0.03);
+    old.g.gain.setValueAtTime(1, now);
+    old.g.gain.linearRampToValueAtTime(0, now + 0.03);
+    setTimeout(() => { old.f.disconnect(); old.g.disconnect(); }, 100);
+  }
+}
+
+/** Um triodo de pré: ganho → curva da válvula → capacitor de acoplamento → corte de agudos (Miller). */
+function triodeStage(ctx: BaseAudioContext, m: AmpModel, gain: number) {
+  const g = ctx.createGain();
+  g.gain.value = gain;
+  const sh = tubeShaper(ctx, 'triode');
+  const hp = highpass1(ctx, m.stageHp);
+  const lp = filter(ctx, 'lowpass', m.stageLp);
+  g.connect(sh).connect(hp).connect(lp);
+  return { in: g, out: lp };
+}
+
+/**
+ * Amplificador: entrada → 1º triodo → [tone stack, se for "early"] → pot de ganho (+ capacitor bright)
+ * → demais triodos → [tone stack, se for "late"] → potência push-pull (master) → presença → saída.
+ */
+function makeAmp(ctx: BaseAudioContext, m: AmpModel, put: Put) {
+  const inHp = highpass1(ctx, m.inHp);
+  const v1 = triodeStage(ctx, m, m.v1);
+  inHp.connect(v1.in);
+  let node: AudioNode = v1.out;
+  const stack = new ToneStack(ctx, m.stack);
+  if (m.stackPos === 'early') {
+    node.connect(stack.input);
+    node = stack.output;
+  }
+  const pot = ctx.createGain();
+  const bright = filter(ctx, 'highshelf', 2500);
+  node = node.connect(pot).connect(bright);
+  for (const g of m.stages) {
+    const st = triodeStage(ctx, m, g);
+    node.connect(st.in);
+    node = st.out;
+  }
+  if (m.stackPos === 'late') {
+    node.connect(stack.input);
+    node = stack.output;
+  }
+  const drive = ctx.createGain();
+  const power = tubeShaper(ctx, 'power');
+  const presence = filter(ctx, 'highshelf', 3500);
+  const out = ctx.createGain();
+  node = node.connect(drive).connect(power).connect(presence);
+  if (m.postLp) node = node.connect(filter(ctx, 'lowpass', m.postLp));
+  node.connect(out);
   return {
-    in: h,
-    out: master,
+    in: inHp,
+    out,
     set: (k: AmpRig['knobs']) => {
-      put(pre1.gain, 1 + k.gain * m.range1);
-      if (pre2) put(pre2.gain, 1 + k.gain * m.range2);
-      put(bass.gain, db(k.bass) + m.voice[0]);
-      put(mid.gain, db(k.mid) + m.voice[1]);
-      put(treble.gain, db(k.treble) + m.voice[2]);
-      put(presence.gain, db(k.presence) / 2);
-      put(master.gain, k.master * 2 * m.out);
+      stack.set(k.bass, k.mid, k.treble);
+      put(pot.gain, gainPot(k.gain));
+      put(bright.gain, m.bright * (1 - k.gain));
+      put(drive.gain, powerDrive(m, k.master));
+      put(presence.gain, (k.presence - 0.5) * 12);
+      put(out.gain, outGain(m, k.gain));
     },
   };
 }
