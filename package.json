@@ -1,6 +1,6 @@
 {
   "name": "musicmaker",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Estúdio de produção musical para Windows",
   "private": true,
   "type": "module",
