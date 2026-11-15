@@ -4,6 +4,7 @@ import { useStore } from '../store';
 import { Region, regionGainAt } from '../types';
 import { gainDb } from './Timeline';
 import { Slider, useRaf } from './ui';
+import { shortcut } from '../platform';
 
 const RULER_H = 20;
 const HANDLE = 10; // alça de fade (px)
@@ -455,7 +456,7 @@ export function AudioEditor() {
       <div className="roll-bar">
         <strong className="roll-name" title={track.name}>{region.name}</strong>
         <div className="aed-group">
-          <button title="Cortar a região no cursor (Ctrl+T)" onClick={split}>✂ Cortar</button>
+          <button title={`Cortar a região no cursor (${shortcut('T')})`} onClick={split}>✂ Cortar</button>
           <button title="Apagar o trecho entre o início da região e o cursor" onClick={trimBefore}>⇤ Apagar antes</button>
           <button title="Apagar o trecho entre o cursor e o fim da região" onClick={trimAfter}>Apagar depois ⇥</button>
           {hasSel ? (

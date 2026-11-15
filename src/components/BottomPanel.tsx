@@ -8,6 +8,7 @@ import { AudioEditor } from './AudioEditor';
 import { PianoRoll } from './PianoRoll';
 import { LOOP_MIME } from './Timeline';
 import { KIND_ICON, Meter, Slider, Spectrum } from './ui';
+import { inputSettingsPath, isMac } from '../platform';
 
 const TABS: [BottomTab, string][] = [
   ['loops', 'Loops'],
@@ -198,8 +199,8 @@ function AudioInput() {
       </div>
       {open && muted && (
         <div className="input-warn">
-          ⚠ Esta entrada está no mudo no Windows, então não chega som nenhum ao app. Tire do mudo pela tecla de microfone do
-          teclado ou em Configurações › Sistema › Som › Entrada (ou escolha outro dispositivo acima).
+          ⚠ Esta entrada está no mudo no {isMac ? 'Mac' : 'Windows'}, então não chega som nenhum ao app. Tire do mudo{' '}
+          {isMac ? 'em ' : ''}{inputSettingsPath()} (ou escolha outro dispositivo acima).
         </div>
       )}
       <small className="input-hint">

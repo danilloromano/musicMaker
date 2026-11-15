@@ -12,7 +12,8 @@
     "build": "tsc --noEmit && vite build",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win",
-    "icon": "node scripts/make-icon.cjs"
+    "icon": "node scripts/make-icon.cjs",
+    "dist:mac": "npm run build && electron-builder --mac"
   },
   "build": {
     "appId": "com.musicmaker.app",
@@ -47,6 +48,28 @@
       ],
       "artifactName": "MusicMaker-Setup-${version}.exe",
       "uninstallDisplayName": "MusicMaker"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon-mac.png",
+      "category": "public.app-category.music",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "artifactName": "MusicMaker-${version}-mac-${arch}.${ext}",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "O MusicMaker usa a entrada de áudio para gravar e monitorar guitarra, baixo, voz ou outro instrumento ligado à sua interface de áudio."
+      }
+    },
+    "dmg": {
+      "title": "MusicMaker ${version}"
     }
   },
   "dependencies": {

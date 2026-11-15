@@ -6,6 +6,7 @@ import { BEATS_PER_BAR } from '../types';
 import { importFiles } from '../audio/importFiles';
 import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
+import { redoShortcut, shortcut } from '../platform';
 
 export function saveProject() {
   saveProjectFile(useStore.getState().project, engine.buffers);
@@ -128,13 +129,13 @@ export function Transport() {
       <div className="spacer" />
 
       <div className="group">
-        <button title="Desfazer (Ctrl+Z)" disabled={!canUndo} onClick={st.undo}>↶</button>
-        <button title="Refazer (Ctrl+Y)" disabled={!canRedo} onClick={st.redo}>↷</button>
+        <button title={`Desfazer (${shortcut('Z')})`} disabled={!canUndo} onClick={st.undo}>↶</button>
+        <button title={`Refazer (${redoShortcut()})`} disabled={!canRedo} onClick={st.redo}>↷</button>
       </div>
       <div className="group">
         <button title="Novo projeto" onClick={newProject}>Novo</button>
         <button title="Abrir projeto (.mmproj)" onClick={() => openRef.current?.click()}>Abrir</button>
-        <button title="Salvar projeto em arquivo (Ctrl+S)" onClick={saveProject}>Salvar</button>
+        <button title={`Salvar projeto em arquivo (${shortcut('S')})`} onClick={saveProject}>Salvar</button>
       </div>
       <label className="zoom" title="Zoom da timeline">
         🔍

@@ -1,0 +1,81 @@
+# Gera os instaladores do Windows (.exe) e do Mac (.dmg).
+# - Em PR para a main: gera e guarda como artefatos (serve de teste de que os dois compilam e o app abre).
+# - Ao publicar uma Release: gera e anexa os instaladores na própria Release.
+name: Instaladores
+
+on:
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            files: release/*.exe
+          - os: macos-latest
+            target: --mac
+            files: release/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Compilar o app
+        run: npm run build
+
+      - name: Gerar o instalador
+        run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          # sem certificado pago: o Mac recebe assinatura ad-hoc (identity "-" no package.json)
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Conferir o app do Mac (permissão do microfone, assinatura e se abre)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          APP="release/mac-arm64/MusicMaker.app"
+          echo "== Info.plist"
+          plutil -extract NSMicrophoneUsageDescription raw "$APP/Contents/Info.plist"
+          echo "== assinatura"
+          codesign --verify --deep --strict "$APP" && echo "assinatura ad-hoc válida"
+          echo "== abrindo o app por 15 s"
+          "$APP/Contents/MacOS/MusicMaker" > app.log 2>&1 &
+          PID=$!
+          sleep 15
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "o app continua aberto depois de 15 s"
+            kill "$PID"
+          else
+            echo "o app fechou sozinho:"; cat app.log; exit 1
+          fi
+
+      - name: Guardar o instalador
+        uses: actions/upload-artifact@v4
+        with:
+          name: instalador-${{ runner.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+      - name: Anexar à Release
+        if: github.event_name == 'release'
+        shell: bash
+        run: gh release upload "${{ github.event.release.tag_name }}" ${{ matrix.files }} --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

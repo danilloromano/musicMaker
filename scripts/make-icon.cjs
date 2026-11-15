@@ -9,8 +9,11 @@ const BG = [0x17, 0x18, 0x1a];
 const LIME = [0x00, 0xd4, 0x55]; // verde neon do app
 const RIM = [0x2e, 0x30, 0x34];
 
-/** Cobertura (0..1) de cada pixel, com 4x4 subamostras para suavizar as bordas. */
-function draw(size) {
+/**
+ * Cobertura (0..1) de cada pixel, com 4x4 subamostras para suavizar as bordas.
+ * `pad` = margem em volta (fração do tamanho): os ícones de Mac têm ~10% de respiro em volta do desenho.
+ */
+function draw(size, pad = 0) {
   const px = new Uint8Array(size * size * 4);
   const ss = 4;
   // tudo em coordenadas de 0 a 1
@@ -29,7 +32,7 @@ function draw(size) {
       let cBg = 0, cRim = 0, cBar = 0;
       for (let sy = 0; sy < ss; sy++) {
         for (let sx = 0; sx < ss; sx++) {
-          const x = (pxl + (sx + 0.5) / ss) / size, y = (py + (sy + 0.5) / ss) / size;
+          const x = ((pxl + (sx + 0.5) / ss) / size - pad) / (1 - 2 * pad), y = ((py + (sy + 0.5) / ss) / size - pad) / (1 - 2 * pad);
           if (!insideRounded(x, y, 0.02, 0.02, 0.98, 0.98, radius)) continue;
           const inner = insideRounded(x, y, 0.05, 0.05, 0.95, 0.95, radius - 0.03);
           if (!inner) { cRim++; continue; }
@@ -90,4 +93,6 @@ const out = path.join(__dirname, '..', 'build');
 fs.mkdirSync(out, { recursive: true });
 fs.writeFileSync(path.join(out, 'icon.ico'), Buffer.concat([header, ...dir, ...images]));
 fs.writeFileSync(path.join(out, 'icon.png'), images[sizes.length - 1]);
-console.log('build/icon.ico e build/icon.png gerados');
+// Mac: 1024 px com a margem do padrão da Apple (o electron-builder converte para .icns)
+fs.writeFileSync(path.join(out, 'icon-mac.png'), png(1024, draw(1024, 0.1)));
+console.log('build/icon.ico, build/icon.png e build/icon-mac.png gerados');

@@ -5,6 +5,7 @@ import { Mixer } from './mixer';
 import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
 import { withLoading } from '../loading';
+import { micSettingsPath } from '../platform';
 
 const LOOKAHEAD = 0.12; // s de antecedência com que as notas são agendadas
 const TICK_MS = 25;
@@ -369,7 +370,7 @@ class Engine {
         err.name === 'OverconstrainedError' || err.name === 'NotFoundError'
           ? 'O dispositivo de entrada escolhido não foi encontrado. Confira se a placa está conectada e escolha outro na lista.'
           : err.name === 'NotAllowedError'
-            ? 'O acesso à entrada de áudio foi bloqueado. Libere o microfone para o app em Configurações do Windows › Privacidade e segurança › Microfone.'
+            ? `O acesso à entrada de áudio foi bloqueado. Libere o microfone para o app em ${micSettingsPath()}.`
             : 'Não foi possível abrir a entrada de áudio: ' + err.message,
       );
       void this.refreshInputs();
@@ -393,7 +394,7 @@ class Engine {
       this.closeInput();
       void this.refreshInputs();
     };
-    // "muted" = o Windows não está entregando sinal (dispositivo no mudo nas configurações de som ou na tecla do notebook)
+    // "muted" = o sistema não está entregando sinal (dispositivo no mudo nas configurações de som ou na tecla do notebook)
     const reportMuted = () => useStore.getState().set({ inputMuted: track.muted });
     track.onmute = track.onunmute = reportMuted;
     s.set({ inputOpen: true, inputChannels: channels, inputMuted: track.muted });
