@@ -251,9 +251,9 @@ export function AudioEditor() {
     if (sel && sel.trackId === track.id) {
       const a = xOf(sel.start * spb);
       const b = xOf(sel.end * spb);
-      g.fillStyle = 'rgba(200,240,49,0.18)';
+      g.fillStyle = 'rgba(0,212,85,0.18)';
       g.fillRect(a, top, b - a, H - top);
-      g.fillStyle = 'rgba(200,240,49,0.9)';
+      g.fillStyle = 'rgba(0,212,85,0.9)';
       g.fillRect(Math.round(a), top, dpr, H - top);
       g.fillRect(Math.round(b), top, dpr, H - top);
     }

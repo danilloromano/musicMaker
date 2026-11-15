@@ -14,8 +14,12 @@
   --faint: #80847f;     /* dicas e textos bem discretos */
   --text: #f0efe9;
   --dim: #a7aaa6;
-  --accent: #c8f031;
-  --accent-ink: #1b2300;
+  /* verde neon */
+  --accent-rgb: 0, 212, 85;
+  --accent: rgb(var(--accent-rgb));
+  --accent-hi: #2bff7a;   /* hover */
+  --accent-ink: #002611;  /* texto sobre o verde */
+  --glow: 0 0 10px rgba(var(--accent-rgb), 0.55);
   --rec: #ff5a36;
   --solo: #ffb020;
   --mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
@@ -44,7 +48,8 @@ button {
 button:hover:not(:disabled) { background: var(--hover); border-color: #5a5f66; }
 button:disabled { opacity: 0.4; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
-button.primary:hover:not(:disabled) { background: #d8ff52; border-color: #d8ff52; }
+button.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); }
+button.primary { box-shadow: var(--glow); }
 button.toggle.on, .presets button.on { background: transparent; border-color: var(--accent); color: var(--accent); }
 select { background: var(--panel2); border: 1px solid var(--line); border-radius: 2px; padding: 2px 4px; }
 input[type='range'] { accent-color: var(--accent); height: 16px; margin: 0; }
@@ -82,7 +87,7 @@ input:not([type]):hover, input:not([type]):focus { border-color: var(--line); ba
 .meter { height: 4px; background: var(--well); border-radius: 0; overflow: hidden; }
 .meter-fill {
   height: 100%; transform-origin: left; transform: scaleX(0);
-  background: linear-gradient(to right, #8fbf1f 0 70%, var(--solo) 85%, var(--rec));
+  background: linear-gradient(to right, #009a3e 0 70%, var(--solo) 85%, var(--rec));
 }
 .meter.master { width: 90px; height: 8px; }
 
@@ -163,7 +168,7 @@ svg.region-body rect { fill: var(--c); }
 /* a linha do cursor pode ser agarrada: área de toque maior que o traço de 1px */
 .arr-inner > .playhead { pointer-events: auto; cursor: ew-resize; }
 .arr-inner > .playhead::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 9px; }
-.arr-inner > .playhead:hover, body.scrubbing .arr-inner > .playhead { box-shadow: 0 0 0 1px rgba(200, 240, 49, 0.45); }
+.arr-inner > .playhead:hover, body.scrubbing .arr-inner > .playhead { box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.45), var(--glow); }
 .ruler-head {
   position: absolute; left: -6px; bottom: 0; width: 13px; height: 11px;
   background: var(--accent); clip-path: polygon(50% 100%, 0 0, 100% 0);
@@ -454,7 +459,7 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
   background-size: 180px 56px; opacity: 0.7; animation-duration: 6s;
 }
 .stars.s2 {
-  background-image: radial-gradient(1.6px 1.6px at 30px 30px, #f6ffd6 99%, transparent), radial-gradient(1.4px 1.4px at 140px 10px, #fff 99%, transparent);
+  background-image: radial-gradient(1.6px 1.6px at 30px 30px, #d6ffe4 99%, transparent), radial-gradient(1.4px 1.4px at 140px 10px, #fff 99%, transparent);
   background-size: 240px 56px; opacity: 0.9; animation-duration: 3.2s;
 }
 @keyframes stars-drift { to { transform: translateX(-50%); } }
@@ -462,7 +467,7 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .shipbar-track { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; background: var(--well); border-radius: 3px; overflow: hidden; }
 .shipbar-fill {
   height: 100%; width: calc(var(--p) * 100%); background: var(--accent); border-radius: 3px;
-  box-shadow: 0 0 10px rgba(200, 240, 49, 0.6); transition: width 0.3s ease-out;
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.75); transition: width 0.3s ease-out;
 }
 /* a nave anda na ponta do preenchimento */
 .shipbar-rider {
@@ -475,7 +480,7 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 @keyframes flame { from { transform: scaleX(0.75); opacity: 0.85; } to { transform: scaleX(1.15); opacity: 1; } }
 .ship-trail {
   position: absolute; right: calc(100% - 14px); top: 12px; width: 90px; height: 4px; border-radius: 2px;
-  background: linear-gradient(90deg, transparent, rgba(200, 240, 49, 0.55));
+  background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.65));
 }
 
 /* progresso desconhecido: a nave cruza a barra sem parar, puxando um pedaço do preenchimento */
@@ -488,3 +493,12 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
   .stars, .ship, .ship-flame { animation: none; }
   .shipbar.indeterminate .shipbar-rider, .shipbar.indeterminate .shipbar-fill { animation-duration: 4s; }
 }
+
+/* brilho de neon nos destaques em verde */
+.transport { box-shadow: 0 3px 12px -6px rgba(var(--accent-rgb), 0.7); }
+.tabs button.on, .lcd small, .loop-cat h4, .fx-card h4, .loading-text b { text-shadow: 0 0 8px rgba(var(--accent-rgb), 0.6); }
+.tabs button.on { box-shadow: 0 6px 10px -8px rgba(var(--accent-rgb), 0.9); }
+button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0 6px rgba(var(--accent-rgb), 0.6); }
+.tbtn.on { box-shadow: var(--glow); }
+.playhead, .aed-head { box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.8); }
+.ruler-head { filter: drop-shadow(0 0 4px rgba(var(--accent-rgb), 0.8)); }

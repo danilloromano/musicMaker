@@ -6,7 +6,7 @@ const path = require('path');
 const zlib = require('zlib');
 
 const BG = [0x17, 0x18, 0x1a];
-const LIME = [0xc8, 0xf0, 0x31];
+const LIME = [0x00, 0xd4, 0x55]; // verde neon do app
 const RIM = [0x2e, 0x30, 0x34];
 
 /** Cobertura (0..1) de cada pixel, com 4x4 subamostras para suavizar as bordas. */

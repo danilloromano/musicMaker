@@ -11,20 +11,20 @@ function Ship() {
           <stop offset="1" stopColor="#7d827c" />
         </linearGradient>
         <linearGradient id="ship-flame" x1="1" x2="0">
-          <stop offset="0" stopColor="#fffbe0" />
-          <stop offset="0.35" stopColor="#c8f031" />
-          <stop offset="1" stopColor="#c8f031" stopOpacity="0" />
+          <stop offset="0" stopColor="#eafff0" />
+          <stop offset="0.35" stopColor="#00d455" />
+          <stop offset="1" stopColor="#00d455" stopOpacity="0" />
         </linearGradient>
       </defs>
       {/* chama */}
       <path className="ship-flame" d="M14 10 Q2 14 14 18 Q8 14 14 10 Z M14 11 L0 14 L14 17 Z" fill="url(#ship-flame)" />
       {/* aletas */}
-      <path d="M22 9 L14 1 L28 8 Z" fill="#c8f031" stroke="#2b2e32" strokeWidth="0.8" />
-      <path d="M22 19 L14 27 L28 20 Z" fill="#c8f031" stroke="#2b2e32" strokeWidth="0.8" />
+      <path d="M22 9 L14 1 L28 8 Z" fill="#00d455" stroke="#2b2e32" strokeWidth="0.8" />
+      <path d="M22 19 L14 27 L28 20 Z" fill="#00d455" stroke="#2b2e32" strokeWidth="0.8" />
       {/* corpo */}
       <path d="M14 9 H40 Q56 9 62 14 Q56 19 40 19 H14 Q12 14 14 9 Z" fill="url(#ship-body)" stroke="#2b2e32" strokeWidth="0.9" />
       {/* faixa e janela */}
-      <rect x="18" y="12.6" width="18" height="2.8" rx="1.4" fill="#c8f031" />
+      <rect x="18" y="12.6" width="18" height="2.8" rx="1.4" fill="#00d455" />
       <ellipse cx="46" cy="13.2" rx="5" ry="2.6" fill="#1f2124" stroke="#2b2e32" strokeWidth="0.6" />
       <ellipse cx="47.4" cy="12.4" rx="1.8" ry="0.9" fill="#9fd7ff" opacity="0.8" />
     </svg>
