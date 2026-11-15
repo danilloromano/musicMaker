@@ -10,6 +10,8 @@ export interface PedalDef {
   color: string;
   /** true = entra depois do amp e da caixa (modulação/tempo), como no loop de efeitos */
   post: boolean;
+  /** descrição curta do timbre, mostrada no pedal */
+  desc?: string;
   params: { label: string; def: number }[];
 }
 
@@ -17,16 +19,23 @@ export const PEDALS: PedalDef[] = [
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
   { id: 'comp', name: 'Compressor', color: '#38d9c0', post: false, params: [{ label: 'Sustain', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
   { id: 'boost', name: 'Booster', color: '#e0b48a', post: false, params: [{ label: 'Ganho', def: 0.4 }, { label: 'Brilho', def: 0.3 }] },
-  { id: 'od', name: 'Overdrive', color: '#9be15d', post: false, params: [{ label: 'Drive', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
-  { id: 'dist', name: 'Distorção', color: '#ffcf3f', post: false, params: [{ label: 'Drive', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
-  { id: 'fuzz', name: 'Fuzz', color: '#ff7a45', post: false, params: [{ label: 'Fuzz', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  // Três overdrives com o comportamento de circuitos clássicos (os nomes na tela são genéricos de propósito):
+  // Dourado ≈ Klon Centaur, Verde ≈ Ibanez TS808, Amarelo ≈ Boss SD-1.
+  { id: 'odGold', name: 'Overdrive Dourado', color: '#d9b44a', post: false, desc: 'Transparente: mistura o limpo com o sujo, mantém os graves',
+    params: [{ label: 'Ganho', def: 0.35 }, { label: 'Agudos', def: 0.5 }, { label: 'Nível', def: 0.55 }] },
+  { id: 'odGreen', name: 'Overdrive Verde', color: '#5cc25a', post: false, desc: 'Médios na frente, grave enxuto, saturação macia',
+    params: [{ label: 'Drive', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'odYellow', name: 'Overdrive Amarelo', color: '#f2d33c', post: false, desc: 'Clipagem assimétrica: mais brilho e harmônicos pares',
+    params: [{ label: 'Drive', def: 0.45 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'dist', name: 'Distorção', color: '#ff9a3c', post: false, params: [{ label: 'Drive', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'fuzz', name: 'Fuzz', color: '#e8564a', post: false, params: [{ label: 'Fuzz', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
   { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true, params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }] },
   { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
   { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
   { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, params: [{ label: 'Tempo', def: 0.35 }, { label: 'Repetições', def: 0.35 }, { label: 'Mix', def: 0.3 }] },
 ];
 
-type Curve = 'soft' | 'hard' | 'asym';
+type Curve = 'soft' | 'hard' | 'asym' | 'germ';
 
 interface AmpModel {
   id: string;
@@ -93,10 +102,10 @@ export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
   { name: 'Limpo Cristalino', make: () => preset('clean', { gain: 0.2, treble: 0.6 }, '2x12', { comp: [0.4, 0.5], chorus: [0.25, 0.4, 0.35] }) },
   { name: 'Funk', make: () => preset('clean', { gain: 0.15, bass: 0.4, mid: 0.45, treble: 0.7, presence: 0.65 }, '1x12', { comp: [0.75, 0.5] }) },
   { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2] }) },
-  { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { od: [0.3, 0.45, 0.6] }) },
+  { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { odGreen: [0.3, 0.45, 0.6] }) },
   { name: 'Rock Clássico', make: () => preset('crunch', { gain: 0.6, mid: 0.55, treble: 0.55 }, '4x12') },
   { name: 'Hard Rock', make: () => preset('crunch', { gain: 0.8, bass: 0.55, mid: 0.6 }, '4x12', { gate: [0.45, 0.25], boost: [0.5, 0.2] }) },
-  { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { gate: [0.55, 0.2], od: [0, 0.6, 0.9] }) },
+  { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { gate: [0.55, 0.2], odGreen: [0, 0.6, 0.9] }) },
   { name: 'Fuzz Anos 60', make: () => preset('clean', { gain: 0.3 }, '2x12', { fuzz: [0.7, 0.45, 0.5] }) },
   { name: 'Lo-fi', make: () => preset('crunch', { gain: 0.4, bass: 0.3 }, '1x8', { tremolo: [0.35, 0.35] }) },
   { name: 'Baixo', make: () => preset('bass', { gain: 0.25, bass: 0.55 }, '8x10b', { comp: [0.5, 0.5] }) },
@@ -173,6 +182,7 @@ function curve(kind: Curve) {
       c[i] =
         kind === 'soft' ? Math.tanh(2.5 * x) / Math.tanh(2.5)
         : kind === 'hard' ? (7 * x) / (1 + 6 * Math.abs(x))
+        : kind === 'germ' ? Math.tanh(1.4 * x) / Math.tanh(1.4) // diodo de germânio: joelho baixo e bem macio
         : x >= 0 ? Math.tanh(3 * x) / Math.tanh(3) : (-0.7 * Math.tanh(-6 * x)) / Math.tanh(6);
     }
     curves.set(kind, c);
@@ -294,6 +304,87 @@ function gateCurve(kind: 'rect' | 'open' | 'clamp') {
   return c;
 }
 
+/** Passa-altas de 1ª ordem (um capacitor + um resistor): gira bem menos a fase que o biquad de 2ª ordem. */
+function highpass1(ctx: BaseAudioContext, fc: number) {
+  const k = Math.tan((Math.PI * fc) / ctx.sampleRate);
+  return ctx.createIIRFilter([1 / (1 + k), -1 / (1 + k)], [1, (k - 1) / (1 + k)]);
+}
+
+/**
+ * Overdrive com os diodos na realimentação do amplificador operacional (estilo TS808 / SD-1):
+ * a saída é o sinal limpo + a parte clipada. Antes de clipar, um passa-altas em ~720 Hz tira os graves
+ * só do caminho sujo, o que dá o "calombo" de médios e deixa o grave limpo e firme.
+ */
+function feedbackDrive(
+  ctx: BaseAudioContext,
+  put: Put,
+  o: { min: number; range: number; curve: Curve; bassCut: number; hump: [number, number]; toneA: number; toneB: number; out: number },
+): Fx {
+  const inp = ctx.createGain();
+  const sum = ctx.createGain();
+  const hp = highpass1(ctx, 720);
+  const pre = ctx.createGain();
+  const sh = shaper(ctx, o.curve);
+  const clipLevel = ctx.createGain();
+  clipLevel.gain.value = 0.5; // os diodos limitam a parte suja a ~0,5 do sinal cheio
+  inp.connect(sum); // caminho limpo
+  inp.connect(hp).connect(pre).connect(sh).connect(clipLevel).connect(sum);
+  const dc = filter(ctx, 'highpass', 30);
+  const bass = filter(ctx, 'lowshelf', 250, 0.7, -o.bassCut); // grave enxuto na saída
+  const hump = filter(ctx, 'peaking', o.hump[0], 0.7, o.hump[1]);
+  const tone = filter(ctx, 'lowpass', 3000, 0.6);
+  const out = ctx.createGain();
+  sum.connect(dc).connect(bass).connect(hump).connect(tone).connect(out);
+  return {
+    in: inp,
+    out,
+    set: ([drive, t, level]) => {
+      put(pre.gain, o.min + drive * o.range);
+      put(tone.frequency, expMap(t, o.toneA, o.toneB));
+      put(out.gain, o.out * level * 2);
+    },
+  };
+}
+
+/**
+ * Overdrive transparente (estilo Klon Centaur): o botão de ganho é duplo, baixa o caminho limpo
+ * (banda cheia, graves intactos) enquanto sobe o caminho sujo (diodos de germânio, bem macios).
+ * Com pouco ganho funciona quase como um boost limpo.
+ */
+function transparentDrive(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain();
+  const clean = ctx.createGain();
+  const hp = highpass1(ctx, 250);
+  const pre = ctx.createGain();
+  const sh = shaper(ctx, 'germ');
+  const lp = filter(ctx, 'lowpass', 6500);
+  const dirty = ctx.createGain();
+  const sum = ctx.createGain();
+  inp.connect(clean).connect(sum);
+  inp.connect(hp).connect(pre).connect(sh).connect(lp).connect(dirty).connect(sum);
+  const mid = filter(ctx, 'peaking', 1000, 0.8, 0.5);
+  const treble = filter(ctx, 'highshelf', 1500);
+  const dc = filter(ctx, 'highpass', 30);
+  const out = ctx.createGain();
+  sum.connect(mid).connect(treble).connect(dc).connect(out);
+  return {
+    in: inp,
+    out,
+    set: ([gain, tr, level]) => {
+      put(clean.gain, 1 - gain * 0.5);
+      put(pre.gain, 1 + gain * 50);
+      put(dirty.gain, 0.1 + gain * 0.35);
+      put(treble.gain, (tr - 0.5) * 20);
+      put(out.gain, 0.5 * level * 2);
+    },
+  };
+}
+
+/** Estado de um pedal no rack; projetos salvos antes da troca do overdrive genérico usam o Verde no lugar dele. */
+export function pedalOf(rig: AmpRig, d: PedalDef) {
+  return rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: d.params.map((x) => x.def) };
+}
+
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
     case 'gate': return noiseGate(ctx, put);
@@ -320,7 +411,12 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
       g.connect(hs);
       return { in: g, out: hs, set: ([gain, bright]) => { put(g.gain, 1 + gain * 7); put(hs.gain, bright * 10); } };
     }
-    case 'od': return drivePedal(ctx, put, 280, 60, 'soft', 900, 7000, 0.35);
+    case 'odGreen':
+      return feedbackDrive(ctx, put, { min: 12, range: 106, curve: 'soft', bassCut: 9, hump: [720, 4], toneA: 800, toneB: 5000, out: 0.37 });
+    case 'odYellow':
+      return feedbackDrive(ctx, put, { min: 10, range: 120, curve: 'asym', bassCut: 6, hump: [900, 2], toneA: 1500, toneB: 9000, out: 0.4 });
+    case 'odGold':
+      return transparentDrive(ctx, put);
     case 'dist': return drivePedal(ctx, put, 120, 250, 'hard', 1200, 9000, 0.25);
     case 'fuzz': return drivePedal(ctx, put, 60, 600, 'asym', 700, 6000, 0.25);
     case 'chorus': {
@@ -509,8 +605,8 @@ export class Rig {
 
   update(rig: AmpRig) {
     for (const p of PEDALS) {
-      const st = rig.pedals[p.id];
-      this.slots.get(p.id)!.set(!!st?.on, st?.p ?? p.params.map((x) => x.def), this.put);
+      const st = pedalOf(rig, p);
+      this.slots.get(p.id)!.set(st.on, st.p, this.put);
     }
     this.amp?.set(rig.knobs);
     if (this.cabDry && this.cabWet) {

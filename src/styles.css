@@ -337,3 +337,4 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .amp-knobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 12px; }
 .cab { width: 190px; border-top: 3px solid #8a8a82 !important; }
 .cab .warn { color: var(--solo); }
+.pedal-desc { color: var(--dim); font-size: 10px; line-height: 1.25; margin-top: -2px; }

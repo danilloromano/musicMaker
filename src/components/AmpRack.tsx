@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { AMPS, CABS, PEDALS, PedalDef, RIG_PRESETS, defaultRig } from '../audio/amp';
+import { AMPS, CABS, PEDALS, PedalDef, RIG_PRESETS, defaultRig, pedalOf } from '../audio/amp';
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
 import { AmpRig, Track } from '../types';
@@ -38,7 +38,7 @@ export function AmpRack({ track: t }: { track: Track }) {
 
   const set = (patch: Partial<AmpRig>, history = false) => st.updateTrack(t.id, { amp: { ...rig, ...patch } }, history);
   // projetos antigos podem não ter um pedal novo (ex.: noise gate): parte dos valores padrão
-  const pedalState = (d: PedalDef) => rig.pedals[d.id] ?? { on: false, p: d.params.map((x) => x.def) };
+  const pedalState = (d: PedalDef) => pedalOf(rig, d);
   const setPedal = (d: PedalDef, patch: { on?: boolean; p?: number[] }, history = false) =>
     set({ pedals: { ...rig.pedals, [d.id]: { ...pedalState(d), ...patch } } }, history);
   const amp = AMPS.find((a) => a.id === rig.amp);
@@ -48,6 +48,7 @@ export function AmpRack({ track: t }: { track: Track }) {
     return (
       <div key={d.id} className={`pedal ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: d.color }}>
         <h5>{d.name}</h5>
+        {d.desc && <small className="pedal-desc">{d.desc}</small>}
         {d.params.map((x, i) => (
           <Knob
             key={x.label}
