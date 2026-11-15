@@ -53,6 +53,30 @@ export function AmpRack({ track: t }: { track: Track }) {
             />
           ))}
         </div>
+        {d.toggle && (() => {
+          const tg = d.toggle;
+          const idx = d.params.length;
+          const side = (ps.p[idx] ?? tg.def) >= 0.5 ? 1 : 0;
+          return (
+            <button
+              className="stomp-toggle"
+              role="switch"
+              aria-checked={side === 1}
+              aria-label={`${tg.titles[side]} (clique para ${tg.titles[1 - side].toLowerCase()})`}
+              title={`${tg.titles[side]} · clique para trocar`}
+              onClick={() => {
+                const p = [...ps.p];
+                while (p.length < idx) p.push(d.params[p.length].def);
+                p[idx] = 1 - side;
+                setPedal(d, { p }, true);
+              }}
+            >
+              <span className={side === 0 ? 'on' : ''}>{tg.labels[0]}</span>
+              <i className={`lever ${side ? 'right' : 'left'}`} />
+              <span className={side === 1 ? 'on' : ''}>{tg.labels[1]}</span>
+            </button>
+          );
+        })()}
         <i className="stomp-led" />
         <span className="stomp-name">{d.name}</span>
         <button

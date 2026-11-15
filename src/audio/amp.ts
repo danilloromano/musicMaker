@@ -14,7 +14,12 @@ export interface PedalDef {
   /** descrição curta do timbre, mostrada no pedal */
   desc?: string;
   params: { label: string; def: number }[];
+  /** chave de dois lados (como as mini-chaves de pedal): guardada como 0/1 logo depois dos botões */
+  toggle?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 };
 }
+
+/** Valores padrão de um pedal: botões e, se houver, a chave. */
+export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ...(d.toggle ? [d.toggle.def] : [])];
 
 export const PEDALS: PedalDef[] = [
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
@@ -34,6 +39,9 @@ export const PEDALS: PedalDef[] = [
   { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
   { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
   { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, params: [{ label: 'Tempo', def: 0.35 }, { label: 'Repetições', def: 0.35 }, { label: 'Mix', def: 0.3 }] },
+  { id: 'reverb', name: 'Reverb', color: '#3f8fe0', post: true, desc: 'Mola: o "boing" metálico dos amps antigos · Sala: cauda lisa e escura',
+    params: [{ label: 'Tempo', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Mix', def: 0.35 }],
+    toggle: { labels: ['Mola', 'Sala'], titles: ['Reverb de mola', 'Reverb sem mola (sala)'], def: 0 } },
 ];
 
 type Curve = 'soft' | 'hard' | 'asym' | 'germ';
@@ -62,7 +70,7 @@ export const CABS: CabSpec[] = [
 export function defaultRig(): AmpRig {
   return {
     on: true,
-    pedals: Object.fromEntries(PEDALS.map((p) => [p.id, { on: false, p: p.params.map((x) => x.def) }])),
+    pedals: Object.fromEntries(PEDALS.map((p) => [p.id, { on: false, p: pedalDefaults(p) }])),
     amp: 'clean',
     knobs: { gain: 0.3, bass: 0.5, mid: 0.5, treble: 0.5, presence: 0.5, master: 0.5 },
     cab: '2x12',
@@ -81,10 +89,11 @@ function preset(amp: string, knobs: Partial<AmpRig['knobs']>, cab: string, pedal
 }
 
 export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
-  { name: 'Limpo Cristalino', make: () => preset('clean', { gain: 0.2, treble: 0.6 }, '2x12', { comp: [0.4, 0.5], chorus: [0.25, 0.4, 0.35] }) },
+  { name: 'Limpo Cristalino', make: () => preset('clean', { gain: 0.2, treble: 0.6 }, '2x12', { comp: [0.4, 0.5], chorus: [0.25, 0.4, 0.35], reverb: [0.5, 0.55, 0.3, 1] }) },
   { name: 'Funk', make: () => preset('clean', { gain: 0.15, bass: 0.4, mid: 0.45, treble: 0.7, presence: 0.65 }, '1x12', { comp: [0.75, 0.5] }) },
-  { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2] }) },
-  { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { odGreen: [0.3, 0.45, 0.6] }) },
+  { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2], reverb: [0.35, 0.5, 0.25, 0] }) },
+  { name: 'Surf', make: () => preset('clean', { gain: 0.3, bass: 0.45, treble: 0.7 }, '2x12', { reverb: [0.65, 0.6, 0.6, 0], tremolo: [0.45, 0.3] }) },
+  { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { odGreen: [0.3, 0.45, 0.6], reverb: [0.3, 0.45, 0.2, 0] }) },
   { name: 'Rock Clássico', make: () => preset('crunch', { gain: 0.6, mid: 0.55, treble: 0.55 }, '4x12') },
   { name: 'Hard Rock', make: () => preset('crunch', { gain: 0.8, bass: 0.55, mid: 0.6 }, '4x12', { gate: [0.45, 0.25], boost: [0.5, 0.2] }) },
   { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { gate: [0.55, 0.2], odGreen: [0, 0.6, 0.9] }) },
@@ -364,11 +373,141 @@ function transparentDrive(ctx: BaseAudioContext, put: Put): Fx {
 
 /** Estado de um pedal no rack; projetos salvos antes da troca do overdrive genérico usam o Verde no lugar dele. */
 export function pedalOf(rig: AmpRig, d: PedalDef) {
-  return rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: d.params.map((x) => x.def) };
+  return rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: pedalDefaults(d) };
+}
+
+// ---------- Reverb: respostas ao impulso de mola e de sala ----------
+
+/**
+ * Mola: o som vai e volta numa mola de aço. A cada ida e volta ele passa por uma cascata de filtros
+ * passa-tudo, que atrasam mais os graves que os agudos (dispersão): é isso que produz o "boing" metálico.
+ * Duas molas de comprimentos diferentes por canal, como nos tanques reais de 2 e 3 molas.
+ */
+function springIR(sr: number, seconds: number): Float32Array[] {
+  const len = Math.ceil(sr * (seconds + 0.2));
+  const springs = [
+    { T: 0.0333, a: 0.62 },
+    { T: 0.0417, a: 0.58 },
+    { T: 0.0291, a: 0.66 },
+  ];
+  const chans = [[0, 1], [1, 2]].map((ids) => {
+    const out = new Float32Array(len);
+    for (const id of ids) {
+      const { T, a } = springs[id];
+      const g = 10 ** ((-3 * T) / seconds); // queda por ida e volta para chegar a -60 dB em `seconds`
+      const S = Math.round(0.05 * sr);
+      const chirp = new Float32Array(S);
+      chirp[0] = 1;
+      let amp = 1;
+      for (let k = 0; ; k++) {
+        // mais um trecho de mola: 24 passa-tudo de 1ª ordem em série
+        for (let st = 0; st < 24; st++) {
+          let x1 = 0, y1 = 0;
+          for (let n = 0; n < S; n++) {
+            const x = chirp[n];
+            const y = -a * x + x1 + a * y1;
+            x1 = x; y1 = y; chirp[n] = y;
+          }
+        }
+        const off = Math.round((0.004 + k * T) * sr);
+        if (off >= len || amp < 1e-3) break;
+        const sign = k % 2 ? -1 : 1; // a reflexão na ponta da mola inverte a fase
+        for (let n = 0; n < S && off + n < len; n++) out[off + n] += sign * amp * chirp[n];
+        amp *= g;
+      }
+    }
+    biquad(out, 'highpass', 220, sr);
+    biquad(out, 'peaking', 1600, sr, 1.2, 4); // o "brilho" característico do tanque
+    biquad(out, 'lowpass', 5200, sr);
+    return out;
+  });
+  return chans;
+}
+
+/** Sala (sem mola): reflexões iniciais + cauda de ruído que escurece com o tempo, independente em cada canal. */
+function hallIR(sr: number, seconds: number): Float32Array[] {
+  const len = Math.ceil(sr * seconds);
+  const pre = Math.round(0.014 * sr);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  return [0, 1].map((c) => {
+    const bright = new Float32Array(len), dark = new Float32Array(len);
+    for (let n = pre; n < len; n++) {
+      const t = (n - pre) / sr;
+      bright[n] = rnd() * Math.exp((-6.9 * t) / (seconds * 0.45));
+      dark[n] = rnd() * Math.exp((-6.9 * t) / seconds);
+    }
+    biquad(dark, 'lowpass', 2200, sr);
+    const out = new Float32Array(len);
+    for (let n = 0; n < len; n++) out[n] = 0.6 * bright[n] + dark[n];
+    // reflexões iniciais (paredes próximas), diferentes em cada canal
+    for (const [ms, g] of c ? [[11, 0.5], [19, -0.35], [31, 0.28], [47, -0.2]] : [[9, 0.55], [23, -0.3], [37, 0.25], [53, 0.18]]) {
+      out[Math.round(((pre / sr) + ms / 1000) * sr)] += g * 3;
+    }
+    biquad(out, 'highpass', 120, sr);
+    return out;
+  });
+}
+
+const reverbCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
+/** IR do reverb (em cache): `spring` true = mola; `step` = tempo quantizado (0..15) para não recalcular a cada movimento. */
+function reverbIR(ctx: BaseAudioContext, spring: boolean, step: number): AudioBuffer {
+  let cache = reverbCache.get(ctx);
+  if (!cache) reverbCache.set(ctx, (cache = new Map()));
+  const key = `${spring}|${step}`;
+  let buf = cache.get(key);
+  if (!buf) {
+    const t = step / 15;
+    const seconds = spring ? 0.8 + t * 2.7 : 0.8 + t * 4.2; // mola 0,8–3,5 s · sala 0,8–5 s
+    const chans = spring ? springIR(ctx.sampleRate, seconds) : hallIR(ctx.sampleRate, seconds);
+    buf = ctx.createBuffer(2, chans[0].length, ctx.sampleRate);
+    chans.forEach((d, c) => buf!.getChannelData(c).set(d));
+    cache.set(key, buf);
+  }
+  return buf;
+}
+
+/** Pedal de reverb: troca de IR (tipo/tempo) com crossfade entre dois convolvers, sem estalo. */
+function reverbPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
+  const hp = filter(ctx, 'highpass', 120);
+  const tone = filter(ctx, 'lowpass', 5000);
+  inp.connect(out); // sinal seco
+  inp.connect(hp);
+  tone.connect(wet).connect(out);
+  let cur: { conv: ConvolverNode; g: GainNode } | null = null;
+  let key = '';
+  return {
+    in: inp,
+    out,
+    set: ([time, t, mix, kind]) => {
+      put(tone.frequency, expMap(t, 1500, 9000));
+      put(wet.gain, mix * 1.2);
+      const spring = (kind ?? 0) < 0.5;
+      const step = Math.round(time * 15);
+      const k = `${spring}|${step}`;
+      if (k === key) return;
+      key = k;
+      const conv = ctx.createConvolver();
+      conv.buffer = reverbIR(ctx, spring, step);
+      const g = ctx.createGain();
+      hp.connect(conv).connect(g).connect(tone);
+      const old = cur;
+      cur = { conv, g };
+      if (!old) return;
+      const now = ctx.currentTime;
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(1, now + 0.08);
+      old.g.gain.setValueAtTime(1, now);
+      old.g.gain.linearRampToValueAtTime(0, now + 0.08);
+      setTimeout(() => { old.conv.disconnect(); old.g.disconnect(); }, 200);
+    },
+  };
 }
 
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
+    case 'reverb': return reverbPedal(ctx, put);
     case 'gate': return noiseGate(ctx, put);
     case 'comp': {
       const c = ctx.createDynamicsCompressor();
