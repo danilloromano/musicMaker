@@ -3,6 +3,7 @@ import { AMPS, CABS, PEDALS, PedalDef, RIG_PRESETS, defaultRig, pedalOf } from '
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
 import { AmpRig, Track } from '../types';
+import { RotaryKnob } from './RotaryKnob';
 import { Slider } from './ui';
 
 const ten = (v: number) => (v * 10).toFixed(1);
@@ -36,31 +37,44 @@ export function AmpRack({ track: t }: { track: Track }) {
     );
   }
 
-  const set = (patch: Partial<AmpRig>, history = false) => st.updateTrack(t.id, { amp: { ...rig, ...patch } }, history);
+  // sempre parte do estado mais recente da loja (não do render): mexer rápido em dois controles não perde nenhum
+  const current = () => useStore.getState().project.tracks.find((x) => x.id === t.id)?.amp ?? rig;
+  const set = (patch: Partial<AmpRig>, history = false) => st.updateTrack(t.id, { amp: { ...current(), ...patch } }, history);
   // projetos antigos podem não ter um pedal novo (ex.: noise gate): parte dos valores padrão
   const pedalState = (d: PedalDef) => pedalOf(rig, d);
-  const setPedal = (d: PedalDef, patch: { on?: boolean; p?: number[] }, history = false) =>
-    set({ pedals: { ...rig.pedals, [d.id]: { ...pedalState(d), ...patch } } }, history);
+  const setPedal = (d: PedalDef, patch: { on?: boolean; p?: number[] }, history = false) => {
+    const cur = current();
+    set({ pedals: { ...cur.pedals, [d.id]: { ...pedalOf(cur, d), ...patch } } }, history);
+  };
   const amp = AMPS.find((a) => a.id === rig.amp);
 
   const pedal = (d: PedalDef) => {
     const ps = pedalState(d);
     return (
-      <div key={d.id} className={`pedal ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: d.color }}>
-        <h5>{d.name}</h5>
-        {d.desc && <small className="pedal-desc">{d.desc}</small>}
-        {d.params.map((x, i) => (
-          <Knob
-            key={x.label}
-            label={x.label}
-            value={ps.p[i] ?? x.def}
-            reset={x.def}
-            onChange={(v) => setPedal(d, { p: ps.p.map((o, j) => (j === i ? v : o)) })}
-          />
-        ))}
-        <button className="foot" title="Liga/desliga o pedal" onClick={() => setPedal(d, { on: !ps.on }, true)}>
-          <i className="led" /> {ps.on ? 'Ligado' : 'Desligado'}
-        </button>
+      <div key={d.id} className={`stomp ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: d.color }} title={d.desc}>
+        <i className="screw tl" /><i className="screw tr" /><i className="screw bl" /><i className="screw br" />
+        <i className="jack in" title="Entrada" /><i className="jack out" title="Saída" />
+        <div className="stomp-knobs">
+          {d.params.map((x, i) => (
+            <RotaryKnob
+              key={x.label}
+              label={x.label}
+              size={d.params.length > 2 ? 32 : 36}
+              value={ps.p[i] ?? x.def}
+              reset={x.def}
+              onChange={(v) => setPedal(d, { p: ps.p.map((o, j) => (j === i ? v : o)) })}
+            />
+          ))}
+        </div>
+        <i className="stomp-led" />
+        <span className="stomp-name">{d.name}</span>
+        <button
+          className="stomp-switch"
+          aria-pressed={ps.on}
+          aria-label={`${d.name}: ${ps.on ? 'ligado' : 'desligado'}`}
+          title={ps.on ? 'Pisar para desligar' : 'Pisar para ligar'}
+          onClick={() => setPedal(d, { on: !ps.on }, true)}
+        />
       </div>
     );
   };
