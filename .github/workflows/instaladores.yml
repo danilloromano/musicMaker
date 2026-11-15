@@ -45,16 +45,24 @@ jobs:
         env:
           # sem certificado pago: o Mac recebe assinatura ad-hoc (identity "-" no package.json)
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          # o electron-builder pula a assinatura em PR; aqui ela é ad-hoc (sem segredo nenhum), então é seguro forçar
+          # e o teste do PR fica igual ao que vai para a Release
+          CSC_FOR_PULL_REQUEST: true
 
       - name: Conferir o app do Mac (permissão do microfone, assinatura e se abre)
         if: runner.os == 'macOS'
         shell: bash
         run: |
+          set -euo pipefail
           APP="release/mac-arm64/MusicMaker.app"
           echo "== Info.plist"
           plutil -extract NSMicrophoneUsageDescription raw "$APP/Contents/Info.plist"
           echo "== assinatura"
-          codesign --verify --deep --strict "$APP" && echo "assinatura ad-hoc válida"
+          if ! codesign --verify --deep --strict "$APP"; then
+            echo "assinatura inválida: o Mac diria que o app está danificado"; exit 1
+          fi
+          codesign -dv "$APP" 2>&1 | grep -E "Signature|Identifier"
+          echo "assinatura ad-hoc válida"
           echo "== abrindo o app por 15 s"
           "$APP/Contents/MacOS/MusicMaker" > app.log 2>&1 &
           PID=$!
