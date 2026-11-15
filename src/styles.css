@@ -318,13 +318,59 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 }
 .rack-chain h5 { margin: 0; font: 700 10px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--text); }
 
-.pedal { width: 128px; border-top: 3px solid var(--c) !important; }
-.pedal h5 { color: var(--c); }
-.pedal .foot { margin-top: auto; display: flex; align-items: center; justify-content: center; gap: 6px; font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); }
-.led { width: 7px; height: 7px; border-radius: 50%; background: #3a3b3f; display: inline-block; }
-.pedal.on { background: color-mix(in srgb, var(--c) 9%, var(--panel2)); border-color: color-mix(in srgb, var(--c) 45%, var(--line)); }
-.pedal.on .foot { color: var(--text); }
-.pedal.on .led { background: var(--c); box-shadow: 0 0 6px var(--c); }
+/* Pedal: caixa de metal com a cor do pedal, botões giratórios, LED, nome e footswitch */
+.rack-chain > .stomp {
+  width: 140px; padding: 14px 10px 10px; gap: 7px; align-items: center; justify-content: space-between; align-self: center;
+  border: none; border-radius: 10px; color: #141414;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 38%),
+    linear-gradient(160deg, color-mix(in srgb, var(--c) 82%, white), var(--c) 40%, color-mix(in srgb, var(--c) 72%, black));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -3px 0 rgba(0, 0, 0, 0.22), 0 6px 14px rgba(0, 0, 0, 0.55);
+}
+.stomp .screw {
+  position: absolute; width: 7px; height: 7px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #f2f2f2, #8c8c8c 55%, #4a4a4a);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.stomp .screw::after { content: ""; position: absolute; left: 1px; right: 1px; top: 3px; height: 1px; background: rgba(0, 0, 0, 0.45); transform: rotate(35deg); }
+.stomp .screw.tl { top: 5px; left: 5px; } .stomp .screw.tr { top: 5px; right: 5px; }
+.stomp .screw.bl { bottom: 5px; left: 5px; } .stomp .screw.br { bottom: 5px; right: 5px; }
+.stomp .jack { position: absolute; top: 40px; width: 6px; height: 16px; background: linear-gradient(90deg, #1a1a1a, #3a3a3a); border-radius: 2px; }
+.stomp .jack.in { right: -6px; } .stomp .jack.out { left: -6px; }
+
+.stomp-knobs { display: flex; justify-content: center; gap: 4px; width: 100%; }
+.stomp-led {
+  width: 9px; height: 9px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 40% 35%, #7a2a24, #3a0d0b); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+.stomp.on .stomp-led { background: radial-gradient(circle at 40% 35%, #ffd2c9, #ff3b2f 45%, #b3150c); box-shadow: 0 0 8px 2px rgba(255, 59, 47, 0.75); }
+.stomp-name {
+  font: 800 12px/1.1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; text-align: center;
+  color: #141414; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); min-height: 26px; display: flex; align-items: center;
+}
+.stomp-switch {
+  width: 42px; height: 42px; padding: 0; border-radius: 50%; flex: none; cursor: pointer;
+  border: 3px solid #2a2a2a;
+  background: radial-gradient(circle at 38% 32%, #ffffff, #c9c9c9 30%, #8a8a8a 62%, #5c5c5c);
+  box-shadow: 0 3px 0 #1a1a1a, 0 5px 8px rgba(0, 0, 0, 0.45), inset 0 -2px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.05s, box-shadow 0.05s;
+}
+.stomp-switch:hover:not(:disabled) { background: radial-gradient(circle at 38% 32%, #ffffff, #d6d6d6 30%, #959595 62%, #666); border-color: #2a2a2a; }
+.stomp-switch:active { transform: translateY(2px); box-shadow: 0 1px 0 #1a1a1a, 0 2px 4px rgba(0, 0, 0, 0.45), inset 0 -1px 2px rgba(0, 0, 0, 0.3); }
+.stomp-switch:focus-visible, .rknob-dial:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Botão giratório */
+.rknob { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; flex: 1; }
+.rknob-dial { cursor: ns-resize; border-radius: 50%; touch-action: none; }
+.rknob-dial svg { display: block; overflow: visible; }
+.rk-track { fill: none; stroke: rgba(0, 0, 0, 0.22); stroke-width: 2.5; stroke-linecap: round; }
+.rk-fill { fill: none; stroke: rgba(0, 0, 0, 0.7); stroke-width: 2.5; stroke-linecap: round; }
+.rk-skirt { fill: #0c0c0d; stroke: rgba(255, 255, 255, 0.18); stroke-width: 0.8; }
+.rk-cap { fill: #26272a; }
+.rk-pointer { stroke: #f4f4f4; stroke-width: 2.2; stroke-linecap: round; }
+.rknob.active .rk-skirt { stroke: rgba(255, 255, 255, 0.5); }
+.rknob-label { font: 700 8.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 0.04em; color: #141414; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rknob.active .rknob-label { font-size: 10px; }
 
 .knob { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 6px; color: var(--dim); font-size: 11px; }
 .knob input { grid-column: 1 / -1; width: 100%; }
@@ -337,4 +383,3 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .amp-knobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 12px; }
 .cab { width: 190px; border-top: 3px solid #8a8a82 !important; }
 .cab .warn { color: var(--solo); }
-.pedal-desc { color: var(--dim); font-size: 10px; line-height: 1.25; margin-top: -2px; }
