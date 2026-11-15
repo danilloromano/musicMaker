@@ -1,22 +1,10 @@
 import { useRef } from 'react';
-import { AMPS, CABS, PEDALS, PedalDef, RIG_PRESETS, defaultRig, pedalOf } from '../audio/amp';
+import { PEDALS, PedalDef, RIG_PRESETS, defaultRig, pedalOf } from '../audio/amp';
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
 import { AmpRig, Track } from '../types';
+import { AmpHead, CabView } from './AmpVisuals';
 import { RotaryKnob } from './RotaryKnob';
-import { Slider } from './ui';
-
-const ten = (v: number) => (v * 10).toFixed(1);
-
-function Knob({ label, value, onChange, reset = 0.5 }: { label: string; value: number; onChange: (v: number) => void; reset?: number }) {
-  return (
-    <label className="knob">
-      <span>{label}</span>
-      <Slider min={0} max={1} step={0.01} value={value} reset={reset} onChange={onChange} />
-      <b>{ten(value)}</b>
-    </label>
-  );
-}
 
 /** Pedaleira + amplificador + caixa (impulse response) da trilha selecionada. */
 export function AmpRack({ track: t }: { track: Track }) {
@@ -46,7 +34,6 @@ export function AmpRack({ track: t }: { track: Track }) {
     const cur = current();
     set({ pedals: { ...cur.pedals, [d.id]: { ...pedalOf(cur, d), ...patch } } }, history);
   };
-  const amp = AMPS.find((a) => a.id === rig.amp);
 
   const pedal = (d: PedalDef) => {
     const ps = pedalState(d);
@@ -99,54 +86,24 @@ export function AmpRack({ track: t }: { track: Track }) {
       <div className="rack-chain">
         {PEDALS.filter((d) => !d.post).map(pedal)}
 
-        <div className="amp-head">
-          <h5>Amplificador</h5>
-          <select value={rig.amp} onChange={(e) => { set({ amp: e.target.value }, true); e.currentTarget.blur(); }}>
-            {AMPS.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            <option value="none">Sem amp (direto)</option>
-          </select>
-          <small>{amp?.desc ?? 'O sinal passa só pelos pedais e pela caixa.'}</small>
-          {amp && (
-            <div className="amp-knobs">
-              {([['gain', 'Ganho'], ['bass', 'Graves'], ['mid', 'Médios'], ['treble', 'Agudos'], ['presence', 'Presença'], ['master', 'Master']] as const).map(
-                ([k, label]) => (
-                  <Knob key={k} label={label} value={rig.knobs[k]} reset={k === 'gain' ? 0.3 : 0.5} onChange={(v) => set({ knobs: { ...rig.knobs, [k]: v } })} />
-                ),
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="cab">
-          <h5>Caixa · Impulse Response</h5>
-          <select
-            value={rig.cab}
-            onChange={(e) => {
-              set({ cab: e.target.value }, true);
-              e.currentTarget.blur();
-            }}
-          >
-            <option value="none">Sem caixa (linha)</option>
-            {CABS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            {rig.irId && <option value="user">IR: {rig.irName}</option>}
-          </select>
-          <button onClick={() => irRef.current?.click()} title="Carregar um arquivo de impulse response (.wav) de caixa e microfone">
-            Carregar IR (.wav)…
-          </button>
-          {rig.cab === 'user' && rig.irId && !engine.buffers.has(rig.irId) && <small className="warn">Arquivo do IR não encontrado.</small>}
-          <Knob label="Mix" value={rig.cabMix} reset={1} onChange={(v) => set({ cabMix: v })} />
-          <input
-            ref={irRef}
-            type="file"
-            accept="audio/wav,.wav,audio/*"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = '';
-              if (f) void engine.loadIr(f, t.id);
-            }}
-          />
-        </div>
+        <AmpHead rig={rig} power={rig.on} set={set} />
+        <CabView
+          rig={rig}
+          set={set}
+          onLoadIr={() => irRef.current?.click()}
+          irMissing={rig.cab === 'user' && !!rig.irId && !engine.buffers.has(rig.irId)}
+        />
+        <input
+          ref={irRef}
+          type="file"
+          accept="audio/wav,.wav,audio/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) void engine.loadIr(f, t.id);
+          }}
+        />
 
         {PEDALS.filter((d) => d.post).map(pedal)}
       </div>
