@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { engine } from '../audio/engine';
 import { importFiles } from '../audio/importFiles';
-import { LOOPS, addLoop } from '../audio/loops';
+import { DRUM_STYLES, LOOPS, addLoop, applyDrumStyle } from '../audio/loops';
 import { PRESETS } from '../audio/instruments';
 import { useStore } from '../store';
 import { BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
@@ -226,7 +226,11 @@ export function Timeline() {
               ))}
               {recording?.trackId === t.id && <div className="rec-overlay" ref={recEl} />}
               {t.kind !== 'audio' && !project.regions.some((r) => r.trackId === t.id) && (
-                <div className="lane-hint">Duplo clique para criar uma região · ou arraste um loop</div>
+                <div className="lane-hint">
+                  {t.kind === 'drums'
+                    ? 'Escolha um estilo de bateria no seletor ao lado · ou arraste um loop'
+                    : 'Duplo clique para criar uma região · ou arraste um loop'}
+                </div>
               )}
               {t.kind === 'audio' && !project.regions.some((r) => r.trackId === t.id) && !recording && (
                 <div className="lane-hint">Selecione a trilha e aperte ● para gravar · ou solte um arquivo de áudio</div>
@@ -241,6 +245,37 @@ export function Timeline() {
         <div className="playhead" ref={head} style={{ left: HEADER_W }} onPointerDown={scrub} title="Arraste para mover o cursor" />
       </div>
     </div>
+  );
+}
+
+/** Seletor de estilo de bateria: troca o ritmo da região selecionada ou cria uma nova no cursor. */
+function DrumStylePicker({ track: t }: { track: Track }) {
+  // mostra o estilo da região selecionada desta trilha, se ela veio de um estilo
+  const current = useStore((s) => {
+    const r = s.project.regions.find((x) => x.id === s.selectedRegionId && x.trackId === t.id);
+    return LOOPS.find((l) => l.kind === 'drums' && l.name === r?.name)?.id ?? '';
+  });
+  const hasSel = useStore((s) => s.project.regions.some((x) => x.id === s.selectedRegionId && x.trackId === t.id));
+  return (
+    <select
+      className="th-style"
+      value={current}
+      title={hasSel ? 'Trocar o estilo da região selecionada' : 'Inserir um ritmo de bateria na posição do cursor'}
+      onChange={(e) => {
+        if (e.target.value) applyDrumStyle(e.target.value, t.id, engine.getBeat());
+        e.currentTarget.blur();
+      }}
+    >
+      <option value="">{hasSel ? 'Trocar…' : 'Estilo…'}</option>
+      {DRUM_STYLES.map((g) => (
+        <optgroup key={g.group} label={g.group}>
+          {g.ids.map((id) => {
+            const l = LOOPS.find((x) => x.id === id);
+            return l && <option key={id} value={id}>{l.name}</option>;
+          })}
+        </optgroup>
+      ))}
+    </select>
   );
 }
 
@@ -273,7 +308,7 @@ function TrackHeader({ track: t }: { track: Track }) {
             {Object.entries(PRESETS).map(([id, p]) => <option key={id} value={id}>{p.name}</option>)}
           </select>
         ) : (
-          t.kind === 'drums' ? <span className="th-kind">Kit eletrônico</span> : <InputButton />
+          t.kind === 'drums' ? <DrumStylePicker track={t} /> : <InputButton />
 
         )}
         <Slider className="vol" title="Volume" min={0} max={1} step={0.01} value={t.volume} reset={0.8} onChange={(v) => up({ volume: v })} />

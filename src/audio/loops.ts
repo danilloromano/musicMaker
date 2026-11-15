@@ -166,3 +166,41 @@ export function addLoop(loop: Loop, beat: number, trackId?: string) {
   });
   useStore.getState().set({ selectedRegionId: r.id, selectedTrackId: target.id });
 }
+
+/** Estilos de bateria agrupados por gênero (para o seletor no cabeçalho da trilha de bateria). */
+export const DRUM_STYLES: { group: string; ids: string[] }[] = [
+  { group: 'Rock', ids: ['d-rock', 'd-hardrock', 'd-hardrock-half', 'd-toms'] },
+  { group: 'Hardcore', ids: ['d-hc-skank', 'd-hc-dbeat'] },
+  { group: 'Funk', ids: ['d-funk', 'd-funk-us', 'd-funk-break'] },
+  { group: 'Reggae', ids: ['d-reggae-onedrop', 'd-reggae-rockers', 'd-reggae-steppers'] },
+  { group: 'Hip-hop e eletrônico', ids: ['d-hiphop', 'd-trap', 'd-house', 'd-dembow'] },
+];
+
+/** Repete o padrão do loop até preencher `beats` tempos. */
+function tile(loop: Loop, beats: number) {
+  const cycle = loop.bars * BEATS_PER_BAR;
+  const notes: Note[] = [];
+  for (let o = 0; o < beats; o += cycle) {
+    for (const n of loop.notes) if (o + n.start < beats) notes.push({ ...n, start: o + n.start, id: uid() });
+  }
+  return notes;
+}
+
+/**
+ * Aplica um estilo de bateria na trilha: se uma região dela estiver selecionada, troca o ritmo dessa
+ * região (mantendo o tamanho); senão cria uma região de 4 compassos na posição do cursor.
+ */
+export function applyDrumStyle(loopId: string, trackId: string, beat: number) {
+  const loop = LOOPS.find((l) => l.id === loopId && l.kind === 'drums');
+  if (!loop) return;
+  const s = useStore.getState();
+  const sel = s.project.regions.find((r) => r.id === s.selectedRegionId && r.trackId === trackId && r.notes);
+  if (sel) {
+    s.updateRegion(sel.id, { name: loop.name, notes: tile(loop, sel.length) });
+    return;
+  }
+  const length = Math.max(4, loop.bars) * BEATS_PER_BAR;
+  const start = Math.max(0, Math.floor(beat / BEATS_PER_BAR) * BEATS_PER_BAR);
+  const r = s.addRegion({ trackId, name: loop.name, start, length, notes: tile(loop, length) });
+  useStore.getState().set({ selectedRegionId: r.id, selectedTrackId: trackId });
+}
