@@ -15,11 +15,13 @@ export interface PedalDef {
   /** descrição curta do timbre, mostrada no pedal */
   desc?: string;
   /** `fmt` mostra o valor do botão na unidade dele (ex.: semitons) em vez da escala 0–10 */
-  params: { label: string; def: number; fmt?: (v: number, all: number[]) => string }[];
+  params: { label: string; def: number; fmt?: (v: number, all: number[]) => string; short?: string }[];
   /** chave de dois lados (como as mini-chaves de pedal): guardada como 0/1 logo depois dos botões */
   toggles?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 }[];
   /** pedal com vários circuitos: cada modelo tem nome, cor, descrição e botões próprios (`params` acima = os do 1º) */
   models?: PedalModel[];
+  /** desenha os botões como faders verticais (equalizador gráfico), com `short` embaixo de cada um */
+  faders?: boolean;
 }
 
 export interface PedalModel {
@@ -80,6 +82,11 @@ function delayTimeLabel(v: number, all: number[]) {
 function group(id: string, name: string, models: PedalModel[]): PedalDef {
   return { id, name, color: models[0].color, post: false, params: models[0].params, models };
 }
+
+/** Bandas do equalizador gráfico (uma oitava entre elas, como nos pedais de EQ de 7 bandas). */
+const EQ_BANDS = [100, 200, 400, 800, 1600, 3200, 6400];
+const fmtHz = (f: number) => (f >= 1000 ? `${(f / 1000).toString().replace('.', ',')}k` : `${f}`);
+const fmtDb = (db: number) => `${db > 0.05 ? '+' : ''}${db.toFixed(1).replace('.', ',')} dB`;
 
 /** Valores padrão de um pedal: botões e, se houver, a chave. */
 /** Modelo atual de um pedal com modelos (o 1º se nada foi escolhido); undefined nos pedais comuns. */
@@ -146,6 +153,12 @@ export const PEDALS: PedalDef[] = [
     { id: 'fuzzGerm', name: 'Germânio', color: '#b0412e', desc: 'Fuzz redondo e quente dos anos 60; limpa quando você toca mais leve',
       params: [{ label: 'Fuzz', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
   ]),
+  { id: 'eq', name: 'Equalizador', color: '#e9e9e4', post: false, faders: true,
+    desc: 'Equalizador gráfico de 7 bandas (±15 dB) e volume: depois dos drives, molda o timbre antes do amp (ex.: médios para solos, graves cortados para limpar)',
+    params: [
+      ...EQ_BANDS.map((f) => ({ label: `${fmtHz(f)}Hz`, short: fmtHz(f), def: 0.5, fmt: (v: number) => fmtDb((v - 0.5) * 30) })),
+      { label: 'Nível', short: 'Nív', def: 0.5, fmt: (v: number) => fmtDb((v - 0.5) * 30) },
+    ] },
   { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true,
     desc: 'Três vozes defasadas, abertas no estéreo · Analógico: quente e escuro como os chips BBD · Digital: brilhante e cristalino',
     params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }],
@@ -1711,6 +1724,21 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
     case 'gate': return noiseGate(ctx, put);
     case 'comp': return compPedal(ctx, put);
     case 'wah': return wahPedal(ctx, put);
+    case 'eq': {
+      // uma banda de pico por fader (largura de ~1 oitava, como os EQs gráficos) e o volume no fim
+      const bands = EQ_BANDS.map((f) => filter(ctx, 'peaking', f, 1.4));
+      const level = ctx.createGain();
+      bands.reduce<AudioNode>((a, b) => a.connect(b), bands[0]);
+      bands[bands.length - 1].connect(level);
+      return {
+        in: bands[0],
+        out: level,
+        set: (p) => {
+          bands.forEach((b, i) => put(b.gain, ((p[i] ?? 0.5) - 0.5) * 30));
+          put(level.gain, 10 ** ((((p[EQ_BANDS.length] ?? 0.5) - 0.5) * 30) / 20));
+        },
+      };
+    }
     case 'boost': {
       const g = ctx.createGain();
       const hs = filter(ctx, 'highshelf', 2500);

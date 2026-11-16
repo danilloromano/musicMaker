@@ -50,6 +50,34 @@ export function AmpRack({ track: t }: { track: Track }) {
       <div key={d.id} className={`stomp ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: model?.color ?? d.color }} title={model?.desc ?? d.desc}>
         <i className="screw tl" /><i className="screw tr" /><i className="screw bl" /><i className="screw br" />
         <i className="jack in" title="Entrada" /><i className="jack out" title="Saída" />
+        {d.faders ? (
+          <div className="stomp-faders">
+            {params.map((x, i) => {
+              const v = ps.p[i] ?? x.def;
+              const text = x.fmt ? x.fmt(v, ps.p) : (v * 10).toFixed(1);
+              return (
+                <label key={x.label} className="stomp-fader" title={`${x.label}: ${text} (duplo clique volta ao padrão)`}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={v}
+                    aria-label={`${x.label}: ${text}`}
+                    onPointerDown={() => useStore.getState().snapshot()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    onChange={(e) => setPedal(d, { p: ps.p.map((o, j) => (j === i ? +e.target.value : o)) })}
+                    onDoubleClick={() => {
+                      useStore.getState().snapshot();
+                      setPedal(d, { p: ps.p.map((o, j) => (j === i ? x.def : o)) });
+                    }}
+                  />
+                  <span>{x.short ?? x.label}</span>
+                </label>
+              );
+            })}
+          </div>
+        ) : (
         <div className="stomp-knobs">
           {params.map((x, i) => (
             <RotaryKnob
@@ -63,6 +91,7 @@ export function AmpRack({ track: t }: { track: Track }) {
             />
           ))}
         </div>
+        )}
         {d.toggles && (
           <div className="stomp-toggles">
             {d.toggles.map((tg, ti) => {
