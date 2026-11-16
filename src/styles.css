@@ -377,6 +377,9 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
   width: 100%; font: 700 11px var(--mono); text-align: center; text-align-last: center;
   color: #141414; background: rgba(255, 255, 255, 0.55); border: 1px solid rgba(0, 0, 0, 0.35); border-radius: 4px; padding: 2px 4px;
 }
+/* pedais com as chaves em menus suspensos (delay): uma caixinha por opção, uma embaixo da outra */
+.stomp-options { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+.stomp-option { font-size: 10px; padding: 1px 4px; }
 .stomp-name {
   font: 800 12px/1.1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; text-align: center;
   color: #141414; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); min-height: 26px; display: flex; align-items: center;

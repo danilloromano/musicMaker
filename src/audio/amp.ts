@@ -22,6 +22,8 @@ export interface PedalDef {
   models?: PedalModel[];
   /** desenha os botões como faders verticais (equalizador gráfico), com `short` embaixo de cada um */
   faders?: boolean;
+  /** desenha as chaves como menus suspensos (pedais com muitas chaves, como o delay) */
+  dropdowns?: boolean;
 }
 
 export interface PedalModel {
@@ -201,7 +203,7 @@ export const PEDALS: PedalDef[] = [
       { labels: ['Clássico', 'Harmônico'], titles: ['Clássico: o volume todo sobe e desce', 'Harmônico: graves e agudos se alternam (som mais "líquido", quase um phaser)'], def: 0 },
       { labels: ['Mono', 'Estéreo'], titles: ['Mono: os dois lados juntos', 'Estéreo: os lados se alternam (auto-pan)'], def: 0 },
     ] },
-  { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong · Reverso: cada trecho volta de trás para frente',
+  { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, dropdowns: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong · Reverso: cada trecho volta de trás para frente',
     params: [
       { label: 'Tempo', def: 0.35, fmt: (v, all) => delayTimeLabel(v, all) },
       { label: 'Ecos', def: 0.35 },

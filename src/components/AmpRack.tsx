@@ -95,10 +95,29 @@ export function AmpRack({ track: t }: { track: Track }) {
         </div>
         )}
         {d.toggles && (
-          <div className="stomp-toggles">
+          <div className={d.dropdowns ? "stomp-options" : "stomp-toggles"}>
             {d.toggles.map((tg, ti) => {
               const idx = params.length + ti;
               const side = (ps.p[idx] ?? tg.def) >= 0.5 ? 1 : 0;
+              if (d.dropdowns) {
+                return (
+                  <select
+                    key={tg.labels.join()}
+                    className="stomp-model stomp-option"
+                    value={side}
+                    title={tg.titles[side]}
+                    aria-label={`${d.name}: ${tg.labels.join(" ou ")}`}
+                    onChange={(e) => {
+                      setPedal(d, { p: withValue(idx, +e.target.value) }, true);
+                      e.currentTarget.blur();
+                    }}
+                  >
+                    {tg.labels.map((label, k) => (
+                      <option key={label} value={k} title={tg.titles[k]}>{label}</option>
+                    ))}
+                  </select>
+                );
+              }
               return (
                 <button
                   key={tg.labels.join()}
