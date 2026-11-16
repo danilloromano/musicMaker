@@ -4,7 +4,7 @@ import { importFiles } from '../audio/importFiles';
 import { DRUM_STYLES, FILL_CHOICES, LOOPS, addLoop, applyDrumStyle, extendPattern, setTrackFills } from '../audio/loops';
 import { presetGroups } from '../audio/instruments';
 import { useStore } from '../store';
-import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
+import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, fitFades, projectEnd, regionLen, uid } from '../types';
 import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
 
@@ -117,14 +117,40 @@ export function Timeline() {
     const bpm = project.bpm;
     const trackKind = project.tracks.find((t) => t.id === r.trackId)?.kind;
     let snapped = false;
+    /**
+     * Áudio esticado além do fim: o clipe (como estava ao começar o arraste) se repete em cópias coladas,
+     * a última cortada onde o mouse está. As cópias são regiões comuns; enquanto o botão está apertado
+     * elas são refeitas a cada movimento (voltar o mouse apaga as que sobraram).
+     */
+    const unit = r.duration ?? 0;
+    const unitBeats = (unit * bpm) / 60;
+    const loopIds: string[] = [];
+    const stretchAudio = (total: number) => {
+      const n = Math.max(1, Math.ceil(total / unit - 1e-6)); // quantas vezes o clipe aparece
+      while (loopIds.length < n - 1) loopIds.push(uid());
+      const keep = loopIds.slice(0, n - 1);
+      st.update((p) => {
+        const base = p.regions
+          .filter((x) => !loopIds.includes(x.id))
+          .map((x) => (x.id === r.id ? fitFades({ ...x, duration: n === 1 ? total : unit }) : x));
+        const copies = keep.map((id, k) =>
+          fitFades({ ...r, id, start: r.start + (k + 1) * unitBeats, duration: k === n - 2 ? total - (n - 1) * unit : unit }),
+        );
+        return { ...p, regions: [...base, ...copies] };
+      }, false);
+    };
     const move = (ev: PointerEvent) => {
       const snap = ev.altKey ? 0.25 : 1;
       const d = Math.round((ev.clientX - x0) / ppb / snap) * snap;
       let patch: Partial<Region>;
       if (mode === 'move') patch = { start: Math.max(0, r.start + d) };
       else if (r.bufferId) {
-        const max = (engine.buffers.get(r.bufferId)?.duration ?? 0) - (r.offset ?? 0);
-        patch = { duration: Math.min(max, Math.max(0.1, (r.duration ?? 0) + (d * 60) / bpm)) };
+        if (!snapped && d !== 0) {
+          st.snapshot();
+          snapped = true;
+        }
+        if (snapped && unit > 0) stretchAudio(Math.max(0.1, unit + (d * 60) / bpm));
+        return;
       } else {
         const length = Math.max(1, r.length + d);
         patch = { length };
