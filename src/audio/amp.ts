@@ -20,6 +20,16 @@ export interface PedalDef {
   toggles?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 }[];
 }
 
+/** Tons do harmonizador e intervalos (em graus da escala: 2 = terça, 4 = quinta, 7 = oitava). */
+const KEY_NAMES = ['Dó', 'Dó#', 'Ré', 'Ré#', 'Mi', 'Fá', 'Fá#', 'Sol', 'Sol#', 'Lá', 'Lá#', 'Si'];
+const HARMONY_STEPS = [
+  { name: '-8ª', deg: -7 }, { name: '-6ª', deg: -5 }, { name: '-5ª', deg: -4 }, { name: '-4ª', deg: -3 }, { name: '-3ª', deg: -2 },
+  { name: '+3ª', deg: 2 }, { name: '+4ª', deg: 3 }, { name: '+5ª', deg: 4 }, { name: '+6ª', deg: 5 }, { name: '+8ª', deg: 7 },
+];
+const harmonyKey = (v: number) => Math.min(11, Math.round(v * 11));
+const harmonyStep = (v: number) => Math.min(HARMONY_STEPS.length - 1, Math.round(v * (HARMONY_STEPS.length - 1)));
+const HARMONY_DEF = 5 / (HARMONY_STEPS.length - 1); // terça acima
+
 /** Botão de intervalo do pedal de pitch (0..1) → semitons inteiros de -12 a +12. */
 export const pitchSemis = (v: number) => Math.round(v * 24 - 12);
 const fmtSemis = (s: number) => (s === 12 ? '+8ª' : s === -12 ? '-8ª' : `${s > 0 ? '+' : ''}${s} st`);
@@ -40,6 +50,14 @@ export const PEDALS: PedalDef[] = [
       { label: 'Fino', def: 0.5, fmt: (v) => `${Math.round((v - 0.5) * 100)} ct` },
       { label: 'Mix', def: 0.5 },
     ] },
+  { id: 'harmony', name: 'Harmonizer', color: '#4fc3a1', post: false,
+    desc: 'Segunda voz no intervalo escolhido, dentro da escala do tom (terça maior ou menor conforme a nota). Uma nota por vez',
+    params: [
+      { label: 'Tom', def: 0, fmt: (v) => KEY_NAMES[harmonyKey(v)] },
+      { label: 'Intervalo', def: HARMONY_DEF, fmt: (v) => HARMONY_STEPS[harmonyStep(v)].name },
+      { label: 'Voz', def: 0.6 },
+    ],
+    toggles: [{ labels: ['Maior', 'Menor'], titles: ['Escala maior', 'Escala menor natural'], def: 0 }] },
   { id: 'wah', name: 'Wah', color: '#9bd94a', post: false,
     desc: 'Pedal: o filtro fica parado na posição escolhida · Auto: abre sozinho com a força da palhetada',
     params: [{ label: 'Posição', def: 0.5 }, { label: 'Sensib.', def: 0.5 }, { label: 'Resson.', def: 0.5 }],
@@ -793,6 +811,33 @@ function wahPedal(ctx: BaseAudioContext, put: Put): WahFx {
   return fx;
 }
 
+// ---------- Harmonizer ----------
+
+/** Harmonizador: a voz de harmonia sai do AudioWorklet 'mm-harmony'; o sinal direto passa por fora. */
+function harmonyPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain();
+  inp.connect(out);
+  const node = workletsReady(ctx)
+    ? new AudioWorkletNode(ctx, 'mm-harmony', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] })
+    : null;
+  if (node) inp.connect(node).connect(out);
+  let sent = '';
+  return {
+    in: inp,
+    out,
+    set: ([key, step, voice, minor]) => {
+      if (!node) return;
+      put(node.parameters.get('level')!, (voice ?? 0.6) * 1.5);
+      const msg = { key: harmonyKey(key ?? 0), minor: (minor ?? 0) >= 0.5, offset: HARMONY_STEPS[harmonyStep(step ?? HARMONY_DEF)].deg };
+      const k = JSON.stringify(msg);
+      if (k !== sent) {
+        sent = k;
+        node.port.postMessage(msg);
+      }
+    },
+  };
+}
+
 // ---------- Octaver ----------
 
 /**
@@ -823,6 +868,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
     case 'pitch': return pitchPedal(ctx, put);
     case 'octave': return octavePedal(ctx, put);
+    case 'harmony': return harmonyPedal(ctx, put);
     case 'reverb': return reverbPedal(ctx, put);
     case 'gate': return noiseGate(ctx, put);
     case 'comp': {

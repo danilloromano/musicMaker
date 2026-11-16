@@ -1,5 +1,5 @@
 // AudioWorklets: o do master (limitador de pico real + medidores: LUFS, pico real, correlação,
-// redução de ganho), o seguidor de envelope do sidechain e o octaver da pedaleira. Rodam na thread de áudio.
+// redução de ganho), o seguidor de envelope do sidechain e o octaver e o harmonizador da pedaleira. Rodam na thread de áudio.
 import { StereoLimiter } from './limiter';
 import { Correlation, Loudness, TruePeak, dbfs } from './loudness';
 
@@ -208,3 +208,178 @@ class OctaveProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('mm-octave', OctaveProcessor);
+
+/** Escalas do harmonizador (semitons a partir da tônica). */
+const SCALES = [
+  [0, 2, 4, 5, 7, 9, 11], // maior
+  [0, 2, 3, 5, 7, 8, 10], // menor natural
+];
+
+/** Semitons da voz de harmonia para a nota `note` (MIDI), `offset` graus acima/abaixo na escala do tom. */
+function harmonySemis(note: number, key: number, minor: boolean, offset: number): number {
+  const scale = SCALES[minor ? 1 : 0];
+  const pc = (((note - key) % 12) + 12) % 12;
+  // grau da escala da nota tocada (nota fora da escala: o grau mais próximo abaixo)
+  let i = 6;
+  while (scale[i] > pc) i--;
+  const j = i + offset;
+  const oct = Math.floor(j / 7);
+  return scale[((j % 7) + 7) % 7] + 12 * oct - scale[i];
+}
+
+/**
+ * Harmonizador: acha a nota tocada (YIN num sinal reduzido para 1/4 da taxa) e gera uma segunda voz
+ * no intervalo pedido, dentro da escala do tom (ex.: terça acima vira terça maior ou menor conforme a
+ * nota). A transposição é de linha de atraso com duas vozes, mas os "grãos" têm um número inteiro de
+ * períodos da nota: no salto de cada grão a onda continua na mesma fase, sem o tremido de um pitch
+ * shifter comum. Monofônico (uma nota por vez). Saída: só a voz de harmonia.
+ */
+class HarmonyProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: 'level', defaultValue: 0, minValue: 0, maxValue: 4, automationRate: 'k-rate' }];
+  }
+  private key = 0;
+  private minor = false;
+  private offset = 2;
+  // sinal guardado para as vozes lerem com atraso
+  private ring = new Float32Array(16384);
+  private w = 0;
+  // detecção (1/4 da taxa)
+  private dec = new Float32Array(1024);
+  private dw = 0;
+  private acc = 0;
+  private accN = 0;
+  private sinceDetect = 0;
+  private period = 0; // em amostras (taxa cheia); 0 = sem nota
+  private ratio = 1;
+  /** fase única das rampas: a voz 2 anda sempre exatamente meio ciclo atrás (se cada uma tivesse a
+   *  própria fase, a defasagem derivaria e as vozes sairiam de fase uma com a outra) */
+  private phase = 0;
+  private voices = [
+    { p: 0, W: 1440 },
+    { p: 0.5, W: 1440 },
+  ];
+  private readonly minDelay = 32;
+  /** volume da voz: sobe/desce em ~15 ms quando a nota aparece/some (sem estalo) */
+  private gate = 0;
+  private gateA = Math.exp(-1 / (sampleRate * 0.015));
+  constructor() {
+    super();
+    this.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as { key: number; minor: boolean; offset: number };
+      this.key = m.key;
+      this.minor = m.minor;
+      this.offset = m.offset;
+      this.updateRatio();
+    };
+  }
+  private updateRatio() {
+    if (!this.period) return;
+    const f = sampleRate / this.period;
+    const note = Math.round(69 + 12 * Math.log2(f / 440));
+    this.ratio = 2 ** (harmonySemis(note, this.key, this.minor, this.offset) / 12);
+  }
+  /** YIN sobre o sinal reduzido: devolve o período (amostras na taxa cheia) ou 0 se não há nota clara. */
+  private detect(): number {
+    const sr = sampleRate / 4, N = 384, d = this.dec, L = d.length;
+    const minT = Math.floor(sr / 1000), maxT = Math.ceil(sr / 65);
+    const start = (this.dw - N - maxT + L * 2) % L;
+    const x = (k: number) => d[(start + k) % L];
+    let energy = 0;
+    for (let k = 0; k < N; k++) energy += x(k) * x(k);
+    if (energy / N < 1e-6) return 0;
+    let run = 0;
+    let best = 0;
+    const cmnd = new Float32Array(maxT + 2);
+    cmnd[0] = 1;
+    for (let t = 1; t <= maxT + 1; t++) {
+      let s = 0;
+      for (let k = 0; k < N; k++) {
+        const v = x(k) - x(k + t);
+        s += v * v;
+      }
+      run += s;
+      cmnd[t] = run > 0 ? (s * t) / run : 1;
+    }
+    for (let t = minT; t <= maxT; t++) {
+      if (cmnd[t] < 0.15 && cmnd[t] <= cmnd[t + 1]) {
+        best = t;
+        break;
+      }
+    }
+    if (!best) return 0;
+    // interpolação parabólica do mínimo
+    const a = cmnd[best - 1], b = cmnd[best], c = cmnd[best + 1];
+    const den = a - 2 * b + c;
+    const t = den > 0 ? best + (0.5 * (a - c)) / den : best;
+    return t * 4;
+  }
+  private read(delay: number): number {
+    const L = this.ring.length;
+    const pos = this.w - delay;
+    const i = Math.floor(pos);
+    const f = pos - i;
+    const a = this.ring[(i + L * 4) % L], b = this.ring[(i + 1 + L * 4) % L];
+    return a + (b - a) * f;
+  }
+  /**
+   * Tamanho do grão: ~30 ms arredondado para um número PAR de períodos da nota. As duas vozes andam
+   * meio grão defasadas; com isso a diferença de atraso entre elas é um número inteiro de períodos e
+   * elas ficam em fase (somam sem cancelar).
+   */
+  private grain(): number {
+    const base = 0.03 * sampleRate;
+    if (!this.period) return base;
+    return Math.max(1, Math.round(base / (2 * this.period))) * 2 * this.period;
+  }
+  process(inputs: Float32Array[][], outputs: Float32Array[][], params: Record<string, Float32Array>) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    const n = out[0].length;
+    const level = params.level[0];
+    const L = this.ring.length;
+    for (let i = 0; i < n; i++) {
+      let x = 0;
+      for (const ch of inp) x += ch[i];
+      if (inp.length > 1) x /= inp.length;
+      this.ring[this.w % L] = x;
+      this.w++;
+      if (this.w >= L * 64) this.w -= L * 32; // mantém o índice pequeno (múltiplo de L: mesma posição)
+      this.acc += x;
+      if (++this.accN === 4) {
+        this.dec[this.dw] = this.acc / 4;
+        this.dw = (this.dw + 1) % this.dec.length;
+        this.acc = 0;
+        this.accN = 0;
+      }
+      // vozes: atraso em rampa (encolhendo = mais agudo); janela sin² zera no salto do grão
+      const up = this.ratio > 1;
+      let y = 0, wsum = 0;
+      this.phase = (this.phase + Math.abs(1 - this.ratio) / this.voices[0].W) % 1;
+      for (let k = 0; k < 2; k++) {
+        const v = this.voices[k];
+        const np = (this.phase + k * 0.5) % 1;
+        // a voz deu a volta (salto do grão, com a janela em zero): só agora pega o grão novo
+        if (np < v.p) v.W = this.grain();
+        v.p = np;
+        const dl = this.minDelay + (up ? 1 - v.p : v.p) * v.W;
+        const win = Math.sin(Math.PI * v.p) ** 2;
+        y += win * this.read(dl);
+        wsum += win;
+      }
+      const yy = wsum > 1e-3 ? y / wsum : 0;
+      const target = this.period ? 1 : 0;
+      this.gate = target + (this.gate - target) * this.gateA;
+      for (const ch of out) ch[i] = yy * level * this.gate;
+    }
+    this.sinceDetect += n;
+    if (this.sinceDetect >= 256) {
+      this.sinceDetect = 0;
+      this.period = this.detect();
+      this.updateRatio();
+    }
+    return true;
+  }
+}
+
+registerProcessor('mm-harmony', HarmonyProcessor);
