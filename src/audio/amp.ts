@@ -98,6 +98,10 @@ export const PEDALS: PedalDef[] = [
     params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Realim.', def: 0.5 }] },
   { id: 'vibrato', name: 'Vibrato', color: '#e8a33c', post: true, desc: 'Ondula a afinação (não o volume, como o tremolo): só o sinal modulado, sem o direto',
     params: [{ label: 'Velocidade', def: 0.35 }, { label: 'Profund.', def: 0.35 }] },
+  { id: 'rotary', name: 'Rotary', color: '#a0522d', post: true,
+    desc: 'Caixa rotativa: corneta (agudos) e tambor (graves) girando · Lento/Rápido acelera e freia aos poucos, como a de verdade',
+    params: [{ label: 'Drive', def: 0.2 }, { label: 'Balanço', def: 0.5 }, { label: 'Mix', def: 1 }],
+    toggles: [{ labels: ['Lento', 'Rápido'], titles: ['Lento (coral): giro calmo, ondulação larga', 'Rápido (tremolo): giro rápido, o som "gira" pela sala'], def: 0 }] },
   { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
   { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong · Reverso: cada trecho volta de trás para frente',
     params: [{ label: 'Tempo', def: 0.35 }, { label: 'Ecos', def: 0.35 }, { label: 'Mix', def: 0.3 }],
@@ -518,6 +522,102 @@ function chorusPedal(ctx: BaseAudioContext, put: Put): Fx {
       });
       put(wet.gain, mix ?? 0.5);
       put(out.gain, 1 / (1 + (mix ?? 0.5) * 0.6));
+    },
+  };
+}
+
+// ---------- Rotary ----------
+
+/** Velocidades (Hz) e inércia (constante de tempo, s) de cada rotor: a corneta é leve, o tambor pesado. */
+const ROTORS = {
+  horn: { slow: 0.83, fast: 6.7, tau: 0.35, xover: 'highpass' as const, doppler: 0.00035, am: 0.45, mics: 0.25 },
+  drum: { slow: 0.67, fast: 5.8, tau: 1.3, xover: 'lowpass' as const, doppler: 0.00012, am: 0.3, mics: 0.25 },
+};
+
+/**
+ * Rotary (caixa Leslie): pré com leve saturação valvulada → divisor em 800 Hz → corneta (agudos) e tambor
+ * (graves). Cada rotor gira: o som se aproxima e se afasta do microfone (efeito Doppler = atraso varrido)
+ * e fica mais alto quando aponta para ele (modulação de volume, 90° adiantada em relação ao Doppler).
+ * Dois microfones, um de cada lado, captam o rotor em fases diferentes: o estéreo "gira".
+ * Trocar Lento/Rápido não pula de velocidade: a corneta acelera em ~1 s e o tambor em ~4 s.
+ */
+function rotaryPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
+  inp.connect(dry).connect(out);
+  const drive = ctx.createGain();
+  const sat = shaper(ctx, 'soft');
+  const satOut = ctx.createGain();
+  inp.connect(drive).connect(sat).connect(satOut);
+  const merge = ctx.createChannelMerger(2);
+  merge.connect(wet).connect(out);
+  const oscs: OscillatorNode[] = [];
+  const rotors = (Object.keys(ROTORS) as (keyof typeof ROTORS)[]).map((name) => {
+    const r = ROTORS[name];
+    const x1 = filter(ctx, r.xover, 800), x2 = filter(ctx, r.xover, 800); // 24 dB/oitava
+    const level = ctx.createGain();
+    satOut.connect(x1).connect(x2).connect(level);
+    // a corneta não reproduz o agudo extremo
+    const src: AudioNode = name === 'horn' ? level.connect(filter(ctx, 'lowpass', 6500)) : level;
+    const rotorOscs: OscillatorNode[] = [];
+    const osc = (phase: number) => {
+      const o = ctx.createOscillator();
+      o.setPeriodicWave(phasedWave(ctx, phase, false));
+      o.frequency.value = r.slow;
+      o.start(0);
+      oscs.push(o);
+      rotorOscs.push(o);
+      return o;
+    };
+    [0, 1].forEach((side) => {
+      const ph = side * r.mics;
+      // Doppler: atraso varrido
+      const d = ctx.createDelay(0.01);
+      d.delayTime.value = 0.002;
+      const dep = ctx.createGain();
+      dep.gain.value = r.doppler;
+      osc(ph).connect(dep).connect(d.delayTime);
+      // volume: 1 - am/2 ± am/2, adiantado 90°
+      const vca = ctx.createGain();
+      vca.gain.value = 1 - r.am / 2;
+      const amG = ctx.createGain();
+      amG.gain.value = r.am / 2;
+      osc(ph + 0.25).connect(amG).connect(vca.gain);
+      src.connect(d).connect(vca).connect(merge, 0, side);
+    });
+    return { name, r, level, oscs: rotorOscs };
+  });
+  let fast: boolean | null = null;
+  return {
+    in: inp,
+    out,
+    oscs,
+    set: ([drv, bal, mix, speed]) => {
+      // a curva soft amplifica ~2,5x os sinais baixos: a saída compensa, então o Drive muda o caráter e não o volume
+      const dg = 0.4 + (drv ?? 0.2) * 6;
+      put(drive.gain, dg);
+      put(satOut.gain, 1 / (dg * 2.5));
+      const b = bal ?? 0.5;
+      for (const rt of rotors) put(rt.level.gain, rt.name === 'horn' ? Math.min(1, 2 * b) : Math.min(1, 2 * (1 - b)));
+      const m = mix ?? 1;
+      put(dry.gain, 1 - m);
+      put(wet.gain, m * 0.9);
+      const want = (speed ?? 0) >= 0.5;
+      if (want === fast) return;
+      const first = fast === null;
+      fast = want;
+      const now = ctx.currentTime;
+      for (const rt of rotors) {
+        const f = want ? rt.r.fast : rt.r.slow;
+        for (const o of rt.oscs) {
+          if (first) o.frequency.value = f;
+          // todos os osciladores do rotor recebem a mesma curva: continuam travados nas fases deles
+          else {
+            o.frequency.cancelScheduledValues(now);
+            o.frequency.setValueAtTime(o.frequency.value, now);
+            o.frequency.setTargetAtTime(f, now, rt.r.tau);
+          }
+        }
+      }
     },
   };
 }
@@ -1168,6 +1268,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
     case 'fuzzGerm': return germFuzz(ctx, put);
     case 'fuzz': return drivePedal(ctx, put, 60, 600, 'asym', 700, 6000, 0.25);
     case 'chorus': return chorusPedal(ctx, put);
+    case 'rotary': return rotaryPedal(ctx, put);
     case 'phaser': {
       const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
       const l = lfo(ctx);
