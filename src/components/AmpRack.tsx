@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { PEDALS, PedalDef, RIG_PRESETS, defaultRig, pedalDefaults, pedalOf } from '../audio/amp';
+import { PEDALS, PedalDef, RIG_PRESETS, defaultRig, modelOf, paramsOf, pedalDefaults, pedalOf } from '../audio/amp';
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
 import { AmpRig, Track } from '../types';
@@ -34,19 +34,28 @@ export function AmpRack({ track: t }: { track: Track }) {
     const cur = current();
     set({ pedals: { ...cur.pedals, [d.id]: { ...pedalOf(cur, d), ...patch } } }, history);
   };
+  /** troca o circuito de um pedal com modelos: guarda os botões do atual e recupera os do novo */
+  const setModel = (d: PedalDef, id: string) => {
+    const cur = current();
+    const ps = pedalOf(cur, d);
+    const saved = { ...ps.saved, [modelOf(d, ps.model)!.id]: ps.p };
+    set({ pedals: { ...cur.pedals, [d.id]: { ...ps, model: id, p: saved[id] ?? pedalDefaults(d, id), saved } } }, true);
+  };
 
   const pedal = (d: PedalDef) => {
     const ps = pedalState(d);
+    const model = modelOf(d, ps.model);
+    const params = paramsOf(d, ps.model);
     return (
-      <div key={d.id} className={`stomp ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: d.color }} title={d.desc}>
+      <div key={d.id} className={`stomp ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: model?.color ?? d.color }} title={model?.desc ?? d.desc}>
         <i className="screw tl" /><i className="screw tr" /><i className="screw bl" /><i className="screw br" />
         <i className="jack in" title="Entrada" /><i className="jack out" title="Saída" />
         <div className="stomp-knobs">
-          {d.params.map((x, i) => (
+          {params.map((x, i) => (
             <RotaryKnob
-              key={x.label}
+              key={`${model?.id ?? ''}${x.label}`}
               label={x.label}
-              size={d.params.length > 3 ? 28 : d.params.length > 2 ? 32 : 36}
+              size={params.length > 3 ? 28 : params.length > 2 ? 32 : 36}
               value={ps.p[i] ?? x.def}
               reset={x.def}
               fmt={x.fmt && ((v: number) => x.fmt!(v, ps.p))}
@@ -57,7 +66,7 @@ export function AmpRack({ track: t }: { track: Track }) {
         {d.toggles && (
           <div className="stomp-toggles">
             {d.toggles.map((tg, ti) => {
-              const idx = d.params.length + ti;
+              const idx = params.length + ti;
               const side = (ps.p[idx] ?? tg.def) >= 0.5 ? 1 : 0;
               return (
                 <button
@@ -82,6 +91,20 @@ export function AmpRack({ track: t }: { track: Track }) {
               );
             })}
           </div>
+        )}
+        {d.models && model && (
+          <select
+            className="stomp-model"
+            value={model.id}
+            title="Circuito do pedal"
+            aria-label={`${d.name}: circuito`}
+            onChange={(e) => {
+              setModel(d, e.target.value);
+              e.currentTarget.blur();
+            }}
+          >
+            {d.models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
         )}
         <i className="stomp-led" />
         <span className="stomp-name">{d.name}</span>

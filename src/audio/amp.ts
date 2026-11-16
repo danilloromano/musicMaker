@@ -1,6 +1,6 @@
 // Rack de guitarra/baixo: pedais → amplificador → caixa (impulse response) → pedais de modulação e tempo.
 // Tudo roda no canal da trilha, então a gravação continua seca e o timbre pode ser trocado depois (re-amp).
-import { AmpRig } from '../types';
+import { AmpRig, PedalState } from '../types';
 import { workletsReady } from './master';
 import { AMPS, AmpModel, ToneStackParts, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from './ampCircuits';
 
@@ -18,6 +18,17 @@ export interface PedalDef {
   params: { label: string; def: number; fmt?: (v: number, all: number[]) => string }[];
   /** chave de dois lados (como as mini-chaves de pedal): guardada como 0/1 logo depois dos botões */
   toggles?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 }[];
+  /** pedal com vários circuitos: cada modelo tem nome, cor, descrição e botões próprios (`params` acima = os do 1º) */
+  models?: PedalModel[];
+}
+
+export interface PedalModel {
+  /** id do circuito (é o id do pedal separado que ele substituiu: os projetos antigos são convertidos) */
+  id: string;
+  name: string;
+  color: string;
+  desc?: string;
+  params: PedalDef['params'];
 }
 
 /** Tons do harmonizador e intervalos (em graus da escala: 2 = terça, 4 = quinta, 7 = oitava). */
@@ -65,8 +76,17 @@ function delayTimeLabel(v: number, all: number[]) {
   return `${Math.round(freeDelay(v, (all[6] ?? 0) >= 0.5) * 1000)} ms`;
 }
 
+/** Pedal com vários modelos (antes da pedaleira; os botões do pedal são os do modelo escolhido). */
+function group(id: string, name: string, models: PedalModel[]): PedalDef {
+  return { id, name, color: models[0].color, post: false, params: models[0].params, models };
+}
+
 /** Valores padrão de um pedal: botões e, se houver, a chave. */
-export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ...(d.toggles ?? []).map((t) => t.def)];
+/** Modelo atual de um pedal com modelos (o 1º se nada foi escolhido); undefined nos pedais comuns. */
+export const modelOf = (d: PedalDef, model?: string) => (d.models ? d.models.find((m) => m.id === model) ?? d.models[0] : undefined);
+/** Botões de um pedal (os do modelo escolhido, nos pedais com modelos). */
+export const paramsOf = (d: PedalDef, model?: string) => modelOf(d, model)?.params ?? d.params;
+export const pedalDefaults = (d: PedalDef, model?: string) => [...paramsOf(d, model).map((x) => x.def), ...(d.toggles ?? []).map((t) => t.def)];
 
 export const PEDALS: PedalDef[] = [
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
@@ -97,29 +117,35 @@ export const PEDALS: PedalDef[] = [
     params: [{ label: 'Posição', def: 0.5 }, { label: 'Sensib.', def: 0.5 }, { label: 'Resson.', def: 0.5 }],
     toggles: [{ labels: ['Pedal', 'Auto'], titles: ['Wah parado na posição do botão (como o pedal meio aberto)', 'Auto-wah: a palhetada abre o filtro e ele fecha quando a nota cai'], def: 0 }] },
   { id: 'boost', name: 'Booster', color: '#e0b48a', post: false, params: [{ label: 'Ganho', def: 0.4 }, { label: 'Brilho', def: 0.3 }] },
-  // Três overdrives com o comportamento de circuitos clássicos (os nomes na tela são genéricos de propósito):
-  // Dourado ≈ Klon Centaur, Verde ≈ Ibanez TS808, Amarelo ≈ Boss SD-1.
-  { id: 'odGold', name: 'Overdrive Dourado', color: '#d9b44a', post: false, desc: 'Transparente: mistura o limpo com o sujo, mantém os graves',
-    params: [{ label: 'Ganho', def: 0.35 }, { label: 'Agudos', def: 0.5 }, { label: 'Nível', def: 0.55 }] },
-  { id: 'odGreen', name: 'Overdrive Verde', color: '#5cc25a', post: false, desc: 'Médios na frente, grave enxuto, saturação macia',
-    params: [{ label: 'Drive', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
-  { id: 'odYellow', name: 'Overdrive Amarelo', color: '#f2d33c', post: false, desc: 'Clipagem assimétrica: mais brilho e harmônicos pares',
-    params: [{ label: 'Drive', def: 0.45 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
-  { id: 'dist', name: 'Distorção', color: '#ff9a3c', post: false, params: [{ label: 'Drive', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
-  // Mais drives com o comportamento de circuitos clássicos (nomes genéricos de propósito):
-  // Preta ≈ ProCo RAT, Britânica ≈ Marshall Guv'nor (amp num pedal), Metal ≈ Boss MT-2,
-  // Fuzz Muff ≈ Big Muff Pi, Fuzz Germânio ≈ Fuzz Face.
-  { id: 'distBlack', name: 'Distorção Preta', color: '#3a3a3a', post: false, desc: 'Op-amp com diodos de silício: muito ganho, médios cheios; o Filtro escurece girando para a direita',
-    params: [{ label: 'Distorção', def: 0.5 }, { label: 'Filtro', def: 0.4 }, { label: 'Volume', def: 0.5 }] },
-  { id: 'distBrit', name: 'Distorção Britânica', color: '#c9a35c', post: false, desc: 'Amp valvulado britânico num pedal: crocante, médios na frente, ótimo em amp limpo',
-    params: [{ label: 'Ganho', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
-  { id: 'distMetal', name: 'Distorção Metal', color: '#9aa0a6', post: false, desc: 'Dois estágios de ganho altíssimo e EQ ativo: médios cavados para metal, ou no máximo para solos',
-    params: [{ label: 'Drive', def: 0.6 }, { label: 'Médios', def: 0.3 }, { label: 'Agudos', def: 0.55 }, { label: 'Nível', def: 0.5 }] },
-  { id: 'fuzzMuff', name: 'Fuzz Muff', color: '#5b6fa8', post: false, desc: 'Sustain enorme e parede de som; o Tom passa de grave gordo a agudo, com os médios cavados no meio',
-    params: [{ label: 'Sustain', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Volume', def: 0.5 }] },
-  { id: 'fuzzGerm', name: 'Fuzz Germânio', color: '#b0412e', post: false, desc: 'Fuzz redondo e quente dos anos 60; limpa quando você toca mais leve',
-    params: [{ label: 'Fuzz', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
-  { id: 'fuzz', name: 'Fuzz', color: '#e8564a', post: false, params: [{ label: 'Fuzz', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  // Overdrive, distorção e fuzz: um pedal de cada, com vários circuitos clássicos dentro (os nomes na tela
+  // são genéricos de propósito). Dourado ≈ Klon Centaur, Verde ≈ Ibanez TS808, Amarelo ≈ Boss SD-1;
+  // Preta ≈ ProCo RAT, Britânica ≈ Marshall Guv'nor, Metal ≈ Boss MT-2; Muff ≈ Big Muff Pi, Germânio ≈ Fuzz Face.
+  group('overdrive', 'Overdrive', [
+    { id: 'odGold', name: 'Dourado', color: '#d9b44a', desc: 'Transparente: mistura o limpo com o sujo, mantém os graves',
+      params: [{ label: 'Ganho', def: 0.35 }, { label: 'Agudos', def: 0.5 }, { label: 'Nível', def: 0.55 }] },
+    { id: 'odGreen', name: 'Verde', color: '#5cc25a', desc: 'Médios na frente, grave enxuto, saturação macia',
+      params: [{ label: 'Drive', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+    { id: 'odYellow', name: 'Amarelo', color: '#f2d33c', desc: 'Clipagem assimétrica: mais brilho e harmônicos pares',
+      params: [{ label: 'Drive', def: 0.45 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  ]),
+  group('distortion', 'Distorção', [
+    { id: 'dist', name: 'Clássica', color: '#ff9a3c', desc: 'Distorção dura e direta, de rock',
+      params: [{ label: 'Drive', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+    { id: 'distBlack', name: 'Preta', color: '#3a3a3a', desc: 'Op-amp com diodos de silício: muito ganho, médios cheios; o Filtro escurece girando para a direita',
+      params: [{ label: 'Distorção', def: 0.5 }, { label: 'Filtro', def: 0.4 }, { label: 'Volume', def: 0.5 }] },
+    { id: 'distBrit', name: 'Britânica', color: '#c9a35c', desc: 'Amp valvulado britânico num pedal: crocante, médios na frente, ótimo em amp limpo',
+      params: [{ label: 'Ganho', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+    { id: 'distMetal', name: 'Metal', color: '#9aa0a6', desc: 'Dois estágios de ganho altíssimo e EQ ativo: médios cavados para metal, ou no máximo para solos',
+      params: [{ label: 'Drive', def: 0.6 }, { label: 'Médios', def: 0.3 }, { label: 'Agudos', def: 0.55 }, { label: 'Nível', def: 0.5 }] },
+  ]),
+  group('fuzzbox', 'Fuzz', [
+    { id: 'fuzz', name: 'Clássico', color: '#e8564a', desc: 'Fuzz de silício áspero e cheio',
+      params: [{ label: 'Fuzz', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+    { id: 'fuzzMuff', name: 'Muff', color: '#5b6fa8', desc: 'Sustain enorme e parede de som; o Tom passa de grave gordo a agudo, com os médios cavados no meio',
+      params: [{ label: 'Sustain', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Volume', def: 0.5 }] },
+    { id: 'fuzzGerm', name: 'Germânio', color: '#b0412e', desc: 'Fuzz redondo e quente dos anos 60; limpa quando você toca mais leve',
+      params: [{ label: 'Fuzz', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
+  ]),
   { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true,
     desc: 'Três vozes defasadas, abertas no estéreo · Analógico: quente e escuro como os chips BBD · Digital: brilhante e cristalino',
     params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }],
@@ -198,7 +224,7 @@ export const CABS: CabSpec[] = [
 export function defaultRig(): AmpRig {
   return {
     on: true,
-    pedals: Object.fromEntries(PEDALS.map((p) => [p.id, { on: false, p: pedalDefaults(p) }])),
+    pedals: Object.fromEntries(PEDALS.map((p) => [p.id, { on: false, p: pedalDefaults(p), ...(p.models ? { model: p.models[0].id } : {}) }])),
     amp: 'clean',
     knobs: { gain: 0.3, bass: 0.5, mid: 0.5, treble: 0.5, presence: 0.5, master: 0.5 },
     cab: '2x12',
@@ -207,12 +233,19 @@ export function defaultRig(): AmpRig {
 }
 
 /** Monta um timbre a partir do padrão: amp, botões, caixa e pedais ligados (com valores opcionais). */
-function preset(amp: string, knobs: Partial<AmpRig['knobs']>, cab: string, pedals: Record<string, number[] | true> = {}): AmpRig {
+function preset(
+  amp: string,
+  knobs: Partial<AmpRig['knobs']>,
+  cab: string,
+  pedals: Record<string, number[] | true | { model: string; p: number[] }> = {},
+): AmpRig {
   const r = defaultRig();
   r.amp = amp;
   r.knobs = { ...r.knobs, ...knobs };
   r.cab = cab;
-  for (const [id, v] of Object.entries(pedals)) r.pedals[id] = { on: true, p: v === true ? r.pedals[id].p : v };
+  for (const [id, v] of Object.entries(pedals)) {
+    r.pedals[id] = v === true ? { ...r.pedals[id], on: true } : Array.isArray(v) ? { on: true, p: v } : { on: true, p: v.p, model: v.model };
+  }
   return r;
 }
 
@@ -221,11 +254,11 @@ export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
   { name: 'Funk', make: () => preset('clean', { gain: 0.15, bass: 0.4, mid: 0.45, treble: 0.7, presence: 0.65 }, '1x12', { comp: [0.75, 0.5] }) },
   { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2, 0, 0, 0, 0, 0], reverb: [0.35, 0.5, 0.25, 0] }) },
   { name: 'Surf', make: () => preset('clean', { gain: 0.3, bass: 0.45, treble: 0.7 }, '2x12', { reverb: [0.65, 0.6, 0.6, 0], tremolo: [0.45, 0.3] }) },
-  { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { odGreen: [0.3, 0.45, 0.6], reverb: [0.3, 0.45, 0.2, 0] }) },
+  { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { overdrive: { model: 'odGreen', p: [0.3, 0.45, 0.6] }, reverb: [0.3, 0.45, 0.2, 0] }) },
   { name: 'Rock Clássico', make: () => preset('crunch', { gain: 0.6, mid: 0.55, treble: 0.55 }, '4x12') },
   { name: 'Hard Rock', make: () => preset('crunch', { gain: 0.8, bass: 0.55, mid: 0.6 }, '4x12', { gate: [0.45, 0.25], boost: [0.5, 0.2] }) },
-  { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { gate: [0.55, 0.2], odGreen: [0, 0.6, 0.9] }) },
-  { name: 'Fuzz Anos 60', make: () => preset('clean', { gain: 0.3 }, '2x12', { fuzz: [0.7, 0.45, 0.5] }) },
+  { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { gate: [0.55, 0.2], overdrive: { model: 'odGreen', p: [0, 0.6, 0.9] } }) },
+  { name: 'Fuzz Anos 60', make: () => preset('clean', { gain: 0.3 }, '2x12', { fuzzbox: { model: 'fuzz', p: [0.7, 0.45, 0.5] } }) },
   { name: 'Lo-fi', make: () => preset('crunch', { gain: 0.4, bass: 0.3 }, '1x8', { tremolo: [0.35, 0.35] }) },
   { name: 'Baixo', make: () => preset('bass', { gain: 0.25, bass: 0.55 }, '8x10b', { comp: [0.5, 0.5] }) },
 ];
@@ -323,6 +356,8 @@ interface Fx {
   oscs?: AudioScheduledSourceNode[];
   /** recebe o andamento da música (BPM) antes do set; só os pedais que sincronizam usam */
   tempo?(bpm: number): void;
+  /** recebe o modelo escolhido antes do set; só os pedais com modelos usam */
+  model?(id: string | undefined): void;
 }
 
 type Put = (param: AudioParam, v: number) => void;
@@ -507,10 +542,28 @@ function transparentDrive(ctx: BaseAudioContext, put: Put): Fx {
   };
 }
 
-/** Estado de um pedal no rack; projetos salvos antes da troca do overdrive genérico usam o Verde no lugar dele. */
-export function pedalOf(rig: AmpRig, d: PedalDef) {
-  const st = rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: pedalDefaults(d) };
+/** Estado de um pedal no rack (convertendo o que foi salvo em formatos antigos). */
+export function pedalOf(rig: AmpRig, d: PedalDef): PedalState {
+  if (d.models) return rig.pedals[d.id] ?? fromSeparate(rig, d);
+  const st = rig.pedals[d.id] ?? { on: false, p: pedalDefaults(d) };
   return d.id === 'delay' ? { ...st, p: migrateDelay(st.p, d) } : st;
+}
+
+/**
+ * Projetos de antes dos pedais com modelos tinham um pedal separado por circuito (e, bem antes, um
+ * overdrive genérico 'od', que virou o Verde). O pedal novo fica ligado se algum deles estava, no
+ * circuito do primeiro ligado (na ordem dos modelos); os ajustes de todos ficam guardados.
+ */
+function fromSeparate(rig: AmpRig, d: PedalDef): PedalState {
+  const models = d.models!;
+  const old = (id: string) => rig.pedals[id] ?? (id === 'odGreen' ? rig.pedals.od : undefined);
+  const saved: Record<string, number[]> = {};
+  for (const m of models) {
+    const o = old(m.id);
+    if (o) saved[m.id] = o.p;
+  }
+  const active = models.find((m) => old(m.id)?.on) ?? models.find((m) => old(m.id)) ?? models[0];
+  return { on: models.some((m) => old(m.id)?.on), model: active.id, p: saved[active.id] ?? pedalDefaults(d, active.id), saved };
 }
 
 /**
@@ -1601,7 +1654,55 @@ function octavePedal(ctx: BaseAudioContext, put: Put): Fx {
   };
 }
 
+/**
+ * Pedal com vários modelos: cada circuito é montado uma vez, mas só o escolhido recebe sinal (os outros
+ * ficam parados, sem gastar processamento). Trocar de modelo faz um crossfade curto, sem estalo.
+ */
+function modelPedal(ctx: BaseAudioContext, put: Put, d: PedalDef): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain();
+  const fxs = new Map(
+    d.models!.map((m) => {
+      const fx = makePedal(ctx, m.id, put);
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      fx.out.connect(g).connect(out);
+      return [m.id, { fx, g }] as const;
+    }),
+  );
+  let cur: { fx: Fx; g: GainNode } | null = null;
+  let first = true;
+  return {
+    in: inp,
+    out,
+    oscs: [...fxs.values()].flatMap((x) => x.fx.oscs ?? []),
+    model: (id) => {
+      const next = fxs.get(modelOf(d, id)!.id)!;
+      if (next === cur) return;
+      const old = cur;
+      cur = next;
+      inp.connect(next.fx.in);
+      if (first) {
+        next.g.gain.value = 1;
+        first = false;
+        return;
+      }
+      const now = ctx.currentTime;
+      next.g.gain.setTargetAtTime(1, now, 0.01);
+      if (old) {
+        old.g.gain.setTargetAtTime(0, now, 0.01);
+        // desliga a entrada do antigo depois do crossfade (se ele não tiver voltado a ser o atual)
+        setTimeout(() => {
+          if (cur !== old) inp.disconnect(old.fx.in);
+        }, 150);
+      }
+    },
+    set: (p) => cur?.fx.set(p),
+  };
+}
+
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
+  const def = PEDALS.find((x) => x.id === id);
+  if (def?.models) return modelPedal(ctx, put, def);
   switch (id) {
     case 'pitch': return pitchPedal(ctx, put);
     case 'octave': return octavePedal(ctx, put);
@@ -1903,6 +2004,7 @@ export class Rig {
       const st = pedalOf(rig, p);
       const slot = this.slots.get(p.id)!;
       slot.fx.tempo?.(bpm);
+      slot.fx.model?.(st.model);
       slot.set(st.on, st.p, this.put);
     }
     this.amp?.set(rig.knobs);

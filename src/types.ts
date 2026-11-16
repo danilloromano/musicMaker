@@ -120,6 +120,10 @@ export interface TrackComp {
 export interface PedalState {
   on: boolean;
   p: number[];
+  /** pedais com vários modelos (overdrive, distorção, fuzz): o modelo escolhido; `p` são os botões dele */
+  model?: string;
+  /** botões guardados dos outros modelos (voltar a um modelo recupera o ajuste dele) */
+  saved?: Record<string, number[]>;
 }
 
 /** Rack de guitarra/baixo: pedais → amplificador → caixa (impulse response) → pedais de modulação/tempo. */
