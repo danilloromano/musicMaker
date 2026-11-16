@@ -86,7 +86,13 @@ export const PEDALS: PedalDef[] = [
   { id: 'fuzzGerm', name: 'Fuzz Germânio', color: '#b0412e', post: false, desc: 'Fuzz redondo e quente dos anos 60; limpa quando você toca mais leve',
     params: [{ label: 'Fuzz', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
   { id: 'fuzz', name: 'Fuzz', color: '#e8564a', post: false, params: [{ label: 'Fuzz', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
-  { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true, params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }] },
+  { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true,
+    desc: 'Três vozes defasadas, abertas no estéreo · Analógico: quente e escuro como os chips BBD · Digital: brilhante e cristalino',
+    params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }],
+    toggles: [
+      { labels: ['Analógico', 'Digital'], titles: ['Chorus analógico: quente, escuro, onda triangular', 'Chorus digital: limpo e brilhante, onda senoidal'], def: 0 },
+      { labels: ['Mono', 'Estéreo'], titles: ['Mono: vozes no centro', 'Estéreo: uma voz de cada lado e uma no centro'], def: 1 },
+    ] },
   { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
   { id: 'flanger', name: 'Flanger', color: '#7fd6e8', post: true, desc: 'O "avião a jato": eco curtíssimo que varre, com realimentação para ficar mais metálico',
     params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Realim.', def: 0.5 }] },
@@ -150,7 +156,7 @@ function preset(amp: string, knobs: Partial<AmpRig['knobs']>, cab: string, pedal
 }
 
 export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
-  { name: 'Limpo Cristalino', make: () => preset('clean', { gain: 0.2, treble: 0.6 }, '2x12', { comp: [0.4, 0.5], chorus: [0.25, 0.4, 0.35], reverb: [0.5, 0.55, 0.3, 1] }) },
+  { name: 'Limpo Cristalino', make: () => preset('clean', { gain: 0.2, treble: 0.6 }, '2x12', { comp: [0.4, 0.5], chorus: [0.25, 0.4, 0.35, 1, 1], reverb: [0.5, 0.55, 0.3, 1] }) },
   { name: 'Funk', make: () => preset('clean', { gain: 0.15, bass: 0.4, mid: 0.45, treble: 0.7, presence: 0.65 }, '1x12', { comp: [0.75, 0.5] }) },
   { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2, 0, 0], reverb: [0.35, 0.5, 0.25, 0] }) },
   { name: 'Surf', make: () => preset('clean', { gain: 0.3, bass: 0.45, treble: 0.7 }, '2x12', { reverb: [0.65, 0.6, 0.6, 0], tremolo: [0.45, 0.3] }) },
@@ -441,6 +447,79 @@ function transparentDrive(ctx: BaseAudioContext, put: Put): Fx {
 /** Estado de um pedal no rack; projetos salvos antes da troca do overdrive genérico usam o Verde no lugar dele. */
 export function pedalOf(rig: AmpRig, d: PedalDef) {
   return rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: pedalDefaults(d) };
+}
+
+// ---------- Chorus ----------
+
+/**
+ * LFO com fase própria: onda de um ciclo (senoide ou quase-triangular) deslocada de `phase` (0..1).
+ * Osciladores com a mesma frequência, ligados no mesmo instante, ficam travados com essa defasagem.
+ */
+function phasedWave(ctx: BaseAudioContext, phase: number, triangle: boolean) {
+  const harmonics = triangle ? [1, 0, -1 / 9, 0, 1 / 25, 0, -1 / 49] : [1];
+  const real = new Float32Array(harmonics.length + 1), imag = new Float32Array(harmonics.length + 1);
+  harmonics.forEach((a, i) => {
+    const k = i + 1, ph = 2 * Math.PI * phase * k;
+    real[k] = a * Math.sin(ph);
+    imag[k] = a * Math.cos(ph);
+  });
+  return ctx.createPeriodicWave(real, imag, { disableNormalization: false });
+}
+
+/**
+ * Chorus de três vozes: cada voz é um atraso curto (base diferente para não se alinharem) varrido por um
+ * LFO defasado 120° dos outros, então a soma não "pulsa" junto como num chorus de uma voz. Estéreo:
+ * uma voz em cada lado e uma no centro, o som direto no meio (o efeito abre sem perder o centro).
+ * Analógico: LFO triangular, vozes escuras (filtro como o dos chips BBD) e um leve arredondamento;
+ * Digital: LFO senoidal e vozes com o agudo inteiro.
+ */
+function chorusPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
+  inp.connect(out); // direto
+  wet.connect(out);
+  const bases = [0.0072, 0.0094, 0.0118]; // bases diferentes: as vozes nunca se alinham
+  const pans = [-1, 1, 0];
+  // as duas redes (analógica e digital) existem juntas; a chave só troca qual delas soa
+  const nets = [true, false].map((analog) => {
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    g.connect(wet);
+    const voices = bases.map((base, k) => {
+      const d = ctx.createDelay(0.05);
+      d.delayTime.value = base;
+      const o = ctx.createOscillator();
+      o.setPeriodicWave(phasedWave(ctx, k / 3, analog));
+      const depth = ctx.createGain();
+      o.connect(depth).connect(d.delayTime);
+      o.start(0);
+      const tone = filter(ctx, 'lowpass', analog ? 5500 : 16000, 0.6); // analógico: escuro como o BBD
+      const pan = ctx.createStereoPanner();
+      inp.connect(d).connect(tone).connect(pan).connect(g);
+      return { o, depth, pan };
+    });
+    return { g, voices };
+  });
+  return {
+    in: inp,
+    out,
+    oscs: nets.flatMap((n) => n.voices.map((v) => v.o)),
+    set: ([rate, depth, mix, kind, side]) => {
+      const analog = (kind ?? 0) < 0.5;
+      const stereo = (side ?? 1) >= 0.5;
+      const f = expMap(rate ?? 0.3, 0.08, 6);
+      const amt = 0.0004 + (depth ?? 0.5) * 0.0035;
+      nets.forEach((n, i) => {
+        put(n.g.gain, (i === 0) === analog ? 0.5 : 0);
+        n.voices.forEach((v, k) => {
+          put(v.o.frequency, f);
+          put(v.depth.gain, amt);
+          put(v.pan.pan, stereo ? pans[k] : 0);
+        });
+      });
+      put(wet.gain, mix ?? 0.5);
+      put(out.gain, 1 / (1 + (mix ?? 0.5) * 0.6));
+    },
+  };
 }
 
 // ---------- Mais distorções ----------
@@ -1088,24 +1167,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
     case 'fuzzMuff': return muffFuzz(ctx, put);
     case 'fuzzGerm': return germFuzz(ctx, put);
     case 'fuzz': return drivePedal(ctx, put, 60, 600, 'asym', 700, 6000, 0.25);
-    case 'chorus': {
-      const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
-      const d = ctx.createDelay(0.05);
-      d.delayTime.value = 0.012;
-      const l = lfo(ctx);
-      l.depth.connect(d.delayTime);
-      inp.connect(out);
-      inp.connect(d).connect(wet).connect(out);
-      return {
-        in: inp, out, oscs: [l.o],
-        set: ([rate, depth, mix]) => {
-          put(l.o.frequency, 0.1 + rate * 4);
-          put(l.depth.gain, 0.0003 + depth * 0.004);
-          put(wet.gain, mix);
-          put(out.gain, 1 / (1 + mix * 0.5));
-        },
-      };
-    }
+    case 'chorus': return chorusPedal(ctx, put);
     case 'phaser': {
       const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
       const l = lfo(ctx);
