@@ -15,7 +15,7 @@ export interface PedalDef {
   /** descrição curta do timbre, mostrada no pedal */
   desc?: string;
   /** `fmt` mostra o valor do botão na unidade dele (ex.: semitons) em vez da escala 0–10 */
-  params: { label: string; def: number; fmt?: (v: number) => string }[];
+  params: { label: string; def: number; fmt?: (v: number, all: number[]) => string }[];
   /** chave de dois lados (como as mini-chaves de pedal): guardada como 0/1 logo depois dos botões */
   toggles?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 }[];
 }
@@ -44,6 +44,26 @@ const REVERB_TYPES = [
 ] as const;
 type ReverbType = (typeof REVERB_TYPES)[number]['id'];
 const reverbType = (v: number) => Math.min(REVERB_TYPES.length - 1, Math.round(v * (REVERB_TYPES.length - 1)));
+
+/** Figuras do delay sincronizado (em tempos de semínima). */
+const DELAY_DIVS = [
+  { name: '1/16', beats: 0.25 },
+  { name: '1/8 tercina', beats: 1 / 3 },
+  { name: '1/16 pont.', beats: 0.375 },
+  { name: '1/8', beats: 0.5 },
+  { name: '1/4 tercina', beats: 2 / 3 },
+  { name: '1/8 pont.', beats: 0.75 },
+  { name: '1/4', beats: 1 },
+  { name: '1/4 pont.', beats: 1.5 },
+  { name: '1/2', beats: 2 },
+];
+const delayDiv = (v: number) => DELAY_DIVS[Math.min(DELAY_DIVS.length - 1, Math.round(v * (DELAY_DIVS.length - 1)))];
+/** Tempo livre do delay (s): normal 60 ms a 1 s; reverso, trechos de 0,15 a 1,5 s. */
+const freeDelay = (v: number, reverse: boolean) => (reverse ? 0.15 + v * 1.35 : 0.06 + v * 0.94);
+function delayTimeLabel(v: number, all: number[]) {
+  if ((all[7] ?? 0) >= 0.5) return delayDiv(v).name;
+  return `${Math.round(freeDelay(v, (all[6] ?? 0) >= 0.5) * 1000)} ms`;
+}
 
 /** Valores padrão de um pedal: botões e, se houver, a chave. */
 export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ...(d.toggles ?? []).map((t) => t.def)];
@@ -130,11 +150,17 @@ export const PEDALS: PedalDef[] = [
       { labels: ['Mono', 'Estéreo'], titles: ['Mono: os dois lados juntos', 'Estéreo: os lados se alternam (auto-pan)'], def: 0 },
     ] },
   { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong · Reverso: cada trecho volta de trás para frente',
-    params: [{ label: 'Tempo', def: 0.35 }, { label: 'Ecos', def: 0.35 }, { label: 'Mix', def: 0.3 }],
+    params: [
+      { label: 'Tempo', def: 0.35, fmt: (v, all) => delayTimeLabel(v, all) },
+      { label: 'Ecos', def: 0.35 },
+      { label: 'Mix', def: 0.3 },
+      { label: 'Mod.', def: 0.15 },
+    ],
     toggles: [
       { labels: ['Fita', 'Digital'], titles: ['Delay de fita', 'Delay digital'], def: 0 },
       { labels: ['Mono', 'Estéreo'], titles: ['Mono: repetições no centro', 'Estéreo: repetições alternando entre esquerda e direita'], def: 0 },
       { labels: ['Normal', 'Reverso'], titles: ['Repetições normais', 'Reverso: o som volta de trás para frente, com tempo = tamanho de cada trecho invertido'], def: 0 },
+      { labels: ['Livre', 'BPM'], titles: ['Livre: o Tempo vai em milissegundos', 'BPM: o Tempo escolhe a figura (colcheia, pontuada, tercina…) no andamento da música'], def: 0 },
     ] },
   { id: 'reverb', name: 'Reverb', color: '#3f8fe0', post: true,
     desc: 'Mola: o "boing" dos amps antigos · Placa: denso e brilhante, de estúdio · Shimmer: cauda que sobe uma oitava, etérea · Hall: sala de concerto, longo e escuro · Sala: ambiente menor, cauda lisa',
@@ -193,7 +219,7 @@ function preset(amp: string, knobs: Partial<AmpRig['knobs']>, cab: string, pedal
 export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
   { name: 'Limpo Cristalino', make: () => preset('clean', { gain: 0.2, treble: 0.6 }, '2x12', { comp: [0.4, 0.5], chorus: [0.25, 0.4, 0.35, 1, 1], reverb: [0.5, 0.55, 0.3, 1] }) },
   { name: 'Funk', make: () => preset('clean', { gain: 0.15, bass: 0.4, mid: 0.45, treble: 0.7, presence: 0.65 }, '1x12', { comp: [0.75, 0.5] }) },
-  { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2, 0, 0], reverb: [0.35, 0.5, 0.25, 0] }) },
+  { name: 'Reggae Skank', make: () => preset('clean', { gain: 0.15, bass: 0.3, mid: 0.6, treble: 0.65 }, '1x12', { delay: [0.4, 0.25, 0.2, 0, 0, 0, 0, 0], reverb: [0.35, 0.5, 0.25, 0] }) },
   { name: 'Surf', make: () => preset('clean', { gain: 0.3, bass: 0.45, treble: 0.7 }, '2x12', { reverb: [0.65, 0.6, 0.6, 0], tremolo: [0.45, 0.3] }) },
   { name: 'Blues', make: () => preset('crunch', { gain: 0.35, mid: 0.6 }, '2x12', { odGreen: [0.3, 0.45, 0.6], reverb: [0.3, 0.45, 0.2, 0] }) },
   { name: 'Rock Clássico', make: () => preset('crunch', { gain: 0.6, mid: 0.55, treble: 0.55 }, '4x12') },
@@ -295,6 +321,8 @@ interface Fx {
   out: AudioNode;
   set(p: number[]): void;
   oscs?: AudioScheduledSourceNode[];
+  /** recebe o andamento da música (BPM) antes do set; só os pedais que sincronizam usam */
+  tempo?(bpm: number): void;
 }
 
 type Put = (param: AudioParam, v: number) => void;
@@ -481,7 +509,20 @@ function transparentDrive(ctx: BaseAudioContext, put: Put): Fx {
 
 /** Estado de um pedal no rack; projetos salvos antes da troca do overdrive genérico usam o Verde no lugar dele. */
 export function pedalOf(rig: AmpRig, d: PedalDef) {
-  return rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: pedalDefaults(d) };
+  const st = rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: pedalDefaults(d) };
+  return d.id === 'delay' ? { ...st, p: migrateDelay(st.p, d) } : st;
+}
+
+/**
+ * Delay salvo antes do botão Mod.: eram 3 botões e até 3 chaves (no máximo 6 valores). Insere o Mod.
+ * (desligado, como o som antigo) na 4ª posição e completa o resto com os padrões. O resultado sempre
+ * tem todos os valores, então nunca é convertido de novo.
+ */
+function migrateDelay(p: number[], d: PedalDef): number[] {
+  const full = pedalDefaults(d);
+  if (p.length >= full.length) return p;
+  const fixed = [...p.slice(0, 3), 0, ...p.slice(3)];
+  return full.map((v, i) => fixed[i] ?? v);
 }
 
 // ---------- Chorus ----------
@@ -1203,7 +1244,8 @@ interface DelayNet {
   input: GainNode;
   output: GainNode;
   oscs: OscillatorNode[];
-  set(time: number, rep: number, put: Put): void;
+  /** `seconds` = tempo do eco; `mod` (0..1) = quanto as repetições ondulam */
+  set(seconds: number, rep: number, mod: number, put: Put): void;
 }
 
 /**
@@ -1239,6 +1281,21 @@ function delayNet(ctx: BaseAudioContext, tape: boolean, stereo: boolean): DelayN
     M.out.connect(M.fb).connect(M.d);
     M.out.connect(output);
   }
+  // Mod.: um LFO lento (~0,7 Hz) faz as repetições ondularem como num chorus (o delay "analógico")
+  const modOsc = ctx.createOscillator(), modDepth = ctx.createGain();
+  modOsc.frequency.value = 0.7;
+  modOsc.connect(modDepth);
+  lines.forEach((l, i) => {
+    if (i === 0) modDepth.connect(l.d.delayTime);
+    else {
+      // no estéreo o outro lado ondula ao contrário: as repetições se abrem
+      const inv = ctx.createGain();
+      inv.gain.value = -1;
+      modDepth.connect(inv).connect(l.d.delayTime);
+    }
+  });
+  modOsc.start(0);
+  oscs.push(modOsc);
   // fita: wow (0,5 Hz) e flutter (6 Hz) mexem no tempo do delay → leve oscilação de afinação
   const wowDepth = ctx.createGain(), flutDepth = ctx.createGain();
   if (tape) {
@@ -1253,8 +1310,8 @@ function delayNet(ctx: BaseAudioContext, tape: boolean, stereo: boolean): DelayN
   }
   return {
     input, output, oscs,
-    set: (time, rep, put) => {
-      const t = 0.06 + time * 0.94;
+    set: (t, rep, mod, put) => {
+      put(modDepth.gain, mod * 0.0025); // até ±2,5 ms
       for (const l of lines) {
         put(l.d.delayTime, t);
         put(l.fb.gain, rep * (tape ? 0.95 : 0.85)); // a saturação da fita segura o laço, então dá para ir mais longe
@@ -1290,8 +1347,8 @@ function reverseNet(ctx: BaseAudioContext, tape: boolean, stereo: boolean): Dela
   tail.connect(output);
   return {
     input, output, oscs: [],
-    set: (time, rep, put) => {
-      put(node.parameters.get('time')!, 0.15 + time * 1.35); // trechos de 0,15 a 1,5 s
+    set: (seconds, rep, _mod, put) => {
+      put(node.parameters.get('time')!, Math.min(3, Math.max(0.15, seconds)));
       put(node.parameters.get('feedback')!, rep * 0.85);
     },
   };
@@ -1300,6 +1357,7 @@ function reverseNet(ctx: BaseAudioContext, tape: boolean, stereo: boolean): Dela
 /** Pedal de delay: troca de tipo/saída/sentido monta outra rede e faz crossfade com a anterior. */
 function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
   const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
+  let bpm = 120;
   inp.connect(out); // sinal seco
   wet.connect(out);
   let cur: { net: DelayNet; g: GainNode } | null = null;
@@ -1308,7 +1366,10 @@ function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
     in: inp,
     out,
     oscs: [],
-    set: ([time, rep, mix, kind, side, dir]) => {
+    tempo: (b) => {
+      bpm = b;
+    },
+    set: ([time, rep, mix, mod, kind, side, dir, sync]) => {
       put(wet.gain, mix);
       const tape = (kind ?? 0) < 0.5;
       const stereo = (side ?? 0) >= 0.5;
@@ -1337,7 +1398,9 @@ function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
           }, 2500);
         }
       }
-      cur!.net.set(time, rep, put);
+      // sincronizado: a figura no andamento da música (no máximo 2,4 s, o limite da linha de atraso)
+      const seconds = (sync ?? 0) >= 0.5 ? Math.min(2.4, (delayDiv(time).beats * 60) / bpm) : freeDelay(time, reverse);
+      cur!.net.set(seconds, rep, mod ?? 0, put);
     },
   };
   return fx;
@@ -1792,7 +1855,7 @@ export class Rig {
     else p.setTargetAtTime(v, this.ctx.currentTime, 0.015);
   };
 
-  constructor(private ctx: BaseAudioContext, public key: string, rig: AmpRig, userIr?: AudioBuffer) {
+  constructor(private ctx: BaseAudioContext, public key: string, rig: AmpRig, userIr?: AudioBuffer, bpm = 120) {
     this.input = ctx.createGain();
     this.output = ctx.createGain();
     for (const p of PEDALS) this.slots.set(p.id, new Slot(ctx, makePedal(ctx, p.id, this.put)));
@@ -1831,14 +1894,16 @@ export class Rig {
       node = s.output;
     }
     node.connect(this.output);
-    this.update(rig);
+    this.update(rig, bpm);
     this.first = false;
   }
 
-  update(rig: AmpRig) {
+  update(rig: AmpRig, bpm = 120) {
     for (const p of PEDALS) {
       const st = pedalOf(rig, p);
-      this.slots.get(p.id)!.set(st.on, st.p, this.put);
+      const slot = this.slots.get(p.id)!;
+      slot.fx.tempo?.(bpm);
+      slot.set(st.on, st.p, this.put);
     }
     this.amp?.set(rig.knobs);
     if (this.cabDry && this.cabWet) {

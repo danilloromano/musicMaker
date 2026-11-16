@@ -112,7 +112,7 @@ export class Mixer {
   }
 
   /** Rack de amp/pedais entre a entrada do canal e o EQ: remonta só quando muda amp, caixa ou IR. */
-  private syncRig(s: Strip, t: Track) {
+  private syncRig(s: Strip, t: Track, bpm: number) {
     const want = t.amp?.on ? t.amp : null;
     const ir = want?.cab === 'user' && want.irId ? this.getBuffer(want.irId) : undefined;
     // o octaver usa AudioWorklet: quando os worklets carregam, o rack é remontado para ganhá-lo
@@ -124,11 +124,11 @@ export class Mixer {
       s.input.connect(s.eq[0]);
     }
     if (want && key && !s.rig) {
-      s.rig = new Rig(this.ctx, key, want, ir);
+      s.rig = new Rig(this.ctx, key, want, ir, bpm);
       s.input.disconnect();
       s.input.connect(s.rig.input);
       s.rig.output.connect(s.eq[0]);
-    } else if (want) s.rig?.update(want);
+    } else if (want) s.rig?.update(want, bpm);
   }
 
   /**
@@ -266,7 +266,7 @@ export class Mixer {
       }
       applyEq(s.eq, eqOf(t.fx), true);
       applyComp(s.comp, s.makeup, compOf(t.fx), true);
-      this.syncRig(s, t);
+      this.syncRig(s, t, bpm);
       // wah automatizado: tocando, a curva agendada manda; parado, vale o ponto da curva no cursor
       const wah = activeLanes(t).find((l) => l.param === 'wah');
       s.rig?.wah.override(wah ? (this.automating ? 'scheduled' : valueAt(wah.points, this.cursor)) : undefined);
