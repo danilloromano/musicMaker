@@ -1,4 +1,5 @@
-export type TrackKind = 'instrument' | 'drums' | 'audio';
+/** 'bus' = trilha de grupo: não tem regiões; outras trilhas mandam a saída para ela (ver Track.output). */
+export type TrackKind = 'instrument' | 'drums' | 'audio' | 'bus';
 
 export interface Note {
   id: string;
@@ -45,6 +46,42 @@ export interface TrackFx {
   eq?: TrackEq;
   /** compressor completo (ver trackfx.ts: compOf) */
   compressor?: TrackComp;
+  /** sidechain: outra trilha abaixa o volume desta (ex.: o bumbo abaixando o baixo) */
+  sidechain?: Sidechain;
+}
+
+/** O volume desta trilha cai quando a trilha `source` toca ("ducking"/bombeado). */
+export interface Sidechain {
+  source: string | null;
+  /** quanto abaixa no máximo (dB) */
+  depth: number;
+  /** sensibilidade (0 a 1): quanto sinal da origem basta para abaixar tudo */
+  sens: number;
+  /** tempo para voltar (ms) */
+  release: number;
+}
+
+/** Ponto de automação: valor do parâmetro (na unidade dele) num tempo da música. */
+export interface AutoPoint {
+  beat: number;
+  value: number;
+}
+
+/** Automação de um parâmetro: 'volume', 'pan' ou 'send:<id do envio>'. */
+export interface AutoLane {
+  param: string;
+  points: AutoPoint[];
+}
+
+/** Efeito de envio (reverb ou delay) compartilhado: cada trilha decide quanto manda para ele. */
+export interface SendFx {
+  id: string;
+  name: string;
+  type: 'reverb' | 'delay';
+  /** volume do retorno (0 a 1) */
+  level: number;
+  reverb?: { space: 'room' | 'hall' | 'plate' | 'cathedral'; predelay: number; tone: number };
+  delay?: { division: '1/4' | '1/8' | '1/8d' | '1/16' | '1/4t' | '1/8t'; feedback: number; tone: number; pingpong: boolean };
 }
 
 /** Banda do EQ: frequência (Hz), ganho (dB) e Q (largura; as prateleiras ignoram). */
@@ -105,6 +142,13 @@ export interface Track {
   color: string;
   fx: TrackFx;
   amp?: AmpRig;
+  /** grupo para onde vai a saída (id de uma trilha 'bus'); ausente = master */
+  output?: string;
+  /** quanto vai para cada efeito de envio (0 a 1); os antigos fx.reverb/fx.delay valem para 'reverb'/'delay' */
+  sends?: Record<string, number>;
+  automation?: AutoLane[];
+  /** parâmetro mostrado na faixa de automação da timeline (ausente = faixa fechada) */
+  autoView?: string;
 }
 
 /** Master: EQ, compressor de "cola", saturação, limitador e como exportar. */
@@ -131,6 +175,8 @@ export interface Project {
   regions: Region[];
   /** ajustes do master (projetos antigos não têm: usam o padrão) */
   master?: MasterSettings;
+  /** efeitos de envio (projetos antigos não têm: reverb + delay padrão) */
+  sends?: SendFx[];
 }
 
 export const BEATS_PER_BAR = 4;

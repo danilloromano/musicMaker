@@ -3,7 +3,7 @@ import { BEATS_PER_BAR, Note, Project, Region, projectEnd, regionGainAt, uid } f
 import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments';
 import { loadDrumSamples, warmDrumKit } from './drumKit';
 import { loadAllSampleSets } from './sampler';
-import { masterOf } from './master';
+import { ensureWorklets, masterOf } from './master';
 import { ExportReport, encodeWav, finishMaster } from './export';
 import { Mixer } from './mixer';
 import { saveBufferLocal } from './persist';
@@ -44,7 +44,7 @@ class Engine {
       this.mixer = new Mixer(this.ctx, this.ctx.destination, (id) => this.buffers.get(id));
       const p = useStore.getState().project;
       this.bpm = p.bpm;
-      this.mixer.sync(p.tracks, p.bpm);
+      this.mixer.sync(p);
       this.mixer.chain.update(masterOf(p.master));
 
       // entrada de áudio: tudo que chega da placa passa por inputBus (mono)
@@ -58,7 +58,11 @@ class Engine {
       useStore.subscribe((s, prev) => {
         const a = s.project, b = prev.project;
         if (a.bpm !== b.bpm) this.retime(a.bpm);
-        if (a.tracks !== b.tracks || a.bpm !== b.bpm) this.mixer.sync(a.tracks, a.bpm);
+        if (a.tracks !== b.tracks || a.bpm !== b.bpm || a.sends !== b.sends) {
+          this.mixer.sync(a);
+          // tocando: reagenda a automação (curva editada, trilha ligada/desligada, andamento)
+          if (this.playing) this.mixer.automate(a, this.getBeat(), this.ctx.currentTime, (beat) => this.timeAt(beat));
+        }
         if (a.master !== b.master) this.mixer.chain.update(masterOf(a.master));
         this.routeMonitor();
       });
@@ -102,6 +106,7 @@ class Engine {
     this.scheduledUntil = this.startBeat;
     this.playing = true;
     this.mixer.chain.reset(); // o LUFS integrado mede a partir daqui
+    this.mixer.automate(useStore.getState().project, this.startBeat, this.startTime, (b) => this.timeAt(b));
     this.startAudioRegions(this.startTime);
     this.timer = window.setInterval(() => this.tick(), TICK_MS);
     this.tick();
@@ -114,6 +119,7 @@ class Engine {
     this.position = this.getBeat();
     this.playing = false;
     clearInterval(this.timer);
+    this.mixer.stopAutomation(useStore.getState().project, this.position);
     for (const s of this.sources) {
       try {
         s.stop();
@@ -136,6 +142,11 @@ class Engine {
     if (was) this.stop();
     this.position = Math.max(0, beat);
     if (was) this.play();
+    else if (this.ready) {
+      // parado: os parâmetros automatizados assumem o valor da curva no cursor
+      this.mixer.cursor = this.position;
+      this.mixer.sync(useStore.getState().project);
+    }
   }
 
   /** Agenda as regiões de áudio a partir do instante `ref` (o início da reprodução ou de uma volta do loop). */
@@ -179,6 +190,7 @@ class Engine {
       this.startTime = wrap;
       this.startBeat = loop.start;
       this.scheduledUntil = loop.start;
+      this.mixer.automate(useStore.getState().project, loop.start, wrap, (b) => this.timeAt(b));
       this.startAudioRegions(wrap);
       until = this.startBeat + ((this.ctx.currentTime + LOOKAHEAD - this.startTime) * this.bpm) / 60;
       loop = this.activeLoop();
@@ -228,7 +240,7 @@ class Engine {
   noteOn(pitch: number, vel = 100, trackId = useStore.getState().selectedTrackId) {
     const s = useStore.getState();
     const track = s.project.tracks.find((t) => t.id === trackId);
-    if (!track || track.kind === 'audio') return;
+    if (!track || track.kind === 'audio' || track.kind === 'bus') return;
     this.ensure();
     const strip = this.mixer.strips.get(track.id);
     if (!strip) return;
@@ -271,6 +283,10 @@ class Engine {
     if (s.recording) return this.stop();
     const track = s.project.tracks.find((t) => t.id === s.selectedTrackId);
     if (!track) return;
+    if (track.kind === 'bus') {
+      alert('Trilhas de grupo não gravam: selecione uma trilha de instrumento, bateria ou áudio.');
+      return;
+    }
     this.ensure();
     if (track.kind === 'audio') {
       if (!s.inputOpen && !(await this.openInput())) return;
@@ -504,6 +520,21 @@ class Engine {
     for (const n of notes) triggerNote(this.ctx, g, kind, instrument, n.pitch, t0 + n.start * spb, n.duration * spb, n.velocity);
   }
 
+  /** Nível de pico (0..1) do retorno de um efeito de envio. */
+  returnLevel(id: string): number {
+    const an = this.ready ? this.mixer.returnAnalysers.get(id) : undefined;
+    if (!an) return 0;
+    an.getFloatTimeDomainData(this.meterBuf);
+    let peak = 0;
+    for (let i = 0; i < this.meterBuf.length; i++) peak = Math.max(peak, Math.abs(this.meterBuf[i]));
+    return Math.min(1, peak);
+  }
+
+  /** Ganho atual do sidechain de uma trilha (1 = sem redução). */
+  duckLevel(trackId: string): number {
+    return this.ready ? this.mixer.duckLevel(trackId) : 1;
+  }
+
   /** Nível de pico (0..1) de uma trilha ou do master, para os medidores. */
   private meterBuf = new Float32Array(256);
   level(trackId?: string): number {
@@ -578,9 +609,10 @@ export async function renderWav(
   const spb = 60 / project.bpm;
   const seconds = projectEnd(project) * spb + 3;
   const off = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
-  await Promise.all([loadDrumSamples(off), loadAllSampleSets(off)]);
+  await Promise.all([loadDrumSamples(off), loadAllSampleSets(off), ensureWorklets(off).catch(() => {})]);
   const mixer = new Mixer(off, off.destination, (id) => buffers.get(id), false);
-  mixer.sync(project.tracks, project.bpm);
+  mixer.sync(project);
+  mixer.automate(project, 0, 0, (b) => b * spb);
   const master = masterOf(project.master);
   mixer.chain.update(master);
   const tracks = new Map(project.tracks.map((t) => [t.id, t]));

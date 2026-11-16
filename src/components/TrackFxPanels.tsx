@@ -6,8 +6,9 @@ import {
   compOf, defaultEq, eqOf, eqResponse,
 } from '../audio/trackfx';
 import { useStore } from '../store';
-import { Track, TrackComp, TrackEq } from '../types';
-import { Reduction, Slider, Spectrum } from './ui';
+import { Sidechain, Track, TrackComp, TrackEq } from '../types';
+import { outputOf, sendAmount, sendsOf, sidechainOf } from '../audio/routing';
+import { KIND_ICON, Reduction, Slider, Spectrum } from './ui';
 
 const num = (v: number, d = 1) => v.toFixed(d).replace('.', ',');
 const hz = (f: number) => (f >= 1000 ? `${num(f / 1000, f >= 10000 ? 1 : 2)} kHz` : `${Math.round(f)} Hz`);
@@ -308,5 +309,71 @@ function TransferCurve({ c }: { c: TrackComp }) {
       {c.on && <line x1={((c.threshold + 60) / 60) * 100} x2={((c.threshold + 60) / 60) * 100} y1="0" y2="100" className="eq-zero" />}
       <polyline points={pts.join(' ')} className="eq-line" />
     </svg>
+  );
+}
+
+// ---------- Envios, saída e sidechain ----------
+
+/** Quanto a trilha manda para cada efeito de envio, e para onde vai a saída dela. */
+export function SendsCard({ track: t }: { track: Track }) {
+  const sends = useStore((s) => sendsOf(s.project));
+  const tracks = useStore((s) => s.project.tracks);
+  const buses = tracks.filter((b) => b.kind === 'bus');
+  const setSend = (id: string, v: number) => {
+    const tr = fresh(t.id);
+    if (tr) useStore.getState().updateTrack(t.id, { sends: { ...tr.sends, [id]: v } }, false);
+  };
+  return (
+    <div className="fx-card sends-card">
+      <h4>Envios e saída</h4>
+      {sends.map((s) => (
+        <CRow key={s.id} label={s.name} v={`${Math.round(sendAmount(t, s.id) * 100)}%`}>
+          <Slider min={0} max={1} step={0.01} value={sendAmount(t, s.id)} reset={0} onChange={(v) => setSend(s.id, v)} />
+        </CRow>
+      ))}
+      {t.kind !== 'bus' && (
+        <>
+          <span className="m-label">Saída</span>
+          <select className="out-select" value={outputOf(t, tracks)?.id ?? ''} onChange={(e) => useStore.getState().updateTrack(t.id, { output: e.target.value || undefined })}>
+            <option value="">Master</option>
+            {buses.map((b) => <option key={b.id} value={b.id}>Grupo: {b.name}</option>)}
+          </select>
+        </>
+      )}
+      <small className="hint">Os efeitos de envio (tipo de reverb, tempo do eco) se configuram na aba Mixer.</small>
+    </div>
+  );
+}
+
+/** Sidechain: outra trilha (normalmente o bumbo) abaixa o volume desta quando toca. */
+export function SidechainCard({ track: t }: { track: Track }) {
+  const tracks = useStore((s) => s.project.tracks);
+  const sc = sidechainOf(t);
+  const sources = tracks.filter((x) => x.id !== t.id && x.kind !== 'bus');
+  const set = (patch: Partial<Sidechain>, history = false) => {
+    const tr = fresh(t.id);
+    if (tr) useStore.getState().updateTrack(t.id, { fx: { ...tr.fx, sidechain: { ...sidechainOf(tr), ...patch } } }, history);
+  };
+  return (
+    <div className="fx-card sc-card">
+      <h4>Sidechain</h4>
+      <span className="m-label">Abaixar quando toca</span>
+      <select className="out-select" value={sc.source ?? ''} onChange={(e) => set({ source: e.target.value || null }, true)}>
+        <option value="">Desligado</option>
+        {sources.map((x) => <option key={x.id} value={x.id}>{KIND_ICON[x.kind]} {x.name}</option>)}
+      </select>
+      {sc.source && (
+        <>
+          <CRow label="Quanto abaixa" v={`-${num(sc.depth)} dB`}><Slider min={1} max={30} step={0.5} value={sc.depth} reset={9} onChange={(v) => set({ depth: v })} /></CRow>
+          <CRow label="Sensibilidade" v={`${Math.round(sc.sens * 100)}%`}><Slider min={0} max={0.95} step={0.01} value={sc.sens} reset={0.6} onChange={(v) => set({ sens: v })} /></CRow>
+          <CRow label="Volta em" v={`${Math.round(sc.release)} ms`}><Slider min={30} max={800} step={5} value={sc.release} reset={180} onChange={(v) => set({ release: v })} /></CRow>
+          <Reduction get={() => {
+            const g = engine.ready ? engine.duckLevel(t.id) : 1;
+            return 20 * Math.log10(Math.max(1e-4, g));
+          }} />
+        </>
+      )}
+      <small className="hint">O "bombeado" do pop e do eletrônico: o bumbo abaixa o baixo ou o pad para cada batida aparecer.</small>
+    </div>
   );
 }

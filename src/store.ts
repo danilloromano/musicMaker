@@ -4,7 +4,7 @@ import { BEATS_PER_BAR, Note, Project, Region, Track, TrackKind, fitFades, regio
 
 const COLORS = ['#ff7a45', '#38d9c0', '#b98cff', '#ffcf3f', '#ff5fa2', '#5fb4ff', '#9be15d', '#e0b48a'];
 
-const KIND_NAME: Record<TrackKind, string> = { instrument: 'Instrumento', drums: 'Bateria', audio: 'Áudio' };
+const KIND_NAME: Record<TrackKind, string> = { instrument: 'Instrumento', drums: 'Bateria', audio: 'Áudio', bus: 'Grupo' };
 
 export function newTrack(kind: TrackKind, index: number, patch: Partial<Track> = {}): Track {
   return {
@@ -17,7 +17,7 @@ export function newTrack(kind: TrackKind, index: number, patch: Partial<Track> =
     mute: false,
     solo: false,
     color: COLORS[index % COLORS.length],
-    fx: { low: 0, mid: 0, high: 0, reverb: kind === 'drums' ? 0.05 : 0.15, delay: 0, comp: false },
+    fx: { low: 0, mid: 0, high: 0, reverb: kind === 'drums' ? 0.05 : kind === 'bus' ? 0 : 0.15, delay: 0, comp: false },
     ...patch,
   };
 }
@@ -48,7 +48,7 @@ export function savePref(key: string, value: string) {
   }
 }
 
-export type BottomTab = 'editor' | 'fx' | 'amp' | 'loops' | 'keys' | 'audio' | 'master';
+export type BottomTab = 'editor' | 'fx' | 'amp' | 'loops' | 'keys' | 'audio' | 'mixer' | 'master';
 
 interface State {
   project: Project;

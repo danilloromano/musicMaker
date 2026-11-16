@@ -1,5 +1,5 @@
-// AudioWorklet do master: limitador de pico real + medidores (LUFS, pico real, correlação, redução
-// de ganho). Roda na thread de áudio; recebe ajustes e envia leituras pela porta de mensagens.
+// AudioWorklets: o do master (limitador de pico real + medidores: LUFS, pico real, correlação,
+// redução de ganho) e o seguidor de envelope do sidechain. Rodam na thread de áudio.
 import { StereoLimiter } from './limiter';
 import { Correlation, Loudness, TruePeak, dbfs } from './loudness';
 
@@ -96,3 +96,36 @@ class MasterProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('mm-master', MasterProcessor);
+
+/**
+ * Sidechain: segue o envelope do sinal de outra trilha (ataque rápido, volta ajustável) e devolve o
+ * ganho a aplicar nesta (1 = sem redução). A saída vai direto para o ganho "duck" do canal.
+ */
+class DuckProcessor extends AudioWorkletProcessor {
+  private env = 0;
+  private att: number;
+  private rel: number;
+  private depth: number;
+  private k: number;
+  constructor(options: { processorOptions: { depth: number; sens: number; release: number } }) {
+    super();
+    const o = options.processorOptions;
+    this.att = Math.exp(-1 / (sampleRate * 0.003));
+    this.rel = Math.exp(-1 / (sampleRate * Math.max(0.01, o.release / 1000)));
+    this.depth = 1 - 10 ** (-o.depth / 20);
+    this.k = 1 / Math.max(0.05, 1 - o.sens); // sensibilidade 60%: abaixa tudo com 40% de sinal
+  }
+  process(inputs: Float32Array[][], outputs: Float32Array[][]) {
+    const out = outputs[0][0];
+    const inp = inputs[0];
+    for (let i = 0; i < out.length; i++) {
+      let x = 0;
+      for (const ch of inp) x = Math.max(x, Math.abs(ch[i]));
+      this.env = x > this.env ? x + (this.env - x) * this.att : x + (this.env - x) * this.rel;
+      out[i] = 1 - this.depth * Math.min(1, this.env * this.k);
+    }
+    return true;
+  }
+}
+
+registerProcessor('mm-duck', DuckProcessor);

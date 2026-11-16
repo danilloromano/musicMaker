@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef } from 'react';
 import { engine } from '../audio/engine';
 import { importFiles } from '../audio/importFiles';
 import { DRUM_STYLES, LOOPS, addLoop, applyDrumStyle, extendPattern } from '../audio/loops';
 import { presetGroups } from '../audio/instruments';
 import { useStore } from '../store';
-import { BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
+import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
+import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
 
 const HEADER_W = 264;
@@ -157,7 +158,7 @@ export function Timeline() {
   const allowDrop = (e: React.DragEvent) => e.preventDefault();
 
   const createRegion = (e: React.MouseEvent, t: Track) => {
-    if (t.kind === 'audio') return;
+    if (t.kind === 'audio' || t.kind === 'bus') return;
     const start = Math.floor(beatAt(e.clientX) / BEATS_PER_BAR) * BEATS_PER_BAR;
     const r = st.addRegion({ trackId: t.id, name: t.name, start, length: 4 * BEATS_PER_BAR, notes: [] });
     st.set({ selectedRegionId: r.id, selectedTrackId: t.id, editingRegionId: r.id, bottomTab: 'editor' });
@@ -166,6 +167,7 @@ export function Timeline() {
   const add = (kind: TrackKind) => {
     st.addTrack(kind);
     if (kind === 'audio') st.set({ bottomTab: 'fx' }); // mostra a escolha da entrada de áudio
+    if (kind === 'bus') st.set({ bottomTab: 'mixer' }); // onde se escolhe quem vai para o grupo
   };
 
   return (
@@ -177,6 +179,7 @@ export function Timeline() {
             <button title="Trilha de instrumento virtual" onClick={() => add('instrument')}>🎹</button>
             <button title="Trilha de bateria" onClick={() => add('drums')}>🥁</button>
             <button title="Trilha de áudio (microfone / arquivo)" onClick={() => add('audio')}>🎤</button>
+            <button title="Trilha de grupo: soma outras trilhas (ex.: toda a bateria) para ajustar juntas" onClick={() => add('bus')}>🎚️</button>
           </div>
           <div className="ruler" style={{ width }} onPointerDown={scrub}>
             {Array.from({ length: Math.ceil(bars / barStep) }, (_, i) => (
@@ -200,7 +203,8 @@ export function Timeline() {
         {loop?.on && <div className="loop-shade" style={{ left: HEADER_W + loop.start * ppb, width: (loop.end - loop.start) * ppb }} />}
 
         {project.tracks.map((t) => (
-          <div className={`row ${t.id === selectedTrackId ? 'sel' : ''}`} key={t.id}>
+          <Fragment key={t.id}>
+          <div className={`row ${t.id === selectedTrackId ? 'sel' : ''}`}>
             <TrackHeader track={t} />
             <div
               className="lane"
@@ -231,7 +235,13 @@ export function Timeline() {
                 </div>
               ))}
               {recording?.trackId === t.id && <div className="rec-overlay" ref={recEl} />}
-              {t.kind !== 'audio' && !project.regions.some((r) => r.trackId === t.id) && (
+              {t.kind === 'bus' && (
+                <div className="lane-hint">
+                  Grupo: {project.tracks.filter((c) => c.output === t.id).map((c) => c.name).join(', ') || 'nenhuma trilha ainda'} · escolha a saída das
+                  trilhas na aba Mixer
+                </div>
+              )}
+              {(t.kind === 'instrument' || t.kind === 'drums') && !project.regions.some((r) => r.trackId === t.id) && (
                 <div className="lane-hint">
                   {t.kind === 'drums'
                     ? 'Escolha um estilo de bateria no seletor ao lado · ou arraste um loop'
@@ -243,6 +253,8 @@ export function Timeline() {
               )}
             </div>
           </div>
+          {t.autoView && <AutomationRow track={t} width={width} ppb={ppb} />}
+          </Fragment>
         ))}
 
         <div className="dropzone" style={{ marginLeft: HEADER_W }}>
@@ -299,6 +311,13 @@ function TrackHeader({ track: t }: { track: Track }) {
         <input className="th-name" value={t.name} onChange={(e) => up({ name: e.target.value })} />
         <button className={`ms ${t.mute ? 'mute' : ''}`} title="Mudo" onClick={() => up({ mute: !t.mute }, true)}>M</button>
         <button className={`ms ${t.solo ? 'solo' : ''}`} title="Solo" onClick={() => up({ solo: !t.solo }, true)}>S</button>
+        <button
+          className={`ms auto ${t.autoView ? 'on' : ''} ${activeLanes(t).length ? 'has' : ''}`}
+          title="Automação: volume, pan e envios mudando ao longo da música"
+          onClick={() => up({ autoView: t.autoView ? undefined : activeLanes(t)[0]?.param ?? 'volume' }, false)}
+        >
+          A
+        </button>
         <button className="ms x" title="Excluir trilha" onClick={() => st.removeTrack(t.id)}>✕</button>
       </div>
       <div className="th-bot">
@@ -318,7 +337,7 @@ function TrackHeader({ track: t }: { track: Track }) {
             ))}
           </select>
         ) : (
-          t.kind === 'drums' ? <DrumStylePicker track={t} /> : <InputButton />
+          t.kind === 'drums' ? <DrumStylePicker track={t} /> : t.kind === 'bus' ? <span className="th-input">Grupo</span> : <InputButton />
 
         )}
         <Slider className="vol" title="Volume" min={0} max={1} step={0.01} value={t.volume} reset={0.8} onChange={(v) => up({ volume: v })} />
@@ -449,4 +468,109 @@ function Wave({ region: r, color }: { region: Region; color: string }) {
     }
   }, [r.bufferId, r.offset, r.duration, color]);
   return <canvas className="region-body" ref={ref} />;
+}
+
+// ---------- Automação ----------
+
+const AUTO_H = 72;
+
+/** Faixa de automação de uma trilha: cabeçalho (parâmetro) + curva editável. */
+function AutomationRow({ track: t, width, ppb }: { track: Track; width: number; ppb: number }) {
+  const project = useStore((s) => s.project);
+  const params = autoParams(project);
+  const info = params.find((p) => p.id === t.autoView) ?? params[0];
+  const lane = laneOf(t, info.id);
+  const points = lane?.points ?? [];
+  const st = useStore.getState();
+  const svg = useRef<SVGSVGElement>(null);
+
+  const y = (v: number) => 4 + (1 - (v - info.min) / (info.max - info.min)) * (AUTO_H - 8);
+  const vAt = (py: number) => Math.min(info.max, Math.max(info.min, info.min + (1 - (py - 4) / (AUTO_H - 8)) * (info.max - info.min)));
+
+  const save = (pts: AutoPoint[], history = false) => {
+    const tr = useStore.getState().project.tracks.find((x) => x.id === t.id);
+    if (!tr) return;
+    const others = (tr.automation ?? []).filter((l) => l.param !== info.id);
+    const sorted = [...pts].sort((a, b) => a.beat - b.beat);
+    st.updateTrack(t.id, { automation: sorted.length ? [...others, { param: info.id, points: sorted }] : others }, history);
+  };
+
+  /** Arrasta o ponto `i` de `pts` (já com o ponto novo, se for um clique na faixa). */
+  const dragPoint = (e: React.PointerEvent, pts: AutoPoint[], i: number) => {
+    const el = svg.current!;
+    const r = el.getBoundingClientRect();
+    const move = (ev: { clientX: number; clientY: number; altKey: boolean }) => {
+      const raw = Math.max(0, (ev.clientX - r.left) / ppb);
+      const beat = ev.altKey ? raw : Math.round(raw * 4) / 4;
+      const next = pts.slice();
+      next[i] = { beat, value: Math.round(vAt(ev.clientY - r.top) * 1000) / 1000 };
+      save(next);
+    };
+    const pm = (ev: PointerEvent) => move(ev);
+    window.addEventListener('pointermove', pm);
+    window.addEventListener('pointerup', () => window.removeEventListener('pointermove', pm), { once: true });
+    move(e);
+  };
+
+  /** pontos atuais direto do store (vários cliques podem chegar antes de a tela redesenhar) */
+  const current = () => {
+    const tr = useStore.getState().project.tracks.find((x) => x.id === t.id);
+    return (tr && laneOf(tr, info.id)?.points) ?? [];
+  };
+
+  const down = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    st.snapshot();
+    const points = current();
+    const hit = (e.target as Element).getAttribute('data-i');
+    if (hit !== null) return dragPoint(e, points, +hit);
+    // clique na faixa: cria um ponto ali e já começa a arrastá-lo
+    const r = svg.current!.getBoundingClientRect();
+    const beat = Math.round(Math.max(0, (e.clientX - r.left) / ppb) * 4) / 4;
+    const pts = [...points, { beat, value: vAt(e.clientY - r.top) }].sort((a, b) => a.beat - b.beat);
+    dragPoint(e, pts, pts.findIndex((p) => p.beat === beat));
+  };
+
+  const remove = (e: React.MouseEvent) => {
+    const hit = (e.target as Element).getAttribute('data-i');
+    if (hit === null) return;
+    e.stopPropagation();
+    save(current().filter((_, i) => i !== +hit), true);
+  };
+
+  const line = points.length
+    ? [`M0,${y(points[0].value)}`, ...points.map((p) => `L${p.beat * ppb},${y(p.value)}`), `L${width},${y(points[points.length - 1].value)}`].join(' ')
+    : '';
+  const used = (t.automation ?? []).filter((l) => l.points.length).map((l) => l.param);
+
+  return (
+    <div className="row auto-row">
+      <div className="th auto-th" style={{ width: HEADER_W, ['--c' as string]: t.color }}>
+        <span className="auto-label">Automação</span>
+        <select value={info.id} onChange={(e) => st.updateTrack(t.id, { autoView: e.target.value }, false)}>
+          {params.map((p) => (
+            <option key={p.id} value={p.id}>{used.includes(p.id) ? '● ' : ''}{p.name}</option>
+          ))}
+        </select>
+        <div className="auto-tools">
+          <span className="auto-val">{points.length ? `${points.length} ponto${points.length > 1 ? 's' : ''}` : `fixo: ${info.format(info.base(t))}`}</span>
+          {points.length > 0 && <button title="Apagar todos os pontos deste parâmetro" onClick={() => save([], true)}>Limpar</button>}
+        </div>
+      </div>
+      <div className="lane auto-lane" style={{ width, height: AUTO_H }}>
+        <svg ref={svg} width={width} height={AUTO_H} onPointerDown={down} onDoubleClick={remove}>
+          {!points.length && <line x1={0} x2={width} y1={y(info.base(t))} y2={y(info.base(t))} className="auto-base" />}
+          {line && <path d={line} className="auto-line" style={{ stroke: t.color }} />}
+          {points.map((p, i) => (
+            <circle key={i} data-i={i} cx={p.beat * ppb} cy={y(p.value)} r={5} className="auto-pt" style={{ fill: t.color }}>
+              <title>{`${info.format(p.value)} · compasso ${Math.floor(p.beat / BEATS_PER_BAR) + 1}.${Math.floor(p.beat % BEATS_PER_BAR) + 1} (duplo clique apaga)`}</title>
+            </circle>
+          ))}
+        </svg>
+        {!points.length && <div className="lane-hint auto-hint">Clique para criar pontos e arraste para desenhar a curva de {info.name.toLowerCase()}</div>}
+      </div>
+    </div>
+  );
 }

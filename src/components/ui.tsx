@@ -175,4 +175,4 @@ export function Reduction({ get }: { get: () => number }) {
   );
 }
 
-export const KIND_ICON = { instrument: '🎹', drums: '🥁', audio: '🎤' } as const;
+export const KIND_ICON = { instrument: '🎹', drums: '🥁', audio: '🎤', bus: '🎚️' } as const;

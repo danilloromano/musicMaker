@@ -2,11 +2,12 @@ import { engine } from '../audio/engine';
 import { DRUM_MAP, presetGroups } from '../audio/instruments';
 import { LOOPS, Loop, addLoop } from '../audio/loops';
 import { BottomTab, savePref, useStore } from '../store';
-import { Track, TrackFx } from '../types';
+import { Track } from '../types';
 import { AmpRack } from './AmpRack';
 import { AudioEditor } from './AudioEditor';
-import { CompEditor, EqEditor } from './TrackFxPanels';
+import { CompEditor, EqEditor, SendsCard, SidechainCard } from './TrackFxPanels';
 import { MasterPanel } from './MasterPanel';
+import { MixerPanel } from './MixerPanel';
 import { PianoRoll } from './PianoRoll';
 import { LOOP_MIME } from './Timeline';
 import { KIND_ICON, Meter, Slider, Spectrum } from './ui';
@@ -19,6 +20,7 @@ const TABS: [BottomTab, string][] = [
   ['amp', 'Amp & Pedais'],
   ['keys', 'Teclado'],
   ['audio', 'Editor de Áudio'],
+  ['mixer', 'Mixer'],
   ['master', 'Master'],
 ];
 
@@ -38,10 +40,11 @@ export function BottomPanel() {
         {tab === 'editor' && <PianoRoll />}
         {tab === 'loops' && <Loops />}
         {tab === 'audio' && <AudioEditor />}
+        {tab === 'mixer' && <MixerPanel />}
         {tab === 'master' && <MasterPanel />}
         {tab === 'fx' && (track ? <Fx track={track} /> : <div className="empty">Selecione uma trilha.</div>)}
         {tab === 'amp' && (track ? <AmpRack track={track} /> : <div className="empty">Selecione uma trilha.</div>)}
-        {tab === 'keys' && (track && track.kind !== 'audio' ? <Keys track={track} /> : <div className="empty">Selecione uma trilha de instrumento ou bateria para tocar.</div>)}
+        {tab === 'keys' && (track && track.kind !== 'audio' && track.kind !== 'bus' ? <Keys track={track} /> : <div className="empty">Selecione uma trilha de instrumento ou bateria para tocar.</div>)}
       </div>
     </section>
   );
@@ -82,14 +85,9 @@ function Loops() {
 
 // ---------- Efeitos ----------
 
-const FX: { key: 'reverb' | 'delay'; label: string; min: number; max: number; step: number; unit: string }[] = [
-  { key: 'reverb', label: 'Reverb', min: 0, max: 1, step: 0.01, unit: '%' },
-  { key: 'delay', label: 'Eco (delay)', min: 0, max: 1, step: 0.01, unit: '%' },
-];
 
 function Fx({ track: t }: { track: Track }) {
   const st = useStore.getState();
-  const setFx = (patch: Partial<TrackFx>, history = false) => st.updateTrack(t.id, { fx: { ...t.fx, ...patch } }, history);
   return (
     <div className="fx">
       {t.kind === 'audio' && <AudioInput />}
@@ -112,13 +110,8 @@ function Fx({ track: t }: { track: Track }) {
       )}
       <EqEditor track={t} />
       <CompEditor track={t} />
-      {FX.map((f) => (
-        <div className="fx-card" key={f.key}>
-          <h4>{f.label}</h4>
-          <Slider min={f.min} max={f.max} step={f.step} value={t.fx[f.key]} reset={0} onChange={(v) => setFx({ [f.key]: v })} />
-          <span className="fx-val">{Math.round(t.fx[f.key] * 100)}%</span>
-        </div>
-      ))}
+      <SendsCard track={t} />
+      <SidechainCard track={t} />
 
     </div>
   );

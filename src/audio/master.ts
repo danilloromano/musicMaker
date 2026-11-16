@@ -86,6 +86,15 @@ const satComp = (amount: number) => {
 };
 
 const loaded = new WeakMap<BaseAudioContext, Promise<void>>();
+const ready = new WeakSet<BaseAudioContext>();
+
+/** Carrega (uma vez por contexto) o módulo dos AudioWorklets (master e sidechain). */
+export function ensureWorklets(ctx: BaseAudioContext): Promise<void> {
+  if (!loaded.has(ctx)) loaded.set(ctx, ctx.audioWorklet.addModule(workletUrl).then(() => void ready.add(ctx)));
+  return loaded.get(ctx)!;
+}
+/** Os AudioWorklets já estão disponíveis neste contexto? */
+export const workletsReady = (ctx: BaseAudioContext) => ready.has(ctx);
 
 export class MasterChain {
   /** entrada do master (o que antes era o "master" do mixer) */
@@ -146,8 +155,7 @@ export class MasterChain {
   private async loadWorklet() {
     const ctx = this.ctx;
     try {
-      if (!loaded.has(ctx)) loaded.set(ctx, ctx.audioWorklet.addModule(workletUrl));
-      await loaded.get(ctx);
+      await ensureWorklets(ctx);
       const node = new AudioWorkletNode(ctx, 'mm-master', {
         numberOfInputs: 1,
         numberOfOutputs: 1,
