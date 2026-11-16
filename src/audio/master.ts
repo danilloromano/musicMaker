@@ -2,11 +2,24 @@
 // Ao vivo o limitador e os medidores rodam num AudioWorklet; na exportação o limitador roda depois da
 // renderização (ver export.ts), para poder acertar o alvo de loudness.
 import { driveCurve } from './fxutil';
+import { MultibandComp, StereoImager } from './multiband';
 import workletUrl from './dsp/master.worklet.ts?worker&url';
 import type { MasterReading, MasterWorkletSettings } from './dsp/master.worklet';
 import type { MasterSettings } from '../types';
 
 export type { MasterReading };
+
+export const DEFAULT_MULTIBAND: NonNullable<MasterSettings['multiband']> = {
+  on: false,
+  lowFreq: 150,
+  highFreq: 3000,
+  bands: [
+    { threshold: -20, ratio: 2.5, gain: 0 },
+    { threshold: -18, ratio: 2, gain: 0 },
+    { threshold: -20, ratio: 2, gain: 0 },
+  ],
+};
+export const DEFAULT_STEREO: NonNullable<MasterSettings['stereo']> = { width: 1, monoBass: false, monoFreq: 120 };
 
 export const DEFAULT_MASTER: MasterSettings = {
   eq: { low: 0, lowMid: 0, highMid: 0, high: 0 },
@@ -15,10 +28,15 @@ export const DEFAULT_MASTER: MasterSettings = {
   limiter: { on: true, gain: 0, ceiling: -1, release: 120 },
   exportTarget: 'none',
   exportBits: 24,
+  multiband: DEFAULT_MULTIBAND,
+  stereo: DEFAULT_STEREO,
+  exportFormat: 'wav',
+  mp3Bitrate: 320,
 };
 
-/** Ajustes do master do projeto (projetos antigos não têm: usam o padrão). */
-export const masterOf = (m?: MasterSettings): MasterSettings => m ?? DEFAULT_MASTER;
+/** Ajustes do master do projeto, com os campos que projetos antigos não têm preenchidos pelo padrão. */
+export const masterOf = (m?: MasterSettings): Required<MasterSettings> =>
+  ({ ...DEFAULT_MASTER, ...m }) as Required<MasterSettings>;
 
 /** Alvos de loudness da exportação (LUFS integrado). */
 export const EXPORT_TARGETS: { id: MasterSettings['exportTarget']; label: string; lufs: number | null }[] = [
@@ -110,6 +128,11 @@ export class MasterChain {
   private makeup: GainNode;
   private shaper: WaveShaperNode;
   private satOut: GainNode;
+  /** compressor multibanda e imagem estéreo, depois da saturação */
+  readonly multiband: MultibandComp;
+  private imager: StereoImager;
+  /** saída da imagem estéreo (entra no limitador) */
+  private post!: AudioNode;
   private fallback: DynamicsCompressorNode | null = null;
   private worklet: AudioWorkletNode | null = null;
   private settings: MasterSettings = DEFAULT_MASTER;
@@ -135,10 +158,16 @@ export class MasterChain {
     this.output = ctx.createGain();
     this.input.connect(this.eq[0]).connect(this.eq[1]).connect(this.eq[2]).connect(this.eq[3]);
     this.eq[3].connect(this.comp).connect(this.makeup).connect(this.shaper).connect(this.satOut);
+    this.multiband = new MultibandComp(ctx);
+    this.imager = new StereoImager(ctx);
+    this.satOut.connect(this.multiband.input);
+    this.multiband.output.connect(this.imager.input);
+    const post = this.imager.output;
     this.output.connect(dest);
 
+    this.post = post;
     if (!live) {
-      this.satOut.connect(this.output);
+      post.connect(this.output);
       return;
     }
     // até o AudioWorklet carregar (ou se ele falhar), um limitador simples protege a saída
@@ -148,7 +177,7 @@ export class MasterChain {
     this.fallback.ratio.value = 20;
     this.fallback.attack.value = 0.002;
     this.fallback.release.value = 0.1;
-    this.satOut.connect(this.fallback).connect(this.output);
+    post.connect(this.fallback).connect(this.output);
     void this.loadWorklet();
   }
 
@@ -168,10 +197,10 @@ export class MasterChain {
         if (e.data.truePeak > this.maxTruePeak) this.maxTruePeak = e.data.truePeak;
       };
       node.port.postMessage({ type: 'settings', settings: limiterParams(this.settings) });
-      this.satOut.disconnect();
+      this.post.disconnect();
       this.fallback?.disconnect();
       this.fallback = null;
-      this.satOut.connect(node).connect(this.output);
+      this.post.connect(node).connect(this.output);
       this.worklet = node;
     } catch (e) {
       console.warn('Limitador/medidores do master indisponíveis; usando o limitador simples.', e);
@@ -204,6 +233,9 @@ export class MasterChain {
     smooth(this.makeup.gain, c.on ? db(c.makeup) : 1);
     this.shaper.curve = m.saturation > 0 ? driveCurve(m.saturation) : null;
     smooth(this.satOut.gain, m.saturation > 0 ? satComp(m.saturation) : 1);
+    const full = masterOf(m);
+    this.multiband.update(full.multiband);
+    this.imager.update(full.stereo);
     this.worklet?.port.postMessage({ type: 'settings', settings: limiterParams(m) });
   }
 }

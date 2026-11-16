@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { engine, renderWav } from '../audio/engine';
+import { masterOf } from '../audio/master';
 import { download, openProjectFile, saveProjectFile } from '../audio/persist';
 import { defaultProject, savePref, useStore } from '../store';
 import { BEATS_PER_BAR } from '../types';
@@ -51,8 +52,9 @@ export function Transport() {
   const exportWav = async () => {
     setExporting(true);
     try {
-      const { wav, report } = await withLoading('Exportando WAV…', (progress) => renderWav(project, engine.buffers, progress));
-      download(wav, `${project.name || 'musica'}.wav`);
+      const fmt = (masterOf(project.master).exportFormat ?? 'wav').toUpperCase();
+      const { blob, ext, report } = await withLoading(`Exportando ${fmt}…`, (progress) => renderWav(project, engine.buffers, progress));
+      download(blob, `${project.name || 'musica'}.${ext}`);
       st.set({ lastExport: report });
     } catch (e) {
       alert('Falha ao exportar: ' + (e as Error).message);
@@ -147,8 +149,8 @@ export function Transport() {
         <button title="Importar arquivo de áudio (WAV, MP3, OGG...)" onClick={() => importRef.current?.click()}>
           Importar áudio
         </button>
-        <button className="primary" disabled={exporting} title="Exportar a música em WAV" onClick={() => void exportWav()}>
-          {exporting ? 'Exportando…' : 'Exportar WAV'}
+        <button className="primary" disabled={exporting} title="Exportar a música (formato e volume na aba Master)" onClick={() => void exportWav()}>
+          {exporting ? 'Exportando…' : `Exportar ${(masterOf(project.master).exportFormat ?? 'wav').toUpperCase()}`}
         </button>
       </div>
 

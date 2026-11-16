@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ExportReport } from './audio/export';
+import type { Analysis } from './audio/analysis';
 import { BEATS_PER_BAR, Note, Project, Region, Track, TrackKind, fitFades, regionLen, uid } from './types';
 
 const COLORS = ['#ff7a45', '#38d9c0', '#b98cff', '#ffcf3f', '#ff5fa2', '#5fb4ff', '#9be15d', '#e0b48a'];
@@ -70,6 +71,13 @@ interface State {
   loading: { label: string; progress: number | null } | null;
   /** resultado da última exportação (loudness e pico real do arquivo) */
   lastExport: ExportReport | null;
+  /** A/B: ouvindo a referência (true) ou a mix (false) */
+  abRef: boolean;
+  /** A/B: igualar o volume da referência ao da mix (para comparar o timbre, não o volume) */
+  abMatch: boolean;
+  /** análises (não fazem parte do projeto: recalculadas quando preciso) */
+  refAnalysis: Analysis | null;
+  mixAnalysis: Analysis | null;
 
   // entrada de áudio (preferências do computador, não fazem parte do projeto)
   inputs: { id: string; label: string }[];
@@ -122,6 +130,10 @@ export const useStore = create<State>((set, get) => ({
   octave: 4,
   loading: null,
   lastExport: null,
+  abRef: false,
+  abMatch: true,
+  refAnalysis: null,
+  mixAnalysis: null,
 
   inputs: [],
   inputDeviceId: pref('mm.inputDevice') || null,

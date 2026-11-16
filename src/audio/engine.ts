@@ -1,10 +1,11 @@
 import { useStore } from '../store';
-import { BEATS_PER_BAR, Note, Project, Region, projectEnd, regionGainAt, uid } from '../types';
+import { BEATS_PER_BAR, MasterSettings, Note, Project, Region, projectEnd, regionGainAt, uid } from '../types';
 import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments';
 import { loadDrumSamples, warmDrumKit } from './drumKit';
 import { loadAllSampleSets } from './sampler';
-import { ensureWorklets, masterOf } from './master';
-import { ExportReport, encodeWav, finishMaster } from './export';
+import { DEFAULT_MASTER, ensureWorklets, masterOf } from './master';
+import { Analysis, analyze } from './analysis';
+import { ExportReport, encodeExport, finishMaster } from './export';
 import { Mixer } from './mixer';
 import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
@@ -30,6 +31,11 @@ class Engine {
   private sources: AudioBufferSourceNode[] = [];
   private live = new Map<string, Voice>();
   private preview: GainNode | null = null;
+  /** A/B: saída da mix e da referência (só uma fica aberta) */
+  private mixOut!: GainNode;
+  private refOut!: GainNode;
+  /** ganho da referência para igualar o volume ao da mix */
+  private refTrim!: GainNode;
 
   private recorder: Recorder | null = null;
   private recNotes: Note[] = [];
@@ -39,9 +45,15 @@ class Engine {
   ensure() {
     if (!this.ready) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
+      this.mixOut = this.ctx.createGain();
+      this.mixOut.connect(this.ctx.destination);
+      this.refOut = this.ctx.createGain();
+      this.refOut.gain.value = 0;
+      this.refTrim = this.ctx.createGain();
+      this.refTrim.connect(this.refOut).connect(this.ctx.destination);
       warmDrumKit(this.ctx);
       void loadAllSampleSets(this.ctx);
-      this.mixer = new Mixer(this.ctx, this.ctx.destination, (id) => this.buffers.get(id));
+      this.mixer = new Mixer(this.ctx, this.mixOut, (id) => this.buffers.get(id));
       const p = useStore.getState().project;
       this.bpm = p.bpm;
       this.mixer.sync(p);
@@ -64,6 +76,7 @@ class Engine {
           if (this.playing) this.mixer.automate(a, this.getBeat(), this.ctx.currentTime, (beat) => this.timeAt(beat));
         }
         if (a.master !== b.master) this.mixer.chain.update(masterOf(a.master));
+        if (s.abRef !== prev.abRef || s.abMatch !== prev.abMatch || s.refAnalysis !== prev.refAnalysis || s.mixAnalysis !== prev.mixAnalysis) this.applyAB();
         this.routeMonitor();
       });
       this.ready = true;
@@ -149,9 +162,56 @@ class Engine {
     }
   }
 
+  /** A/B: abre a saída da mix ou da referência (transição curta) e ajusta o volume da referência. */
+  private applyAB() {
+    if (!this.ready) return;
+    const s = useStore.getState();
+    const now = this.ctx.currentTime;
+    const ref = s.abRef && !!s.project.reference;
+    this.mixOut.gain.setTargetAtTime(ref ? 0 : 1, now, 0.01);
+    this.refOut.gain.setTargetAtTime(ref ? 1 : 0, now, 0.01);
+    // igualar volume: a referência fica no loudness da mix (medido na análise ou, sem ela, ao vivo)
+    const mixL = s.mixAnalysis?.lufs ?? this.mixer.chain.reading?.integrated;
+    const refL = s.refAnalysis?.lufs;
+    const trim = s.abMatch && mixL !== undefined && refL !== undefined && Number.isFinite(mixL) && Number.isFinite(refL) ? 10 ** ((mixL - refL) / 20) : 1;
+    this.refTrim.gain.setTargetAtTime(Math.min(4, trim), now, 0.01);
+  }
+
+  /** Carrega uma música de referência (A/B): guarda o áudio, analisa e liga ao projeto. */
+  async importReference(file: File) {
+    this.ensure();
+    const buf = await withLoading('Carregando a referência…', async () => this.ctx.decodeAudioData(await file.arrayBuffer()));
+    const bufferId = uid();
+    this.buffers.set(bufferId, buf);
+    void saveBufferLocal(bufferId, buf);
+    const s = useStore.getState();
+    s.update((p) => ({ ...p, reference: { bufferId, name: file.name.replace(/.[^.]+$/, '') } }));
+    s.set({ refAnalysis: null });
+    await this.analyzeReference();
+  }
+
+  /** Analisa a referência carregada (se ainda não foi analisada). */
+  async analyzeReference() {
+    const s = useStore.getState();
+    const buf = s.project.reference && this.buffers.get(s.project.reference.bufferId);
+    if (!buf) return;
+    const r = buf.numberOfChannels > 1 ? buf.getChannelData(1) : buf.getChannelData(0);
+    const a = await analyze(buf.getChannelData(0), r, buf.sampleRate);
+    useStore.getState().set({ refAnalysis: a });
+  }
+
   /** Agenda as regiões de áudio a partir do instante `ref` (o início da reprodução ou de uma volta do loop). */
   private startAudioRegions(ref: number) {
     const { project } = useStore.getState();
+    // referência (A/B): toca junto, alinhada ao começo da música
+    const refBuf = project.reference && this.buffers.get(project.reference.bufferId);
+    if (refBuf) {
+      const at = this.timeAt(0);
+      const late = Math.max(0, ref - at);
+      const src = playAudioRegion(this.ctx, this.refTrim, { id: 'ref', trackId: '', name: '', start: 0, length: 0, offset: 0, duration: refBuf.duration }, refBuf, Math.max(at, ref), late);
+      if (src) this.sources.push(src);
+      this.applyAB();
+    }
     for (const r of project.regions) {
       const buf = r.bufferId && this.buffers.get(r.bufferId);
       const strip = this.mixer.strips.get(r.trackId);
@@ -604,7 +664,37 @@ export async function renderWav(
   project: Project,
   buffers: Map<string, AudioBuffer>,
   onProgress?: (p: number) => void,
-): Promise<{ wav: Blob; report: ExportReport }> {
+): Promise<{ blob: Blob; ext: string; report: ExportReport }> {
+  const master = masterOf(project.master);
+  const rendered = await renderMix(project, buffers, master, (p) => onProgress?.(p * 0.6));
+  const { channels, report } = await finishMaster(rendered, master, (p) => onProgress?.(0.6 + p * 0.3));
+  const { blob, ext } = await encodeExport(channels, rendered.sampleRate, master, (p) => onProgress?.(0.9 + p * 0.1));
+  onProgress?.(1);
+  return { blob, ext, report };
+}
+
+/** Master neutro (sem EQ, compressão, saturação, multibanda nem limitador): a mix "crua". */
+const NEUTRAL_MASTER = { ...DEFAULT_MASTER, limiter: { ...DEFAULT_MASTER.limiter, on: false }, exportTarget: 'none' as const };
+
+/**
+ * Analisa a música: 'raw' = a mix sem nada no master (para o master automático decidir o que fazer);
+ * 'mastered' = como sairia na exportação (master + limitador + alvo de loudness).
+ */
+export async function analyzeProject(
+  project: Project,
+  buffers: Map<string, AudioBuffer>,
+  mode: 'raw' | 'mastered',
+  onProgress?: (p: number) => void,
+): Promise<Analysis> {
+  const master = mode === 'raw' ? NEUTRAL_MASTER : masterOf(project.master);
+  const rendered = await renderMix(project, buffers, master, (p) => onProgress?.(p * 0.6));
+  let [l, r]: Float32Array[] = [rendered.getChannelData(0), rendered.getChannelData(1)];
+  if (mode === 'mastered') [l, r] = (await finishMaster(rendered, master, (p) => onProgress?.(0.6 + p * 0.2))).channels;
+  return analyze(l, r, rendered.sampleRate, (p) => onProgress?.(0.8 + p * 0.2));
+}
+
+/** Renderiza o projeto inteiro offline com o master dado, até a entrada do limitador. */
+async function renderMix(project: Project, buffers: Map<string, AudioBuffer>, master: MasterSettings, onProgress?: (p: number) => void): Promise<AudioBuffer> {
   const sr = 44100;
   const spb = 60 / project.bpm;
   const seconds = projectEnd(project) * spb + 3;
@@ -613,7 +703,6 @@ export async function renderWav(
   const mixer = new Mixer(off, off.destination, (id) => buffers.get(id), false);
   mixer.sync(project);
   mixer.automate(project, 0, 0, (b) => b * spb);
-  const master = masterOf(project.master);
   mixer.chain.update(master);
   const tracks = new Map(project.tracks.map((t) => [t.id, t]));
 
@@ -634,15 +723,11 @@ export async function renderWav(
     for (let k = 1; k < steps; k++) {
       // a renderização pausa em cada ponto, avisa o progresso e continua (o último 5% fica para gerar o arquivo)
       void off.suspend((seconds * k) / steps).then(() => {
-        onProgress((k / steps) * 0.6);
+        onProgress(k / steps);
         void off.resume();
       });
     }
   }
-  const rendered = await off.startRendering();
-  const { channels, report } = await finishMaster(rendered, master, (p) => onProgress?.(0.6 + p * 0.38));
-  const wav = encodeWav(channels, rendered.sampleRate, master.exportBits);
-  onProgress?.(1);
-  return { wav, report };
+  return off.startRendering();
 }
 

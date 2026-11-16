@@ -164,6 +164,13 @@ export interface MasterSettings {
   /** alvo de loudness da exportação (ver EXPORT_TARGETS) */
   exportTarget: 'none' | 'streaming' | 'apple' | 'loud';
   exportBits: 16 | 24;
+  /** compressor multibanda: cortes graves/médios e agudos (Hz) e limiar/razão/ganho de cada banda */
+  multiband?: { on: boolean; lowFreq: number; highFreq: number; bands: { threshold: number; ratio: number; gain: number }[] };
+  /** imagem estéreo: largura (0 = mono, 1 = original, 2 = aberto) e graves em mono abaixo de monoFreq */
+  stereo?: { width: number; monoBass: boolean; monoFreq: number };
+  /** formato do arquivo exportado */
+  exportFormat?: 'wav' | 'flac' | 'mp3';
+  mp3Bitrate?: 128 | 192 | 256 | 320;
 }
 
 export interface Project {
@@ -177,6 +184,8 @@ export interface Project {
   master?: MasterSettings;
   /** efeitos de envio (projetos antigos não têm: reverb + delay padrão) */
   sends?: SendFx[];
+  /** música de referência para comparar (A/B) com a mix */
+  reference?: { bufferId: string; name: string };
 }
 
 export const BEATS_PER_BAR = 4;

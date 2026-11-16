@@ -22,6 +22,7 @@ function bufferIds(p: Project): string[] {
   const ids = new Set<string>();
   for (const r of p.regions) if (r.bufferId) ids.add(r.bufferId);
   for (const t of p.tracks) if (t.amp?.irId) ids.add(t.amp.irId);
+  if (p.reference) ids.add(p.reference.bufferId);
   return [...ids];
 }
 
