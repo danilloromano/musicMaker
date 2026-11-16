@@ -2,6 +2,7 @@
 // Tudo recebe um BaseAudioContext para funcionar igual em tempo real e na exportação offline.
 import { playKitPiece } from './drumKit';
 import { SampleOpts, startSampleVoice } from './sampler';
+import { TonewheelOpts, startTonewheelVoice } from './organ';
 
 export interface SynthPreset {
   name: string;
@@ -34,6 +35,8 @@ export interface SynthPreset {
   hammer?: number;
   /** toca as gravações de um instrumento real (o resto do preset é o sintetizado de reserva, até elas carregarem) */
   sample?: SampleOpts;
+  /** órgão de rodas fônicas modelado (substitui a síntese genérica) */
+  tonewheel?: TonewheelOpts;
 }
 
 // Harmônicos medidos/aproximados de cada instrumento (amplitude do 1º, 2º, 3º... harmônico)
@@ -158,6 +161,38 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sine', octave: 2, detune: 0, gain: 0.15 },
     ],
     a: 0.01, d: 0.1, s: 0.9, r: 0.08, cutoff: 6000, q: 0.3, envAmt: 0, fDecay: 0.1, gain: 0.4,
+    // registro clássico 888000000 com percussão na 3ª e Leslie lento
+    tonewheel: {
+      drawbars: [8, 8, 8, 0, 0, 0, 0, 0, 0],
+      perc: { harmonic: 3, decay: 0.35, level: 0.45 },
+      leslie: { horn: 0.83, drum: 0.7, depth: 1 },
+      drive: 0.25, click: 0.18, gain: 0.35,
+    },
+  },
+  organfast: {
+    name: 'Órgão com Leslie Rápido', group: 'Teclados e synths',
+    oscs: [
+      { type: 'sine', octave: 0, detune: 0, gain: 0.6 },
+      { type: 'sine', octave: 1, detune: 0, gain: 0.35 },
+      { type: 'sine', octave: 2, detune: 0, gain: 0.2 },
+    ],
+    a: 0.01, d: 0.1, s: 0.9, r: 0.08, cutoff: 6000, q: 0.3, envAmt: 0, fDecay: 0.1, gain: 0.4,
+    // registro de rock (888800000), mais sujo, Leslie rápido
+    tonewheel: {
+      drawbars: [8, 8, 8, 8, 0, 0, 0, 0, 0],
+      leslie: { horn: 6.7, drum: 5.8, depth: 1 },
+      drive: 0.6, click: 0.25, gain: 0.27,
+    },
+  },
+  pipe: {
+    name: 'Órgão de Tubos', group: 'Teclados e synths',
+    oscs: [
+      { type: 'sine', octave: 0, detune: 0, gain: 0.6 },
+      { type: 'sine', octave: 1, detune: 0, gain: 0.3 },
+      { type: 'triangle', octave: -1, detune: 0, gain: 0.25 },
+    ],
+    a: 0.06, d: 0.1, s: 0.9, r: 0.3, cutoff: 4000, q: 0.3, envAmt: 0, fDecay: 0.1, gain: 0.35,
+    sample: { set: 'pipe', gain: 0.81, release: 0.45 },
   },
   lead: {
     name: 'Synth Lead', group: 'Teclados e synths',
@@ -184,6 +219,8 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sawtooth', octave: 1, detune: 4, gain: 0.15 },
     ],
     a: 0.15, d: 0.4, s: 0.85, r: 0.5, cutoff: 2200, q: 0.7, envAmt: 800, fDecay: 0.6, gain: 0.22,
+    // naipe de cordas gravado (violoncelos, violas e violinos)
+    sample: { set: 'strings', gain: 0.62, release: 0.6 },
   },
   // ---------- Baixos ----------
   ebass: {
@@ -252,6 +289,7 @@ export function startVoice(
   t: number,
   vel: number,
 ): Voice {
+  if (p.tonewheel) return startTonewheelVoice(ctx, dest, p.tonewheel, pitch, t, vel);
   if (p.sample) {
     const sv = startSampleVoice(ctx, dest, p.sample, pitch, t, vel);
     if (sv) return sv;

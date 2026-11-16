@@ -1,10 +1,10 @@
-// Instrumentos melódicos gravados (piano e baixo): pacotes de amostras gerados por
+// Instrumentos melódicos gravados (piano, baixo, cordas, órgão de tubos): pacotes de amostras gerados por
 // scripts/build-instruments.cjs, carregados sob demanda. Cada nota tocada usa a gravação mais próxima,
 // transposta, na intensidade que corresponde à força do toque.
 import type { Voice } from './instruments';
 import type { Zone } from './samples/piano.js';
 
-export type SampleSet = 'piano' | 'bass';
+export type SampleSet = 'piano' | 'bass' | 'strings' | 'pipe';
 
 /** Como um timbre usa o conjunto gravado. */
 export interface SampleOpts {
@@ -26,12 +26,21 @@ export interface SampleOpts {
 const LOADERS: Record<SampleSet, () => Promise<{ manifest: Zone[]; data: string }>> = {
   piano: () => import('./samples/piano.js'),
   bass: () => import('./samples/bass.js'),
+  strings: () => import('./samples/strings.js'),
+  pipe: () => import('./samples/pipe.js'),
 };
+
+/** Uma gravação decodificada: o áudio, a nota em que foi gravada e o trecho que repete (se sustenta). */
+interface Take {
+  buffer: AudioBuffer;
+  key: number;
+  loop?: [number, number];
+}
 
 interface LoadedZone {
   key: number;
-  /** intensidades (da mais fraca à mais forte) → repetições: [gravação, nota gravada] */
-  layers: [AudioBuffer, number][][];
+  /** intensidades (da mais fraca à mais forte) → repetições */
+  layers: Take[][];
 }
 
 const sets: Partial<Record<SampleSet, LoadedZone[]>> = {};
@@ -53,7 +62,15 @@ export function loadSampleSet(ctx: BaseAudioContext, name: SampleSet): Promise<v
       manifest.map(async (z) => ({
         key: z.key,
         layers: await Promise.all(
-          z.layers.map((takes) => Promise.all(takes.map(async ([o, n, key]) => [await decode(o, n), key] as [AudioBuffer, number]))),
+          z.layers.map((takes) =>
+            Promise.all(
+              takes.map(async ([o, n, key, ls, le]): Promise<Take> => ({
+                buffer: await decode(o, n),
+                key,
+                loop: ls !== undefined && le !== undefined ? [ls, le] : undefined,
+              })),
+            ),
+          ),
         ),
       })),
     );
@@ -88,7 +105,7 @@ export function startSampleVoice(
   let k = Math.floor(Math.random() * takes.length);
   if (takes.length > 1 && k === lastTake.get(lk)) k = (k + 1) % takes.length;
   lastTake.set(lk, k);
-  const [buffer, recorded] = takes[k];
+  const { buffer, key: recorded, loop } = takes[k];
 
   const vca = ctx.createGain();
   // as intensidades gravadas já mudam o timbre; o volume acompanha a força dentro de cada uma
@@ -111,6 +128,12 @@ export function startSampleVoice(
     s.buffer = buffer;
     s.playbackRate.value = rate;
     s.detune.value = cents;
+    if (loop) {
+      // instrumentos que sustentam: repete o trecho estável enquanto a tecla estiver apertada
+      s.loop = true;
+      s.loopStart = loop[0];
+      s.loopEnd = loop[1];
+    }
     const g = ctx.createGain();
     g.gain.value = 1 / Math.sqrt(detunes.length);
     s.connect(g).connect(vca);

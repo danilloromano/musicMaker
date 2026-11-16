@@ -3,6 +3,12 @@
 //    https://github.com/sfzinstruments/SplendidGrandPiano
 //  - baixo: Fashionbass (baixo elétrico de dedo, gravado em linha, Karoryfer Lecords, CC0)
 //    https://github.com/sfzinstruments/karoryfer.fashionbass
+//  - cordas (seções de violoncelo, viola e violino) e órgão de tubos: VS Chamber Orchestra Community
+//    Edition (Versilian Studios, CC0; órgão gravado por Simon Dalzell/Ivy Audio)
+//    https://github.com/sgossner/VSCO-2-CE
+//
+// Instrumentos que sustentam (cordas, órgão) ganham um trecho de repetição (loop) com transição suave,
+// para a nota durar o quanto a tecla ficar apertada.
 //
 // Para cada instrumento escolhe uma nota gravada a cada ~3 semitons (o app transpõe para as do meio),
 // algumas intensidades, corta o fim, normaliza o conjunto inteiro (mantém o equilíbrio natural entre
@@ -39,6 +45,28 @@ function parseSfz(src) {
   return regions;
 }
 
+/**
+ * Regiões de um instrumento do VSCO 2 CE (mapa SFZ no branch "SFZ"), agrupadas por intensidade (da
+ * mais fraca à mais forte). `volume` do SFZ (dB) vira `gainDb`.
+ */
+async function vsco(sfz, cache) {
+  const src = await text(`https://raw.githubusercontent.com/sgossner/VSCO-2-CE/SFZ/${sfz}.sfz`, cache);
+  const dir = src.match(/default_path=(.+)/)[1].trim().replace(/\\/g, '/');
+  const byVel = new Map();
+  for (const r of parseSfz(src)) {
+    if (!r.sample) continue;
+    // duas faixas de intensidade, como no VSCO: suave (até 62) e forte (63 em diante)
+    const lv = +(r.lovel ?? 0) < 63 ? 0 : 1;
+    if (!byVel.has(lv)) byVel.set(lv, []);
+    byVel.get(lv).push({
+      lo: +r.lokey, hi: +r.hikey, key: +r.pitch_keycenter, gainDb: +(r.volume ?? 0),
+      takes: [raw2('sgossner/VSCO-2-CE', dir + r.sample.replace(/\\/g, '/'))],
+    });
+  }
+  return [...byVel.keys()].sort((a, b) => a - b).map((k) => byVel.get(k));
+}
+const raw2 = (repo, file) => `https://raw.githubusercontent.com/${repo}/master/${file.split('/').map(encodeURIComponent).join('/')}`;
+
 /** Notas-alvo: uma a cada `step` semitons entre `lo` e `hi`. */
 const targets = (lo, hi, step) => Array.from({ length: Math.floor((hi - lo) / step) + 1 }, (_, i) => lo + i * step);
 
@@ -65,6 +93,38 @@ const INSTRUMENTS = {
       return out;
     },
   },
+  strings: {
+    cache: 'vsco-2-ce',
+    comment: 'Amostras: VS Chamber Orchestra Community Edition, Versilian Studios (CC0 1.0) — https://github.com/sgossner/VSCO-2-CE',
+    quality: 4,
+    mono: false,
+    loop: true,
+    keys: targets(36, 96, 3),
+    // naipe de cordas: violoncelos nos graves, violas no meio, violinos nos agudos
+    async layers() {
+      const sections = [['CelloEnsSusVib', 0, 47], ['ViolaEnsSusVib', 48, 59], ['ViolinEnsSusVib', 60, 127]];
+      const loaded = await Promise.all(sections.map(([f]) => vsco(f, this.cache)));
+      return loaded[0].map((_, li) =>
+        loaded.flatMap((layers, si) => {
+          const [, lo, hi] = sections[si];
+          return layers[li]
+            .filter((r) => r.key >= lo - 2 && r.key <= hi + 2)
+            .map((r) => ({ ...r, lo: Math.max(r.lo, lo), hi: Math.min(r.hi, hi) }));
+        }),
+      );
+    },
+  },
+  pipe: {
+    cache: 'vsco-2-ce',
+    comment: 'Amostras: órgão de tubos do VS Chamber Orchestra Community Edition (Simon Dalzell/Ivy Audio, Versilian Studios, CC0 1.0) — https://github.com/sgossner/VSCO-2-CE',
+    quality: 4,
+    mono: false,
+    loop: true,
+    keys: targets(36, 96, 3),
+    async layers() {
+      return vsco('OrganQuiet', this.cache);
+    },
+  },
   bass: {
     cache: 'karoryfer-fashionbass',
     comment: 'Amostras: Fashionbass, Karoryfer Lecords (CC0 1.0) — https://github.com/sfzinstruments/karoryfer.fashionbass',
@@ -89,6 +149,44 @@ const INSTRUMENTS = {
   },
 };
 
+/**
+ * Prepara uma gravação sustentada para tocar em loop: acha o fim do trecho estável (antes de o arco
+ * sair da corda / o som cair), põe o loop logo depois do ataque e funde o fim do trecho com o que vem antes
+ * do início (transição de igual potência), para a repetição não ter emenda audível.
+ */
+function makeLoop(chans, sr) {
+  const n = chans[0].length;
+  const win = Math.round(0.05 * sr);
+  const env = [];
+  for (let w = 0; w + win <= n; w += win) {
+    let e = 0;
+    for (const c of chans) for (let i = w; i < w + win; i++) e += c[i] * c[i];
+    env.push(Math.sqrt(e / (win * chans.length)));
+  }
+  const mid = env.slice(Math.floor(env.length * 0.2), Math.ceil(env.length * 0.7)).sort((a, b) => a - b);
+  const ref = mid[Math.floor(mid.length / 2)];
+  let endW = env.length - 1;
+  while (endW > 0 && env[endW] < 0.6 * ref) endW--;
+  // início do trecho estável (fim do ataque); o loop começa logo depois e dura até 2,5 s
+  let startW = 0;
+  while (startW < endW && env[startW] < 0.6 * ref) startW++;
+  const sustainEnd = Math.min(n, endW * win) - Math.round(0.1 * sr);
+  let ls = Math.max(Math.round(0.6 * sr), startW * win + Math.round(0.3 * sr));
+  const le = Math.min(sustainEnd, ls + Math.round(2.5 * sr));
+  if (le - ls < 0.5 * sr) ls = Math.max(Math.round(0.3 * sr), Math.round(le * 0.4));
+  const xf = Math.min(Math.round(0.25 * sr), Math.floor((le - ls) / 3));
+  for (const c of chans) {
+    for (let i = 0; i < xf; i++) {
+      const w = (i / xf) * (Math.PI / 2);
+      c[le - xf + i] = c[le - xf + i] * Math.cos(w) + c[ls - xf + i] * Math.sin(w);
+    }
+  }
+  let peak = 0;
+  const out = chans.map((c) => c.slice(0, le));
+  for (const c of out) for (const x of c) peak = Math.max(peak, Math.abs(x));
+  return { chans: out, peak, loop: [+(ls / sr).toFixed(5), +(le / sr).toFixed(5)] };
+}
+
 async function build(name, inst) {
   const layers = await inst.layers();
   // para cada nota-alvo, em cada intensidade, a região gravada que a cobre (ou a mais próxima)
@@ -107,7 +205,12 @@ async function build(name, inst) {
         if (!decoded.has(url)) {
           const { sampleRate, chans } = await decodeAudio(await download(url, inst.cache));
           const src = inst.mono ? [chans.length > 1 ? chans[0].map((x, i) => (x + chans[1][i]) / 2) : chans[0]] : chans.length > 1 ? chans : [chans[0], chans[0]];
-          decoded.set(url, { sr: sampleRate, key: r.key, ...trim(src, sampleRate, { maxSec: inst.maxSec(r.key), fadeSec: 0.15 }) });
+          const g = 10 ** ((r.gainDb ?? 0) / 20);
+          for (const c of src) for (let i = 0; i < c.length; i++) c[i] *= g;
+          const cut = inst.loop
+            ? makeLoop(trim(src, sampleRate, { floorDb: -90, fadeSec: 0.001 }).chans, sampleRate)
+            : trim(src, sampleRate, { maxSec: inst.maxSec(r.key), fadeSec: 0.15 });
+          decoded.set(url, { sr: sampleRate, key: r.key, ...cut });
         }
         takes.push(url);
       }
@@ -119,12 +222,12 @@ async function build(name, inst) {
   // normaliza o conjunto inteiro pela nota mais forte
   const top = Math.max(...[...decoded.values()].map((d) => d.peak));
   const blobs = [];
-  const index = new Map(); // url → [início, tamanho, nota gravada]
+  const index = new Map(); // url → [início, tamanho, nota gravada, (início e fim do loop, em s)]
   let offset = 0;
   for (const [url, d] of decoded) {
     for (const c of d.chans) for (let i = 0; i < c.length; i++) c[i] *= 0.95 / top;
     const ogg = await encodeOgg(d.chans, d.sr, inst.quality);
-    index.set(url, [offset, ogg.length, d.key]);
+    index.set(url, [offset, ogg.length, d.key, ...(d.loop ?? [])]);
     blobs.push(ogg);
     offset += ogg.length;
   }
