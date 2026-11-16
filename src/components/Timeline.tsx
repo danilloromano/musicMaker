@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef } from 'react';
 import { engine } from '../audio/engine';
 import { importFiles } from '../audio/importFiles';
-import { DRUM_STYLES, LOOPS, addLoop, applyDrumStyle, extendPattern } from '../audio/loops';
+import { DRUM_STYLES, FILL_CHOICES, LOOPS, addLoop, applyDrumStyle, extendPattern, setTrackFills } from '../audio/loops';
 import { presetGroups } from '../audio/instruments';
 import { useStore } from '../store';
 import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
@@ -297,6 +297,32 @@ function DrumStylePicker({ track: t }: { track: Track }) {
   );
 }
 
+/** Viradas automáticas: de quantos em quantos compassos (na região selecionada ou em toda a trilha). */
+function FillPicker({ track: t }: { track: Track }) {
+  const value = useStore((s) => {
+    const rs = s.project.regions.filter((x) => x.trackId === t.id && x.notes);
+    return (rs.find((x) => x.id === s.selectedRegionId) ?? rs[0])?.fills ?? 0;
+  });
+  const hasSel = useStore((s) => s.project.regions.some((x) => x.id === s.selectedRegionId && x.trackId === t.id));
+  return (
+    <select
+      className="th-fills"
+      value={value}
+      title={`Viradas automáticas ${hasSel ? 'na região selecionada' : 'em todas as regiões da trilha'}`}
+      onChange={(e) => {
+        setTrackFills(t.id, +e.target.value);
+        e.currentTarget.blur();
+      }}
+    >
+      <optgroup label="Virada a cada">
+        {FILL_CHOICES.map((n) => (
+          <option key={n} value={n}>{n ? `${n} comp.` : 'Sem virada'}</option>
+        ))}
+      </optgroup>
+    </select>
+  );
+}
+
 function TrackHeader({ track: t }: { track: Track }) {
   const st = useStore.getState();
   const up = (patch: Partial<Track>, history = false) => st.updateTrack(t.id, patch, history);
@@ -337,7 +363,7 @@ function TrackHeader({ track: t }: { track: Track }) {
             ))}
           </select>
         ) : (
-          t.kind === 'drums' ? <DrumStylePicker track={t} /> : t.kind === 'bus' ? <span className="th-input">Grupo</span> : <InputButton />
+          t.kind === 'drums' ? <><DrumStylePicker track={t} /><FillPicker track={t} /></> : t.kind === 'bus' ? <span className="th-input">Grupo</span> : <InputButton />
 
         )}
         <Slider className="vol" title="Volume" min={0} max={1} step={0.01} value={t.volume} reset={0.8} onChange={(v) => up({ volume: v })} />

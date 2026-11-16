@@ -7,6 +7,8 @@ export interface Note {
   start: number; // em tempos (beats), relativo ao início da região
   duration: number; // em tempos
   velocity: number; // 1..127
+  /** nota gerada pela virada automática (ver loops.ts: withFills) */
+  fill?: boolean;
 }
 
 export interface Region {
@@ -17,6 +19,8 @@ export interface Region {
   // regiões MIDI
   length: number; // em tempos
   notes?: Note[];
+  /** bateria: virada automática a cada N compassos (ausente/0 = sem viradas) */
+  fills?: number;
   // regiões de áudio
   bufferId?: string;
   offset?: number; // segundos dentro do buffer

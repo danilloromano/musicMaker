@@ -196,12 +196,14 @@ export function applyDrumStyle(loopId: string, trackId: string, beat: number) {
   const s = useStore.getState();
   const sel = s.project.regions.find((r) => r.id === s.selectedRegionId && r.trackId === trackId && r.notes);
   if (sel) {
-    s.updateRegion(sel.id, { name: loop.name, notes: tile(loop, sel.length) });
+    s.updateRegion(sel.id, { name: loop.name, notes: withFills({ ...sel, name: loop.name }, sel.fills, tile(loop, sel.length)) });
     return;
   }
   const length = Math.max(4, loop.bars) * BEATS_PER_BAR;
   const start = Math.max(0, Math.floor(beat / BEATS_PER_BAR) * BEATS_PER_BAR);
-  const r = s.addRegion({ trackId, name: loop.name, start, length, notes: tile(loop, length) });
+  const fills = DEFAULT_FILLS;
+  const notes = withFills({ name: loop.name, length }, fills, tile(loop, length));
+  const r = s.addRegion({ trackId, name: loop.name, start, length, fills, notes });
   useStore.getState().set({ selectedRegionId: r.id, selectedTrackId: trackId });
 }
 
@@ -212,6 +214,11 @@ export function applyDrumStyle(loopId: string, trackId: string, beat: number) {
  * só repetem se vieram de um loop (baixo, acordes ou melodia); as desenhadas à mão ficam como estão.
  */
 export function extendPattern(r: Region, length: number, kind: Loop['kind']): Note[] | undefined {
+  // com viradas: estende o ritmo sem elas e depois as recoloca nos lugares certos do novo tamanho
+  if (kind === 'drums' && r.fills && r.notes) {
+    const plain = extendPattern({ ...r, fills: 0, notes: withFills(r, 0, r.notes) }, length, kind);
+    return withFills({ ...r, length }, r.fills, plain);
+  }
   if (!r.notes || length <= r.length || r.length <= 0) return r.notes;
   const loop = LOOPS.find((l) => l.kind === kind && l.name === r.name);
   if (!loop && kind !== 'drums') return r.notes;
@@ -226,4 +233,129 @@ export function extendPattern(r: Region, length: number, kind: Loop['kind']): No
     }
   }
   return notes;
+}
+
+// ---------- Viradas automáticas ----------
+
+/** De quantos em quantos compassos a virada entra numa região nova de estilo. */
+export const DEFAULT_FILLS = 4;
+export const FILL_CHOICES = [0, 2, 4, 8];
+
+/**
+ * Virada: ocupa o compasso a partir de `from` tempos até o fim dele (o ritmo nesse trecho dá lugar a
+ * ela). Cada string cobre o compasso inteiro (16 = semicolcheias, 32 = fusas): x = forte, o = fraco.
+ * 'S' é a caixa do estilo (palmas, se o estilo não tem caixa). A primeira nota cai sempre em `from`.
+ */
+interface Fill {
+  from: number;
+  big: boolean;
+  pat: Record<string, string>;
+}
+
+const ACOUSTIC_FILLS: Fill[] = [
+  { from: 3, big: false, pat: { S: '............xxxx', 36: '............x...' } },
+  { from: 3, big: false, pat: { S: '............xoxx', 36: '.............x..' } },
+  { from: 2, big: false, pat: { S: '........xx......', 50: '..........xx....', 48: '............xx..', 45: '..............xx', 36: '........x...x...' } },
+  { from: 2, big: false, pat: { S: '........x..x..x.', 50: '.........x..x...', 45: '..........x..x.x', 36: '........x.......' } },
+  { from: 0, big: true, pat: { S: 'x.x.xxx.........', 50: '........xx......', 48: '..........xx....', 45: '............x.xx', 36: 'x...x...x...x...' } },
+  { from: 0, big: true, pat: { S: 'x.xxx.xx........', 50: '........x.x.....', 48: '.........x.x....', 45: '............xxxx', 36: 'x.......x...x...' } },
+  { from: 2, big: true, pat: { S: '........xxxx....', 50: '............x...', 48: '.............x..', 45: '..............xx', 36: '........x.......' } },
+];
+
+const ELECTRO_FILLS: Fill[] = [
+  { from: 2, big: false, pat: { S: '........x.x.xxxx' } },
+  { from: 3, big: false, pat: { 42: '........................xxxxxxxx', S: '..............x.' } },
+  { from: 2, big: false, pat: { 42: '................xxxx....xxxxxxxx', S: '............x...', 36: '........x.......' } },
+  { from: 0, big: true, pat: { S: 'x...x...x.x.xxxx', 36: 'x.......x.......' } },
+  { from: 0, big: true, pat: { S: 'x.x.x.x.xxxxxxxx', 36: 'x...............' } },
+];
+
+const B = BEATS_PER_BAR;
+const isCrash = (n: Note) => n.pitch === 49 && n.start % B === 0;
+
+/**
+ * Tira as viradas: apaga as notas geradas e devolve o ritmo aos trechos que elas ocupavam. Região de
+ * estilo: copia do padrão original do estilo; outras: do mesmo trecho no compasso anterior.
+ */
+function stripFills(notes: Note[], loop?: Loop): Note[] {
+  const zones = new Map<number, number>(); // compasso → início (tempos) do trecho que a virada ocupou
+  for (const n of notes) {
+    if (!n.fill || isCrash(n)) continue;
+    const bar = Math.floor(n.start / B);
+    zones.set(bar, Math.min(zones.get(bar) ?? Infinity, Math.floor(n.start)));
+  }
+  let out = notes.filter((n) => !n.fill);
+  for (const bar of [...zones.keys()].sort((a, b) => a - b)) {
+    const from = zones.get(bar)!;
+    const end = (bar + 1) * B;
+    // compasso de origem: o equivalente no padrão do estilo, ou o anterior na própria região
+    const src = loop ? bar % loop.bars : bar - 1;
+    if (src < 0) continue;
+    const shift = (bar - src) * B;
+    const pool: N[] = loop ? loop.notes : out;
+    const copy = pool.filter((n) => n.start >= from - shift && n.start < end - shift);
+    out = out.concat(copy.map((n) => ({ ...n, id: uid(), start: n.start + shift })));
+  }
+  return out;
+}
+
+function addFills(notes: Note[], length: number, every: number, pool: Fill[], snare: number, seed: number): Note[] {
+  const bars = Math.floor(length / B + 1e-6);
+  let out = notes;
+  let count = 0;
+  for (let bar = every - 1; bar < bars; bar += every, count++) {
+    // a última virada da região e (com viradas espaçadas) uma sim, outra não são as maiores
+    const big = bar + every >= bars || (every >= 4 && count % 2 === 1);
+    const options = pool.filter((f) => f.big === big);
+    const f = options[(seed + count * 3 + bar) % options.length];
+    const start = bar * B;
+    const from = start + f.from;
+    const end = start + B;
+    out = out.filter((n) => n.start < from || n.start >= end);
+    for (const [k, p] of Object.entries(f.pat)) {
+      const pitch = k === 'S' ? snare : +k;
+      const step = B / p.length;
+      for (let i = 0; i < p.length; i++) {
+        if (p[i] === '.') continue;
+        const t = i * step;
+        // crescendo: a virada vai ficando mais forte até cair no prato
+        const velocity = p[i] === 'x' ? Math.min(127, Math.round(78 + (44 * t) / B)) : 58;
+        out.push({ id: uid(), pitch, start: start + t, duration: Math.min(0.25, step), velocity, fill: true });
+      }
+    }
+    if (end < length - 1e-6 && !out.some((n) => n.pitch === 49 && Math.abs(n.start - end) < 1e-6)) {
+      out.push({ id: uid(), pitch: 49, start: end, duration: 1, velocity: 112, fill: true });
+    }
+  }
+  return out;
+}
+
+/**
+ * Notas da região com viradas a cada `every` compassos (0/ausente = tira as viradas). As viradas
+ * anteriores são sempre desfeitas antes, então dá para trocar a frequência quantas vezes quiser.
+ * O tipo de virada segue o estilo: tons e caixa no rock/funk/reggae, rufos e chimbal no eletrônico.
+ */
+export function withFills(r: Pick<Region, 'name' | 'length'>, every: number | undefined, notes: Note[] = []): Note[] {
+  const loop = LOOPS.find((l) => l.kind === 'drums' && l.name === r.name);
+  const base = stripFills(notes, loop);
+  if (!every || every < 1) return base;
+  const electro = !!loop && DRUM_STYLES.some((g) => g.group.startsWith('Hip-hop') && g.ids.includes(loop.id));
+  const has = (p: number) => base.some((n) => n.pitch === p);
+  const snare = !has(38) && has(39) ? 39 : 38;
+  const seed = [...r.name].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return addFills(base, r.length, every, electro ? ELECTRO_FILLS : ACOUSTIC_FILLS, snare, seed);
+}
+
+/**
+ * Liga/desliga as viradas: na região selecionada da trilha ou, sem seleção, em todas as regiões de
+ * bateria dela.
+ */
+export function setTrackFills(trackId: string, every: number) {
+  const s = useStore.getState();
+  const regions = s.project.regions.filter((r) => r.trackId === trackId && r.notes);
+  const sel = regions.find((r) => r.id === s.selectedRegionId);
+  const targets = sel ? [sel] : regions;
+  if (!targets.length) return;
+  s.snapshot();
+  for (const r of targets) s.updateRegion(r.id, { fills: every || undefined, notes: withFills(r, every, r.notes) }, false);
 }
