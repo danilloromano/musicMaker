@@ -36,6 +36,10 @@ export const PEDALS: PedalDef[] = [
       { label: 'Fino', def: 0.5, fmt: (v) => `${Math.round((v - 0.5) * 100)} ct` },
       { label: 'Mix', def: 0.5 },
     ] },
+  { id: 'wah', name: 'Wah', color: '#9bd94a', post: false,
+    desc: 'Pedal: o filtro fica parado na posição escolhida · Auto: abre sozinho com a força da palhetada',
+    params: [{ label: 'Posição', def: 0.5 }, { label: 'Sensib.', def: 0.5 }, { label: 'Resson.', def: 0.5 }],
+    toggles: [{ labels: ['Pedal', 'Auto'], titles: ['Wah parado na posição do botão (como o pedal meio aberto)', 'Auto-wah: a palhetada abre o filtro e ele fecha quando a nota cai'], def: 0 }] },
   { id: 'boost', name: 'Booster', color: '#e0b48a', post: false, params: [{ label: 'Ganho', def: 0.4 }, { label: 'Brilho', def: 0.3 }] },
   // Três overdrives com o comportamento de circuitos clássicos (os nomes na tela são genéricos de propósito):
   // Dourado ≈ Klon Centaur, Verde ≈ Ibanez TS808, Amarelo ≈ Boss SD-1.
@@ -720,6 +724,43 @@ function pitchPedal(ctx: BaseAudioContext, put: Put): Fx {
   };
 }
 
+// ---------- Wah ----------
+
+/**
+ * Wah: passa-banda ressonante que varre de ~350 Hz (pedal fechado, som "abafado") a ~2,4 kHz (aberto,
+ * "quack"). No modo Auto um seguidor de envelope (retificador + passa-baixas, como no noise gate) soma
+ * a força do sinal à frequência: a palhetada abre o filtro e ele fecha conforme a nota morre.
+ */
+function wahPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain(), dry = ctx.createGain();
+  const bp = filter(ctx, 'bandpass', 800, 4);
+  bp.frequency.value = 0; // a frequência vem toda das fontes abaixo (base + envelope)
+  const base = ctx.createConstantSource();
+  base.start(0);
+  base.connect(bp.frequency);
+  const rect = ctx.createWaveShaper();
+  rect.curve = gateCurve('rect');
+  const env = filter(ctx, 'lowpass', 9); // abre em ~20 ms e fecha devagar como a nota
+  const amount = ctx.createGain();
+  inp.connect(rect).connect(env).connect(amount).connect(bp.frequency);
+  inp.connect(bp).connect(wet).connect(out);
+  inp.connect(dry).connect(out); // um pouco do sinal direto mantém o corpo da nota
+  return {
+    in: inp,
+    out,
+    set: ([pos, sens, res, mode]) => {
+      const auto = (mode ?? 0) >= 0.5;
+      // no Auto a posição é o ponto de partida (pedal fechado = mais varredura)
+      put(base.offset, expMap(pos ?? 0.5, 350, 2400) * (auto ? 0.6 : 1));
+      put(amount.gain, auto ? (sens ?? 0.5) * 9000 : 0);
+      const q = 2 + (res ?? 0.5) * 8;
+      put(bp.Q, q);
+      put(wet.gain, 0.9 + q * 0.18); // o passa-banda estreito tira volume: compensa
+      put(dry.gain, 0.12);
+    },
+  };
+}
+
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
     case 'pitch': return pitchPedal(ctx, put);
@@ -742,6 +783,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
         },
       };
     }
+    case 'wah': return wahPedal(ctx, put);
     case 'boost': {
       const g = ctx.createGain();
       const hs = filter(ctx, 'highshelf', 2500);
