@@ -1,5 +1,5 @@
 // AudioWorklets: o do master (limitador de pico real + medidores: LUFS, pico real, correlação,
-// redução de ganho) e o seguidor de envelope do sidechain. Rodam na thread de áudio.
+// redução de ganho), o seguidor de envelope do sidechain e o octaver da pedaleira. Rodam na thread de áudio.
 import { StereoLimiter } from './limiter';
 import { Correlation, Loudness, TruePeak, dbfs } from './loudness';
 
@@ -129,3 +129,82 @@ class DuckProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('mm-duck', DuckProcessor);
+
+/**
+ * Octaver analógico (estilo dos pedais de oitava clássicos, monofônico). O sinal passa por um filtro
+ * de rastreamento (só a fundamental fica forte) e por um detector com histerese que acha cada ciclo
+ * da nota. Um flip-flop troca de estado a cada ciclo → onda quadrada na metade da frequência (-1
+ * oitava); outro flip-flop sobre o primeiro → um quarto (-2 oitavas). A quadrada sai com o volume do
+ * envelope da nota (segue a palhetada) e passa por um passa-baixas: o grave "gordo" dos octavers.
+ * Saída: só as oitavas (o sinal direto é misturado fora, em nós nativos).
+ */
+class OctaveProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'sub1', defaultValue: 0, minValue: 0, maxValue: 4, automationRate: 'k-rate' },
+      { name: 'sub2', defaultValue: 0, minValue: 0, maxValue: 4, automationRate: 'k-rate' },
+    ];
+  }
+  private hpA: number;
+  private lpA: number;
+  private postA: number;
+  private att: number;
+  private rel: number;
+  private hpX = 0;
+  private hpY = 0;
+  private lp1 = 0;
+  private lp2 = 0;
+  private env = 0;
+  private high = false;
+  private ff1 = 1;
+  private ff2 = 1;
+  private o1 = 0;
+  private o2 = 0;
+  constructor() {
+    super();
+    const a = (f: number) => Math.exp((-2 * Math.PI * f) / sampleRate);
+    this.hpA = a(45); // tira grave inaudível/DC antes de detectar
+    this.lpA = a(650); // rastreamento: deixa a fundamental dominar (notas de baixo e guitarra)
+    this.postA = a(700); // arredonda as quinas da quadrada (grave redondo, sem zumbido)
+    this.att = Math.exp(-1 / (sampleRate * 0.001));
+    this.rel = Math.exp(-1 / (sampleRate * 0.06));
+  }
+  process(inputs: Float32Array[][], outputs: Float32Array[][], params: Record<string, Float32Array>) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    const n = out[0].length;
+    const g1 = params.sub1[0], g2 = params.sub2[0];
+    for (let i = 0; i < n; i++) {
+      let x = 0;
+      for (const ch of inp) x += ch[i];
+      if (inp.length > 1) x /= inp.length;
+      // passa-altas de 1ª ordem
+      const hp = this.hpA * (this.hpY + x - this.hpX);
+      this.hpX = x;
+      this.hpY = hp;
+      // passa-baixas de 2ª ordem (dois polos) = filtro de rastreamento
+      this.lp1 = hp + (this.lp1 - hp) * this.lpA;
+      this.lp2 = this.lp1 + (this.lp2 - this.lp1) * this.lpA;
+      const t = this.lp2;
+      const ax = Math.abs(t);
+      this.env = ax > this.env ? ax + (this.env - ax) * this.att : ax + (this.env - ax) * this.rel;
+      // histerese proporcional ao volume: ruído e harmônicos não disparam ciclos falsos
+      const h = Math.max(2e-4, this.env * 0.2);
+      if (!this.high && t > h) {
+        this.high = true;
+        this.ff1 = -this.ff1;
+        if (this.ff1 > 0) this.ff2 = -this.ff2;
+      } else if (this.high && t < -h) this.high = false;
+      // abaixo de ~-66 dB não há nota: cala as oitavas (sem "ronco" do flip-flop no silêncio)
+      const gate = this.env > 5e-4 ? 1 : 0;
+      const a = this.env * gate;
+      this.o1 = a * this.ff1 + (this.o1 - a * this.ff1) * this.postA;
+      this.o2 = a * this.ff2 + (this.o2 - a * this.ff2) * this.postA;
+      const y = g1 * this.o1 + g2 * this.o2;
+      for (const ch of out) ch[i] = y;
+    }
+    return true;
+  }
+}
+
+registerProcessor('mm-octave', OctaveProcessor);

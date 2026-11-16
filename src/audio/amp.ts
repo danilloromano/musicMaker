@@ -1,6 +1,7 @@
 // Rack de guitarra/baixo: pedais → amplificador → caixa (impulse response) → pedais de modulação e tempo.
 // Tudo roda no canal da trilha, então a gravação continua seca e o timbre pode ser trocado depois (re-amp).
 import { AmpRig } from '../types';
+import { workletsReady } from './master';
 import { AMPS, AmpModel, ToneStackParts, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from './ampCircuits';
 
 // ---------- Definições ----------
@@ -29,6 +30,9 @@ export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ..
 export const PEDALS: PedalDef[] = [
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
   { id: 'comp', name: 'Compressor', color: '#38d9c0', post: false, params: [{ label: 'Sustain', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'octave', name: 'Octaver', color: '#6a5acd', post: false,
+    desc: 'Oitava e duas oitavas abaixo, como os octavers analógicos: grave gordo, toque uma nota por vez',
+    params: [{ label: 'Direto', def: 0.7 }, { label: '-1 Oit.', def: 0.6 }, { label: '-2 Oit.', def: 0 }] },
   { id: 'pitch', name: 'Pitch', color: '#d2457a', post: false,
     desc: 'Muda a afinação: oitava acima/abaixo, quinta, terça… Mix no máximo = só o som transposto; no meio = harmonia',
     params: [
@@ -787,9 +791,36 @@ function wahPedal(ctx: BaseAudioContext, put: Put): WahFx {
   return fx;
 }
 
+// ---------- Octaver ----------
+
+/**
+ * Octaver: as oitavas abaixo saem do AudioWorklet 'mm-octave' (flip-flops, ver master.worklet.ts) e o
+ * sinal direto passa por fora. Se os worklets ainda não carregaram, só o direto passa; o mixer remonta o
+ * rack quando eles ficam prontos (ver rigKey no mixer).
+ */
+function octavePedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain();
+  inp.connect(dry).connect(out);
+  const node = workletsReady(ctx)
+    ? new AudioWorkletNode(ctx, 'mm-octave', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] })
+    : null;
+  if (node) inp.connect(node).connect(out);
+  return {
+    in: inp,
+    out,
+    set: ([direct, sub1, sub2]) => {
+      put(dry.gain, (direct ?? 0.7) * 1.4);
+      if (!node) return;
+      put(node.parameters.get('sub1')!, (sub1 ?? 0.6) * 3);
+      put(node.parameters.get('sub2')!, (sub2 ?? 0) * 3);
+    },
+  };
+}
+
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
     case 'pitch': return pitchPedal(ctx, put);
+    case 'octave': return octavePedal(ctx, put);
     case 'reverb': return reverbPedal(ctx, put);
     case 'gate': return noiseGate(ctx, put);
     case 'comp': {

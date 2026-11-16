@@ -115,7 +115,8 @@ export class Mixer {
   private syncRig(s: Strip, t: Track) {
     const want = t.amp?.on ? t.amp : null;
     const ir = want?.cab === 'user' && want.irId ? this.getBuffer(want.irId) : undefined;
-    const key = want && rigKey(want, !!ir);
+    // o octaver usa AudioWorklet: quando os worklets carregam, o rack é remontado para ganhá-lo
+    const key = want && `${rigKey(want, !!ir)}|${workletsReady(this.ctx) ? 'w' : ''}`;
     if (s.rig && s.rig.key !== key) {
       s.input.disconnect();
       s.rig.dispose();
