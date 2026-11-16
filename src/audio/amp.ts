@@ -123,7 +123,20 @@ export const PEDALS: PedalDef[] = [
     desc: 'Pedal: o filtro fica parado na posição escolhida · Auto: abre sozinho com a força da palhetada',
     params: [{ label: 'Posição', def: 0.5 }, { label: 'Sensib.', def: 0.5 }, { label: 'Resson.', def: 0.5 }],
     toggles: [{ labels: ['Pedal', 'Auto'], titles: ['Wah parado na posição do botão (como o pedal meio aberto)', 'Auto-wah: a palhetada abre o filtro e ele fecha quando a nota cai'], def: 0 }] },
-  { id: 'boost', name: 'Booster', color: '#e0b48a', post: false, params: [{ label: 'Ganho', def: 0.4 }, { label: 'Brilho', def: 0.3 }] },
+  group('boost', 'Booster', [
+    { id: 'boostClean', name: 'Clean', color: '#e0b48a', desc: 'Aumento limpo e transparente: empurra o amp ou um drive sem mudar o timbre; Graves e Brilho para ajustar',
+      params: [
+        { label: 'Ganho', def: 0.4, fmt: (v) => fmtDb(20 * Math.log10(1 + v * 7)) },
+        { label: 'Brilho', def: 0.3, fmt: (v) => fmtDb(v * 10) },
+        { label: 'Graves', def: 0.5, fmt: (v) => fmtDb((v - 0.5) * 12) },
+      ] },
+    { id: 'boostFet', name: 'FET', color: '#c98a5a', desc: 'Transistor JFET: aumento quente, um pouco de compressão e harmônicos pares; com ganho alto já começa a saturar',
+      params: [
+        { label: 'Ganho', def: 0.45 },
+        { label: 'Tom', def: 0.55 },
+        { label: 'Nível', def: 0.5 },
+      ] },
+  ]),
   // Overdrive, distorção e fuzz: um pedal de cada, com vários circuitos clássicos dentro (os nomes na tela
   // são genéricos de propósito). Dourado ≈ Klon Centaur, Verde ≈ Ibanez TS808, Amarelo ≈ Boss SD-1;
   // Preta ≈ ProCo RAT, Britânica ≈ Marshall Guv'nor, Metal ≈ Boss MT-2; Muff ≈ Big Muff Pi, Germânio ≈ Fuzz Face.
@@ -211,7 +224,7 @@ export const PEDALS: PedalDef[] = [
     ] },
 ];
 
-type Curve = 'soft' | 'hard' | 'asym' | 'germ' | 'tape' | 'diode' | 'germAsym';
+type Curve = 'soft' | 'hard' | 'asym' | 'germ' | 'tape' | 'diode' | 'germAsym' | 'fet';
 
 export { AMPS } from './ampCircuits';
 
@@ -354,6 +367,8 @@ function curve(kind: Curve) {
         : kind === 'diode' ? (4 * x) / (1 + Math.abs(4 * x) ** 2.5) ** 0.4 / 0.988
         // transistor de germânio polarizado: o lado negativo satura antes (assimetria → harmônicos pares)
         : kind === 'germAsym' ? (x >= 0 ? Math.tanh(1.2 * x) / Math.tanh(1.2) : (-0.8 * Math.tanh(-2.5 * x)) / Math.tanh(2.5))
+        // JFET: lei quadrática (x + x²) → curva levemente torta, harmônicos pares; satura bem devagar
+        : kind === 'fet' ? Math.tanh(1.4 * x + 0.35 * x * x) / Math.tanh(1.75)
         : x >= 0 ? Math.tanh(3 * x) / Math.tanh(3) : (-0.7 * Math.tanh(-6 * x)) / Math.tanh(6);
     }
     curves.set(kind, c);
@@ -1739,11 +1754,43 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
         },
       };
     }
-    case 'boost': {
+    case 'boostClean': {
+      // ganho linear (até ~+18 dB) e prateleiras: nenhuma saturação
       const g = ctx.createGain();
+      const ls = filter(ctx, 'lowshelf', 120);
       const hs = filter(ctx, 'highshelf', 2500);
-      g.connect(hs);
-      return { in: g, out: hs, set: ([gain, bright]) => { put(g.gain, 1 + gain * 7); put(hs.gain, bright * 10); } };
+      g.connect(ls).connect(hs);
+      return {
+        in: g,
+        out: hs,
+        set: ([gain, bright, bass]) => {
+          put(g.gain, 1 + gain * 7);
+          put(hs.gain, bright * 10);
+          put(ls.gain, ((bass ?? 0.5) - 0.5) * 12);
+        },
+      };
+    }
+    case 'boostFet': {
+      // corta o grave embolado antes, satura de leve no transistor, presença e tom depois
+      const hp = highpass1(ctx, 70);
+      const pre = ctx.createGain();
+      const sh = shaper(ctx, 'fet');
+      const dc = filter(ctx, 'highpass', 25);
+      const presence = filter(ctx, 'peaking', 2800, 0.8, 3);
+      const tone = filter(ctx, 'lowpass', 8000, 0.6);
+      const out = ctx.createGain();
+      hp.connect(pre).connect(sh).connect(dc).connect(presence).connect(tone).connect(out);
+      return {
+        in: hp,
+        out,
+        set: ([gain, t, level]) => {
+          const g = 1 + (gain ?? 0.45) * 14;
+          put(pre.gain, g);
+          put(tone.frequency, expMap(t ?? 0.55, 2500, 14000));
+          // a curva amplifica ~1,5x os sinais baixos: compensa, e com o Nível no meio o ganho total é o do botão
+          put(out.gain, ((level ?? 0.5) * 2) / 1.49);
+        },
+      };
     }
     case 'odGreen':
       return feedbackDrive(ctx, put, { min: 12, range: 106, curve: 'soft', bassCut: 9, hump: [720, 4], toneA: 800, toneB: 5000, out: 0.37 });

@@ -46,6 +46,8 @@ export function AmpRack({ track: t }: { track: Track }) {
     const ps = pedalState(d);
     const model = modelOf(d, ps.model);
     const params = paramsOf(d, ps.model);
+    // os valores salvos podem ter menos posições que o pedal tem hoje (botão novo): completa com os padrões
+    const withValue = (i: number, v: number) => pedalDefaults(d, ps.model).map((def, j) => (j === i ? v : ps.p[j] ?? def));
     return (
       <div key={d.id} className={`stomp ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: model?.color ?? d.color }} title={model?.desc ?? d.desc}>
         <i className="screw tl" /><i className="screw tr" /><i className="screw bl" /><i className="screw br" />
@@ -66,10 +68,10 @@ export function AmpRack({ track: t }: { track: Track }) {
                     aria-label={`${x.label}: ${text}`}
                     onPointerDown={() => useStore.getState().snapshot()}
                     onKeyDown={(e) => e.stopPropagation()}
-                    onChange={(e) => setPedal(d, { p: ps.p.map((o, j) => (j === i ? +e.target.value : o)) })}
+                    onChange={(e) => setPedal(d, { p: withValue(i, +e.target.value) })}
                     onDoubleClick={() => {
                       useStore.getState().snapshot();
-                      setPedal(d, { p: ps.p.map((o, j) => (j === i ? x.def : o)) });
+                      setPedal(d, { p: withValue(i, x.def) });
                     }}
                   />
                   <span>{x.short ?? x.label}</span>
@@ -87,7 +89,7 @@ export function AmpRack({ track: t }: { track: Track }) {
               value={ps.p[i] ?? x.def}
               reset={x.def}
               fmt={x.fmt && ((v: number) => x.fmt!(v, ps.p))}
-              onChange={(v) => setPedal(d, { p: ps.p.map((o, j) => (j === i ? v : o)) })}
+              onChange={(v) => setPedal(d, { p: withValue(i, v) })}
             />
           ))}
         </div>
