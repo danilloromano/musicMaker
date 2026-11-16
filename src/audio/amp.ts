@@ -72,6 +72,19 @@ export const PEDALS: PedalDef[] = [
   { id: 'odYellow', name: 'Overdrive Amarelo', color: '#f2d33c', post: false, desc: 'Clipagem assimétrica: mais brilho e harmônicos pares',
     params: [{ label: 'Drive', def: 0.45 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
   { id: 'dist', name: 'Distorção', color: '#ff9a3c', post: false, params: [{ label: 'Drive', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  // Mais drives com o comportamento de circuitos clássicos (nomes genéricos de propósito):
+  // Preta ≈ ProCo RAT, Britânica ≈ Marshall Guv'nor (amp num pedal), Metal ≈ Boss MT-2,
+  // Fuzz Muff ≈ Big Muff Pi, Fuzz Germânio ≈ Fuzz Face.
+  { id: 'distBlack', name: 'Distorção Preta', color: '#3a3a3a', post: false, desc: 'Op-amp com diodos de silício: muito ganho, médios cheios; o Filtro escurece girando para a direita',
+    params: [{ label: 'Distorção', def: 0.5 }, { label: 'Filtro', def: 0.4 }, { label: 'Volume', def: 0.5 }] },
+  { id: 'distBrit', name: 'Distorção Britânica', color: '#c9a35c', post: false, desc: 'Amp valvulado britânico num pedal: crocante, médios na frente, ótimo em amp limpo',
+    params: [{ label: 'Ganho', def: 0.5 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'distMetal', name: 'Distorção Metal', color: '#9aa0a6', post: false, desc: 'Dois estágios de ganho altíssimo e EQ ativo: médios cavados para metal, ou no máximo para solos',
+    params: [{ label: 'Drive', def: 0.6 }, { label: 'Médios', def: 0.3 }, { label: 'Agudos', def: 0.55 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'fuzzMuff', name: 'Fuzz Muff', color: '#5b6fa8', post: false, desc: 'Sustain enorme e parede de som; o Tom passa de grave gordo a agudo, com os médios cavados no meio',
+    params: [{ label: 'Sustain', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Volume', def: 0.5 }] },
+  { id: 'fuzzGerm', name: 'Fuzz Germânio', color: '#b0412e', post: false, desc: 'Fuzz redondo e quente dos anos 60; limpa quando você toca mais leve',
+    params: [{ label: 'Fuzz', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
   { id: 'fuzz', name: 'Fuzz', color: '#e8564a', post: false, params: [{ label: 'Fuzz', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
   { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true, params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }] },
   { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
@@ -92,7 +105,7 @@ export const PEDALS: PedalDef[] = [
     toggles: [{ labels: ['Mola', 'Sala'], titles: ['Reverb de mola', 'Reverb sem mola: sala'], def: 0 }] },
 ];
 
-type Curve = 'soft' | 'hard' | 'asym' | 'germ' | 'tape';
+type Curve = 'soft' | 'hard' | 'asym' | 'germ' | 'tape' | 'diode' | 'germAsym';
 
 export { AMPS } from './ampCircuits';
 
@@ -224,6 +237,10 @@ function curve(kind: Curve) {
         // fita: ganho 1 nos sinais baixos (não realimenta o laço do delay), comprime só os picos
         : kind === 'tape' ? Math.tanh(1.5 * x) / 1.5
         : kind === 'germ' ? Math.tanh(1.4 * x) / Math.tanh(1.4) // diodo de germânio: joelho baixo e bem macio
+        // diodos de silício para a terra (op-amp com clipagem dura, mas com joelho arredondado)
+        : kind === 'diode' ? (4 * x) / (1 + Math.abs(4 * x) ** 2.5) ** 0.4 / 0.988
+        // transistor de germânio polarizado: o lado negativo satura antes (assimetria → harmônicos pares)
+        : kind === 'germAsym' ? (x >= 0 ? Math.tanh(1.2 * x) / Math.tanh(1.2) : (-0.8 * Math.tanh(-2.5 * x)) / Math.tanh(2.5))
         : x >= 0 ? Math.tanh(3 * x) / Math.tanh(3) : (-0.7 * Math.tanh(-6 * x)) / Math.tanh(6);
     }
     curves.set(kind, c);
@@ -424,6 +441,137 @@ function transparentDrive(ctx: BaseAudioContext, put: Put): Fx {
 /** Estado de um pedal no rack; projetos salvos antes da troca do overdrive genérico usam o Verde no lugar dele. */
 export function pedalOf(rig: AmpRig, d: PedalDef) {
   return rig.pedals[d.id] ?? (d.id === 'odGreen' ? rig.pedals.od : undefined) ?? { on: false, p: pedalDefaults(d) };
+}
+
+// ---------- Mais distorções ----------
+
+/** Distorção Preta (estilo RAT): op-amp com ganho até ~400x, diodos de silício, filtro passa-baixas na saída. */
+function blackDist(ctx: BaseAudioContext, put: Put): Fx {
+  const hp = highpass1(ctx, 60);
+  const emph = filter(ctx, 'peaking', 1000, 0.6, 3); // o op-amp perde agudos com ganho alto: médios na frente
+  const pre = ctx.createGain();
+  const sh = shaper(ctx, 'diode');
+  const dc = filter(ctx, 'highpass', 30);
+  const flt = filter(ctx, 'lowpass', 3000, 0.5);
+  const out = ctx.createGain();
+  hp.connect(emph).connect(pre).connect(sh).connect(dc).connect(flt).connect(out);
+  return {
+    in: hp,
+    out,
+    set: ([dist, f, vol]) => {
+      put(pre.gain, 2 + dist ** 2 * 400);
+      put(flt.frequency, expMap(1 - f, 600, 14000)); // Filtro para a direita = mais escuro
+      put(out.gain, 0.3 * vol * 2);
+    },
+  };
+}
+
+/** Distorção Britânica (estilo amp num pedal): dois estágios assimétricos, como pré-amp valvulado, com médios. */
+function britDist(ctx: BaseAudioContext, put: Put): Fx {
+  const hp = highpass1(ctx, 90);
+  const g1 = ctx.createGain();
+  const s1 = shaper(ctx, 'asym');
+  const between = filter(ctx, 'lowpass', 5500);
+  const g2 = ctx.createGain();
+  const s2 = shaper(ctx, 'soft');
+  const dc = filter(ctx, 'highpass', 30);
+  const mid = filter(ctx, 'peaking', 750, 0.8, 4);
+  const tone = filter(ctx, 'highshelf', 2200);
+  const cut = filter(ctx, 'lowpass', 7000);
+  const out = ctx.createGain();
+  hp.connect(g1).connect(s1).connect(between).connect(g2).connect(s2).connect(dc).connect(mid).connect(tone).connect(cut).connect(out);
+  return {
+    in: hp,
+    out,
+    set: ([gain, t, level]) => {
+      put(g1.gain, 1.5 + gain * 12);
+      put(g2.gain, 1 + gain * 6);
+      put(tone.gain, (t - 0.5) * 18);
+      put(out.gain, 0.32 * level * 2);
+    },
+  };
+}
+
+/** Distorção Metal (estilo MT-2): dois estágios duros em cascata e EQ ativo (grave forte, médios e agudos ajustáveis). */
+function metalDist(ctx: BaseAudioContext, put: Put): Fx {
+  const hp = highpass1(ctx, 100); // aperta o grave antes de distorcer: palm mute definido
+  const g1 = ctx.createGain();
+  const s1 = shaper(ctx, 'hard');
+  const between = filter(ctx, 'lowpass', 6000);
+  const g2 = ctx.createGain();
+  const s2 = shaper(ctx, 'diode');
+  const dc = filter(ctx, 'highpass', 30);
+  const low = filter(ctx, 'lowshelf', 120, 0.7, 6);
+  const mid = filter(ctx, 'peaking', 800, 0.9);
+  const high = filter(ctx, 'highshelf', 3000);
+  const fizz = filter(ctx, 'lowpass', 8000, 0.7); // corta o chiado de cima
+  const out = ctx.createGain();
+  hp.connect(g1).connect(s1).connect(between).connect(g2).connect(s2).connect(dc).connect(low).connect(mid).connect(high).connect(fizz).connect(out);
+  return {
+    in: hp,
+    out,
+    set: ([drive, m, h, level]) => {
+      put(g1.gain, 5 + drive * 40);
+      put(g2.gain, 2 + drive * 10);
+      put(mid.gain, (m - 0.5) * 30); // -15 dB (cavado) a +15 dB
+      put(high.gain, (h - 0.5) * 24);
+      put(out.gain, 0.22 * (level ?? 0.5) * 2);
+    },
+  };
+}
+
+/**
+ * Fuzz Muff (estilo Big Muff): dois estágios de clipagem com passa-baixas entre eles (o sustain longo e
+ * liso) e o controle de tom clássico, que mistura um passa-baixas e um passa-altas: no meio os dois
+ * se somam com um vale nos médios (~1 kHz).
+ */
+function muffFuzz(ctx: BaseAudioContext, put: Put): Fx {
+  const hp = highpass1(ctx, 80);
+  const g1 = ctx.createGain();
+  const s1 = shaper(ctx, 'soft');
+  const f1 = filter(ctx, 'lowpass', 3500);
+  const g2 = ctx.createGain();
+  const s2 = shaper(ctx, 'soft');
+  const dc = filter(ctx, 'highpass', 30);
+  const lp = filter(ctx, 'lowpass', 700, 0.5), hpT = filter(ctx, 'highpass', 1400, 0.5);
+  const lg = ctx.createGain(), hg = ctx.createGain();
+  const out = ctx.createGain();
+  hp.connect(g1).connect(s1).connect(f1).connect(g2).connect(s2).connect(dc);
+  dc.connect(lp).connect(lg).connect(out);
+  dc.connect(hpT).connect(hg).connect(out);
+  return {
+    in: hp,
+    out,
+    set: ([sus, t, vol]) => {
+      put(g1.gain, 3 + sus * 30);
+      put(g2.gain, 2 + sus * 12);
+      put(lg.gain, 1 - t);
+      put(hg.gain, t * 1.3);
+      put(out.gain, 0.45 * vol * 2);
+    },
+  };
+}
+
+/**
+ * Fuzz Germânio (estilo Fuzz Face): um estágio assimétrico de germânio, ganho moderado e quase sem filtro
+ * na entrada, então a dinâmica da palhetada aparece: tocando leve o som limpa.
+ */
+function germFuzz(ctx: BaseAudioContext, put: Put): Fx {
+  const hp = highpass1(ctx, 40);
+  const pre = ctx.createGain();
+  const sh = shaper(ctx, 'germAsym');
+  const dc = filter(ctx, 'highpass', 30);
+  const warm = filter(ctx, 'lowpass', 4500, 0.6);
+  const out = ctx.createGain();
+  hp.connect(pre).connect(sh).connect(dc).connect(warm).connect(out);
+  return {
+    in: hp,
+    out,
+    set: ([fuzz, vol]) => {
+      put(pre.gain, 1 + fuzz * 60);
+      put(out.gain, 0.35 * vol * 2);
+    },
+  };
 }
 
 // ---------- Reverb: respostas ao impulso de mola e de sala ----------
@@ -934,6 +1082,11 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
     case 'odGold':
       return transparentDrive(ctx, put);
     case 'dist': return drivePedal(ctx, put, 120, 250, 'hard', 1200, 9000, 0.25);
+    case 'distBlack': return blackDist(ctx, put);
+    case 'distBrit': return britDist(ctx, put);
+    case 'distMetal': return metalDist(ctx, put);
+    case 'fuzzMuff': return muffFuzz(ctx, put);
+    case 'fuzzGerm': return germFuzz(ctx, put);
     case 'fuzz': return drivePedal(ctx, put, 60, 600, 'asym', 700, 6000, 0.25);
     case 'chorus': {
       const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();

@@ -46,7 +46,7 @@ export function AmpRack({ track: t }: { track: Track }) {
             <RotaryKnob
               key={x.label}
               label={x.label}
-              size={d.params.length > 2 ? 32 : 36}
+              size={d.params.length > 3 ? 28 : d.params.length > 2 ? 32 : 36}
               value={ps.p[i] ?? x.def}
               reset={x.def}
               fmt={x.fmt}
