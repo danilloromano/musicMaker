@@ -1,10 +1,13 @@
-// Instrumentos melódicos gravados (piano, baixo, cordas, órgão de tubos): pacotes de amostras gerados por
-// scripts/build-instruments.cjs, carregados sob demanda. Cada nota tocada usa a gravação mais próxima,
-// transposta, na intensidade que corresponde à força do toque.
+// Instrumentos melódicos tocados a partir de gravações: as reais (piano, baixo, cordas, órgão de tubos —
+// pacotes gerados por scripts/build-instruments.cjs, carregados sob demanda) e as calculadas por modelos
+// físicos (pianos elétricos, clavinete, sino — ver modeled.ts). Cada nota tocada usa a gravação mais
+// próxima, transposta, na intensidade que corresponde à força do toque.
 import type { Voice } from './instruments';
+import { MODELED_SETS, ModeledSet, renderModel } from './modeled';
 import type { Zone } from './samples/piano.js';
 
-export type SampleSet = 'piano' | 'bass' | 'strings' | 'pipe';
+type RecordedSet = 'piano' | 'bass' | 'strings' | 'pipe';
+export type SampleSet = RecordedSet | ModeledSet;
 
 /** Como um timbre usa o conjunto gravado. */
 export interface SampleOpts {
@@ -23,7 +26,7 @@ export interface SampleOpts {
   detune?: number[];
 }
 
-const LOADERS: Record<SampleSet, () => Promise<{ manifest: Zone[]; data: string }>> = {
+const LOADERS: Record<RecordedSet, () => Promise<{ manifest: Zone[]; data: string }>> = {
   piano: () => import('./samples/piano.js'),
   bass: () => import('./samples/bass.js'),
   strings: () => import('./samples/strings.js'),
@@ -46,9 +49,29 @@ interface LoadedZone {
 const sets: Partial<Record<SampleSet, LoadedZone[]>> = {};
 const loading: Partial<Record<SampleSet, Promise<void>>> = {};
 
-/** Carrega e decodifica um conjunto uma única vez (um AudioBuffer serve para qualquer contexto). */
+const isModeled = (name: SampleSet): name is ModeledSet => (MODELED_SETS as string[]).includes(name);
+
+/** Calcula as notas de um instrumento modelado e as guarda como gravações. */
+async function loadModeled(ctx: BaseAudioContext, name: ModeledSet): Promise<LoadedZone[]> {
+  const sr = ctx.sampleRate;
+  const zones = await renderModel(name, sr);
+  return zones.map((z) => ({
+    key: z.key,
+    layers: z.layers.map((d) => {
+      const buffer = new AudioBuffer({ length: d.length, sampleRate: sr, numberOfChannels: 1 });
+      buffer.getChannelData(0).set(d);
+      return [{ buffer, key: z.key }];
+    }),
+  }));
+}
+
+/** Carrega (ou calcula) um conjunto uma única vez (um AudioBuffer serve para qualquer contexto). */
 export function loadSampleSet(ctx: BaseAudioContext, name: SampleSet): Promise<void> {
   loading[name] ??= (async () => {
+    if (isModeled(name)) {
+      sets[name] = await loadModeled(ctx, name);
+      return;
+    }
     const { manifest, data } = await LOADERS[name]();
     const str = atob(data);
     const bin = new Uint8Array(str.length);
@@ -82,7 +105,7 @@ export function loadSampleSet(ctx: BaseAudioContext, name: SampleSet): Promise<v
 }
 
 export const loadAllSampleSets = (ctx: BaseAudioContext) =>
-  Promise.all((Object.keys(LOADERS) as SampleSet[]).map((n) => loadSampleSet(ctx, n)));
+  Promise.all([...(Object.keys(LOADERS) as SampleSet[]), ...MODELED_SETS].map((n) => loadSampleSet(ctx, n)));
 
 const lastTake = new Map<string, number>();
 

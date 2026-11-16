@@ -3,6 +3,7 @@
 import { playKitPiece } from './drumKit';
 import { SampleOpts, startSampleVoice } from './sampler';
 import { TonewheelOpts, startTonewheelVoice } from './organ';
+import { driveCurve, modulate, syncedLfo } from './fxutil';
 
 export interface SynthPreset {
   name: string;
@@ -37,6 +38,24 @@ export interface SynthPreset {
   sample?: SampleOpts;
   /** órgão de rodas fônicas modelado (substitui a síntese genérica) */
   tonewheel?: TonewheelOpts;
+  /** comportamento de synth analógico (ver AnalogOpts) */
+  analog?: AnalogOpts;
+}
+
+/**
+ * O que faz um synth analógico soar "de verdade": osciladores que nunca estão perfeitamente afinados
+ * (desvio fixo + deriva lenta) e que já estavam oscilando quando a tecla foi apertada (fase aleatória),
+ * saturação antes do filtro, filtro de 4 polos (24 dB/oitava, como o ladder) e chorus estéreo.
+ */
+export interface AnalogOpts {
+  /** desafinação máxima de cada oscilador, em cents (metade fixa, metade derivando devagar) */
+  drift: number;
+  /** saturação antes do filtro (0 a 1) */
+  drive?: number;
+  /** filtro de 4 polos em vez de 2 */
+  ladder?: boolean;
+  /** chorus estéreo (0 a 1: quanto do sinal passa pelo chorus) */
+  chorus?: number;
 }
 
 // Harmônicos medidos/aproximados de cada instrumento (amplitude do 1º, 2º, 3º... harmônico)
@@ -105,6 +124,8 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sine', octave: 1, detune: 3, gain: 0.25 },
     ],
     a: 0.004, d: 1.4, s: 0.12, r: 0.35, cutoff: 1800, q: 0.5, envAmt: 3000, fDecay: 0.4, gain: 0.5,
+    // Rhodes modelado, tocado mais macio (passa-baixa que abre com a força)
+    sample: { set: 'rhodes', gain: 0.25, release: 0.15, cutoff: 1500, velBright: true },
   },
   tine: {
     name: 'Piano Elétrico de Lâmina', group: 'Pianos',
@@ -116,6 +137,8 @@ export const PRESETS: Record<string, SynthPreset> = {
     ],
     a: 0.002, d: 2.6, s: 0.15, r: 0.4, cutoff: 1100, q: 0.4, envAmt: 4500, fDecay: 0.5, gain: 0.36,
     velBright: true, keyDecay: true, hammer: 0.03,
+    // Rhodes modelado: haste de metal, captador que "rosna" quando se toca forte
+    sample: { set: 'rhodes', gain: 0.27, release: 0.15 },
   },
   reed: {
     name: 'Piano Elétrico de Palheta', group: 'Pianos',
@@ -123,6 +146,8 @@ export const PRESETS: Record<string, SynthPreset> = {
     oscs: [{ type: 'sine', octave: 0, detune: 0, gain: 0.8, partials: REED }],
     a: 0.002, d: 1.8, s: 0.1, r: 0.25, cutoff: 700, q: 1.2, envAmt: 5500, fDecay: 0.35, gain: 0.47,
     velBright: true, keyDecay: true, hammer: 0.04,
+    // Wurlitzer modelado: palheta e captador eletrostático
+    sample: { set: 'wurli', gain: 0.18, release: 0.12 },
   },
   clav: {
     name: 'Clavinete', group: 'Pianos',
@@ -130,6 +155,8 @@ export const PRESETS: Record<string, SynthPreset> = {
     oscs: [{ type: 'sine', octave: 0, detune: 0, gain: 0.8, partials: CLAV }],
     a: 0.001, d: 0.8, s: 0.15, r: 0.04, cutoff: 900, q: 2.5, envAmt: 7000, fDecay: 0.2, gain: 0.92,
     velBright: true, hammer: 0.08,
+    // clavinete modelado: corda percutida e captadores
+    sample: { set: 'clav', gain: 1.5, release: 0.04 },
   },
   harpsi: {
     name: 'Cravo', group: 'Pianos',
@@ -200,7 +227,8 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sawtooth', octave: 0, detune: -6, gain: 0.5 },
       { type: 'square', octave: 0, detune: 6, gain: 0.3 },
     ],
-    a: 0.01, d: 0.2, s: 0.7, r: 0.15, cutoff: 1400, q: 4, envAmt: 2500, fDecay: 0.3, gain: 0.32,
+    a: 0.01, d: 0.2, s: 0.7, r: 0.15, cutoff: 1400, q: 4, envAmt: 2500, fDecay: 0.3, gain: 0.21,
+    analog: { drift: 6, drive: 0.4, ladder: true },
   },
   pad: {
     name: 'Pad Suave', group: 'Teclados e synths',
@@ -209,7 +237,8 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sawtooth', octave: 0, detune: 8, gain: 0.4 },
       { type: 'triangle', octave: -1, detune: 0, gain: 0.3 },
     ],
-    a: 0.5, d: 0.8, s: 0.8, r: 1.2, cutoff: 900, q: 1, envAmt: 600, fDecay: 1.5, gain: 0.25,
+    a: 0.5, d: 0.8, s: 0.8, r: 1.2, cutoff: 900, q: 1, envAmt: 600, fDecay: 1.5, gain: 0.2,
+    analog: { drift: 8, ladder: true, chorus: 0.6 },
   },
   strings: {
     name: 'Cordas', group: 'Teclados e synths',
@@ -238,7 +267,8 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sawtooth', octave: 0, detune: 0, gain: 0.6 },
       { type: 'square', octave: -1, detune: 0, gain: 0.4 },
     ],
-    a: 0.005, d: 0.25, s: 0.6, r: 0.1, cutoff: 1400, q: 3, envAmt: 2400, fDecay: 0.18, gain: 0.5,
+    a: 0.005, d: 0.25, s: 0.6, r: 0.1, cutoff: 1400, q: 3, envAmt: 2400, fDecay: 0.18, gain: 0.35,
+    analog: { drift: 3, drive: 0.5, ladder: true },
   },
   pluck: {
     name: 'Pluck', group: 'Teclados e synths',
@@ -246,7 +276,8 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sawtooth', octave: 0, detune: 0, gain: 0.6 },
       { type: 'sawtooth', octave: 1, detune: 5, gain: 0.2 },
     ],
-    a: 0.002, d: 0.3, s: 0, r: 0.2, cutoff: 600, q: 2, envAmt: 5000, fDecay: 0.15, gain: 0.45,
+    a: 0.002, d: 0.3, s: 0, r: 0.2, cutoff: 600, q: 2, envAmt: 5000, fDecay: 0.15, gain: 0.36,
+    analog: { drift: 4, ladder: true, chorus: 0.35 },
   },
   bell: {
     name: 'Sino', group: 'Teclados e synths',
@@ -256,6 +287,8 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sine', octave: 3, detune: -20, gain: 0.1 },
     ],
     a: 0.002, d: 1.8, s: 0, r: 0.8, cutoff: 8000, q: 0.3, envAmt: 0, fDecay: 0.1, gain: 0.4,
+    // sino modelado (modos de vibração de um sino de verdade); continua soando um pouco depois de soltar
+    sample: { set: 'bell', gain: 0.4, release: 1.5 },
   },
 };
 
@@ -304,28 +337,67 @@ export function startVoice(
   vca.gain.linearRampToValueAtTime(peak, t + p.a);
   vca.gain.setTargetAtTime(peak * p.s, t + p.a, Math.max(0.01, d / 3));
 
+  const an = p.analog;
   const flt = ctx.createBiquadFilter();
   flt.type = 'lowpass';
   flt.Q.value = p.q;
+  // filtro de 4 polos: um segundo passa-baixa em série, sem ressonância, seguindo o mesmo corte
+  const filters = [flt];
+  if (an?.ladder) {
+    const f2 = ctx.createBiquadFilter();
+    f2.type = 'lowpass';
+    f2.Q.value = 0.6;
+    flt.connect(f2);
+    filters.push(f2);
+  }
   // tocar mais forte abre o filtro (som mais brilhante), como num piano de verdade: muda o ponto de
   // partida e o pico do ataque (fraco = abafado, forte = cheio de harmônicos agudos)
   const v = vel / 127;
   const base = Math.min(18000, p.cutoff * 2 ** ((pitch - 60) / 24) * (p.velBright ? 0.35 + 1.6 * v ** 1.5 : 1));
   const env = p.velBright ? p.envAmt * (0.1 + 0.9 * v ** 1.6) : p.envAmt;
-  flt.frequency.setValueAtTime(Math.min(18000, base + env), t);
-  flt.frequency.setTargetAtTime(base, t, Math.max(0.01, p.fDecay / 3));
+  for (const f of filters) {
+    f.frequency.setValueAtTime(Math.min(18000, base + env), t);
+    f.frequency.setTargetAtTime(base, t, Math.max(0.01, p.fDecay / 3));
+  }
+
+  // saturação antes do filtro
+  let input: AudioNode = flt;
+  if (an?.drive) {
+    const pre = ctx.createGain();
+    pre.gain.value = 0.7;
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = driveCurve(an.drive);
+    shaper.oversample = '2x';
+    pre.connect(shaper).connect(flt);
+    input = pre;
+  }
+  // deriva lenta da afinação (uma por nota, compartilhada pelos osciladores dela)
+  const extras: AudioScheduledSourceNode[] = [];
+  let drift: AudioNode | null = null;
+  if (an?.drift) {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.1 + Math.random() * 0.4;
+    const g = ctx.createGain();
+    g.gain.value = an.drift / 2;
+    lfo.connect(g);
+    lfo.start(t);
+    extras.push(lfo);
+    drift = g;
+  }
 
   const oscs: AudioScheduledSourceNode[] = p.oscs.map((o) => {
     const osc = ctx.createOscillator();
     if (o.partials) osc.setPeriodicWave(periodicWave(ctx, o.partials));
+    else if (an) osc.setPeriodicWave(analogWave(ctx, o.type));
     else osc.type = o.type;
     osc.frequency.value = freq * 2 ** o.octave;
-    osc.detune.value = o.detune;
+    osc.detune.value = o.detune + (an ? (Math.random() - 0.5) * an.drift : 0);
+    if (drift) drift.connect(osc.detune);
     const g = ctx.createGain();
     g.gain.value = o.gain;
     // decaimento próprio deste oscilador (ex.: o "plim" metálico do piano elétrico some antes do corpo)
     if (o.decay) g.gain.setTargetAtTime(o.gain * 0.02, t, o.decay / 3);
-    osc.connect(g).connect(flt);
+    osc.connect(g).connect(input);
     osc.start(t);
     return osc;
   });
@@ -346,7 +418,23 @@ export function startVoice(
     n.start(t);
     n.stop(t + 0.15);
   }
-  flt.connect(vca).connect(dest);
+  filters[filters.length - 1].connect(vca).connect(dest);
+
+  // chorus estéreo: duas cópias com atraso oscilando (7 e 9 ms), uma de cada lado
+  if (an?.chorus) {
+    const lfo = syncedLfo(ctx, 0.6, t);
+    extras.push(lfo);
+    ([[0.007, -0.8, 1], [0.009, 0.8, -1]] as const).forEach(([delay, pan, sign]) => {
+      const dl = ctx.createDelay(0.03);
+      dl.delayTime.value = delay;
+      modulate(ctx, lfo, dl.delayTime, 0.0018 * sign);
+      const wet = ctx.createGain();
+      wet.gain.value = an.chorus!;
+      const pn = ctx.createStereoPanner();
+      pn.pan.value = pan;
+      vca.connect(dl).connect(wet).connect(pn).connect(dest);
+    });
+  }
 
   return {
     release(rt: number) {
@@ -354,8 +442,42 @@ export function startVoice(
       vca.gain.setTargetAtTime(0, rt, Math.max(0.005, p.r / 4));
       const end = rt + p.r * 1.5 + 0.05;
       oscs.forEach((o) => o.stop(end));
+      extras.forEach((o) => o.stop(end));
     },
   };
+}
+
+/**
+ * Formas de onda clássicas com fase aleatória (o oscilador analógico já estava rodando quando a tecla
+ * foi apertada), por série de Fourier com 512 harmônicos (o navegador limita a banda conforme a nota).
+ */
+const analogCache = new WeakMap<BaseAudioContext, Map<OscillatorType, PeriodicWave[]>>();
+function analogWave(ctx: BaseAudioContext, type: OscillatorType): PeriodicWave {
+  let m = analogCache.get(ctx);
+  if (!m) analogCache.set(ctx, (m = new Map()));
+  let list = m.get(type);
+  if (!list) {
+    const N = 512;
+    const amp = (n: number) => {
+      if (type === 'sawtooth') return ((n % 2 ? 1 : -1) * 2) / (Math.PI * n);
+      if (type === 'square') return n % 2 ? 4 / (Math.PI * n) : 0;
+      if (type === 'triangle') return n % 2 ? ((((n - 1) / 2) % 2 ? -1 : 1) * 8) / (Math.PI * Math.PI * n * n) : 0;
+      return n === 1 ? 1 : 0;
+    };
+    list = Array.from({ length: 6 }, () => {
+      const phase = Math.random() * Math.PI * 2;
+      const real = new Float32Array(N + 1);
+      const imag = new Float32Array(N + 1);
+      for (let n = 1; n <= N; n++) {
+        const a = amp(n);
+        real[n] = a * Math.sin(n * phase);
+        imag[n] = a * Math.cos(n * phase);
+      }
+      return ctx.createPeriodicWave(real, imag);
+    });
+    m.set(type, list);
+  }
+  return list[Math.floor(Math.random() * list.length)];
 }
 
 /** Onda periódica com a receita de harmônicos dada (amplitude do 1º, 2º, 3º... harmônico), em cache. */

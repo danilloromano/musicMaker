@@ -4,6 +4,7 @@
 // aleatória a cada tecla), os contatos da tecla fechando em momentos ligeiramente diferentes (o estalo),
 // a percussão, a dobra das rodas mais agudas, a leve saturação do pré-amplificador e o Leslie — a caixa
 // com corneta e tambor girando, que faz o som ondular (volume, posição e um leve vibrato por Doppler).
+import { driveCurve, modulate, phasedSine, syncedLfo } from './fxutil';
 import type { Voice } from './instruments';
 
 export interface TonewheelOpts {
@@ -37,29 +38,6 @@ function randomSine(ctx: BaseAudioContext): PeriodicWave {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-/** sen(ωt + φ) como PeriodicWave (normalização desligada: amplitude 1). */
-function phasedSine(ctx: BaseAudioContext, phase: number): PeriodicWave {
-  return ctx.createPeriodicWave(new Float32Array([0, Math.sin(phase)]), new Float32Array([0, Math.cos(phase)]), {
-    disableNormalization: true,
-  });
-}
-
-const curveCache = new Map<number, Float32Array>();
-function driveCurve(drive: number): Float32Array {
-  const key = Math.round(drive * 100);
-  let c = curveCache.get(key);
-  if (!c) {
-    const k = 1 + drive * 4;
-    c = new Float32Array(1024);
-    for (let i = 0; i < c.length; i++) {
-      const x = (i / (c.length - 1)) * 2 - 1;
-      c[i] = Math.tanh(k * x) / Math.tanh(k);
-    }
-    curveCache.set(key, c);
-  }
-  return c;
-}
-
 const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>();
 function noise(ctx: BaseAudioContext): AudioBuffer {
   let b = noiseCache.get(ctx);
@@ -87,18 +65,6 @@ function click(ctx: BaseAudioContext, dest: AudioNode, t: number, level: number)
   src.connect(bp).connect(g).connect(dest);
   src.start(t, Math.random() * 0.2);
   src.stop(t + 0.03);
-}
-
-/**
- * LFO de rotação sincronizado com o relógio do áudio: todas as notas "passam pela mesma caixa", então
- * a corneta e o tambor estão na mesma posição para todas (`offset` desloca a fase, ex.: π/2 para o pan).
- */
-function rotor(ctx: BaseAudioContext, rate: number, t: number, offset = 0): OscillatorNode {
-  const osc = ctx.createOscillator();
-  osc.setPeriodicWave(phasedSine(ctx, (2 * Math.PI * rate * t + offset) % (2 * Math.PI)));
-  osc.frequency.value = rate;
-  osc.start(t);
-  return osc;
 }
 
 export function startTonewheelVoice(
@@ -159,7 +125,7 @@ export function startTonewheelVoice(
 
   // pré-amplificador
   const shaper = ctx.createWaveShaper();
-  shaper.curve = driveCurve(o.drive) as Float32Array<ArrayBuffer>;
+  shaper.curve = driveCurve(o.drive);
   shaper.oversample = '2x';
   gate.connect(shaper);
   click(ctx, shaper, t, o.click);
@@ -167,11 +133,8 @@ export function startTonewheelVoice(
   // Leslie: graves no tambor, agudos na corneta, cada um girando no seu ritmo
   const { horn, drum, depth } = o.leslie;
   const lfos: OscillatorNode[] = [];
-  const mod = (lfo: OscillatorNode, param: AudioParam, amount: number) => {
-    const g = ctx.createGain();
-    g.gain.value = amount;
-    lfo.connect(g).connect(param);
-  };
+  const mod = (lfo: OscillatorNode, param: AudioParam, amount: number) => modulate(ctx, lfo, param, amount);
+  const rotor = syncedLfo;
   const out = ctx.createGain();
   out.gain.value = o.gain;
   out.connect(dest);
