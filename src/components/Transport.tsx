@@ -51,8 +51,9 @@ export function Transport() {
   const exportWav = async () => {
     setExporting(true);
     try {
-      const wav = await withLoading('Exportando WAV…', (progress) => renderWav(project, engine.buffers, progress));
+      const { wav, report } = await withLoading('Exportando WAV…', (progress) => renderWav(project, engine.buffers, progress));
       download(wav, `${project.name || 'musica'}.wav`);
+      st.set({ lastExport: report });
     } catch (e) {
       alert('Falha ao exportar: ' + (e as Error).message);
     }

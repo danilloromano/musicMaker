@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ExportReport } from './audio/export';
 import { BEATS_PER_BAR, Note, Project, Region, Track, TrackKind, fitFades, regionLen, uid } from './types';
 
 const COLORS = ['#ff7a45', '#38d9c0', '#b98cff', '#ffcf3f', '#ff5fa2', '#5fb4ff', '#9be15d', '#e0b48a'];
@@ -47,7 +48,7 @@ export function savePref(key: string, value: string) {
   }
 }
 
-export type BottomTab = 'editor' | 'fx' | 'amp' | 'loops' | 'keys' | 'audio';
+export type BottomTab = 'editor' | 'fx' | 'amp' | 'loops' | 'keys' | 'audio' | 'master';
 
 interface State {
   project: Project;
@@ -67,6 +68,8 @@ interface State {
   octave: number;
   /** carregamento em andamento (mostra a nave): progresso 0..1, ou null quando não dá para medir */
   loading: { label: string; progress: number | null } | null;
+  /** resultado da última exportação (loudness e pico real do arquivo) */
+  lastExport: ExportReport | null;
 
   // entrada de áudio (preferências do computador, não fazem parte do projeto)
   inputs: { id: string; label: string }[];
@@ -118,6 +121,7 @@ export const useStore = create<State>((set, get) => ({
   countIn: pref('mm.countIn') === '1',
   octave: 4,
   loading: null,
+  lastExport: null,
 
   inputs: [],
   inputDeviceId: pref('mm.inputDevice') || null,

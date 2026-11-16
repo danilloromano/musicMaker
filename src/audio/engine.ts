@@ -3,6 +3,8 @@ import { BEATS_PER_BAR, Note, Project, Region, projectEnd, regionGainAt, uid } f
 import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments';
 import { loadDrumSamples, warmDrumKit } from './drumKit';
 import { loadAllSampleSets } from './sampler';
+import { masterOf } from './master';
+import { ExportReport, encodeWav, finishMaster } from './export';
 import { Mixer } from './mixer';
 import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
@@ -43,6 +45,7 @@ class Engine {
       const p = useStore.getState().project;
       this.bpm = p.bpm;
       this.mixer.sync(p.tracks, p.bpm);
+      this.mixer.chain.update(masterOf(p.master));
 
       // entrada de áudio: tudo que chega da placa passa por inputBus (mono)
       this.inputBus = this.ctx.createGain();
@@ -56,6 +59,7 @@ class Engine {
         const a = s.project, b = prev.project;
         if (a.bpm !== b.bpm) this.retime(a.bpm);
         if (a.tracks !== b.tracks || a.bpm !== b.bpm) this.mixer.sync(a.tracks, a.bpm);
+        if (a.master !== b.master) this.mixer.chain.update(masterOf(a.master));
         this.routeMonitor();
       });
       this.ready = true;
@@ -97,6 +101,7 @@ class Engine {
     this.prevSeg = null;
     this.scheduledUntil = this.startBeat;
     this.playing = true;
+    this.mixer.chain.reset(); // o LUFS integrado mede a partir daqui
     this.startAudioRegions(this.startTime);
     this.timer = window.setInterval(() => this.tick(), TICK_MS);
     this.tick();
@@ -560,15 +565,24 @@ export function playAudioRegion(
 
 // ---------- Exportação (mixdown offline para WAV) ----------
 
-/** Mixdown offline. `onProgress` (0..1) é chamado durante a renderização: ela pausa em pontos fixos para medir. */
-export async function renderWav(project: Project, buffers: Map<string, AudioBuffer>, onProgress?: (p: number) => void): Promise<Blob> {
+/**
+ * Mixdown offline com o master (EQ, compressor, saturação) e, depois, o limitador e o alvo de loudness.
+ * `onProgress` (0..1): a renderização ocupa os primeiros 60%, a finalização do master o resto.
+ */
+export async function renderWav(
+  project: Project,
+  buffers: Map<string, AudioBuffer>,
+  onProgress?: (p: number) => void,
+): Promise<{ wav: Blob; report: ExportReport }> {
   const sr = 44100;
   const spb = 60 / project.bpm;
   const seconds = projectEnd(project) * spb + 3;
   const off = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
   await Promise.all([loadDrumSamples(off), loadAllSampleSets(off)]);
-  const mixer = new Mixer(off, off.destination, (id) => buffers.get(id));
+  const mixer = new Mixer(off, off.destination, (id) => buffers.get(id), false);
   mixer.sync(project.tracks, project.bpm);
+  const master = masterOf(project.master);
+  mixer.chain.update(master);
   const tracks = new Map(project.tracks.map((t) => [t.id, t]));
 
   for (const r of project.regions) {
@@ -588,41 +602,15 @@ export async function renderWav(project: Project, buffers: Map<string, AudioBuff
     for (let k = 1; k < steps; k++) {
       // a renderização pausa em cada ponto, avisa o progresso e continua (o último 5% fica para gerar o arquivo)
       void off.suspend((seconds * k) / steps).then(() => {
-        onProgress((k / steps) * 0.95);
+        onProgress((k / steps) * 0.6);
         void off.resume();
       });
     }
   }
   const rendered = await off.startRendering();
-  const wav = encodeWav(rendered);
+  const { channels, report } = await finishMaster(rendered, master, (p) => onProgress?.(0.6 + p * 0.38));
+  const wav = encodeWav(channels, rendered.sampleRate, master.exportBits);
   onProgress?.(1);
-  return wav;
+  return { wav, report };
 }
 
-function encodeWav(buf: AudioBuffer): Blob {
-  const ch = buf.numberOfChannels, n = buf.length;
-  const view = new DataView(new ArrayBuffer(44 + n * ch * 2));
-  const str = (o: number, s: string) => [...s].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
-  str(0, 'RIFF');
-  view.setUint32(4, 36 + n * ch * 2, true);
-  str(8, 'WAVEfmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, ch, true);
-  view.setUint32(24, buf.sampleRate, true);
-  view.setUint32(28, buf.sampleRate * ch * 2, true);
-  view.setUint16(32, ch * 2, true);
-  view.setUint16(34, 16, true);
-  str(36, 'data');
-  view.setUint32(40, n * ch * 2, true);
-  const data = Array.from({ length: ch }, (_, c) => buf.getChannelData(c));
-  let o = 44;
-  for (let i = 0; i < n; i++) {
-    for (let c = 0; c < ch; c++) {
-      const v = Math.max(-1, Math.min(1, data[c][i]));
-      view.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true);
-      o += 2;
-    }
-  }
-  return new Blob([view], { type: 'audio/wav' });
-}

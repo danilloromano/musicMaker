@@ -1,5 +1,6 @@
 import { Track } from '../types';
 import { Rig, rigKey } from './amp';
+import { MasterChain } from './master';
 
 export interface Strip {
   input: GainNode;
@@ -27,7 +28,10 @@ function impulse(ctx: BaseAudioContext, seconds: number): AudioBuffer {
 
 /** Mesa de som: um canal por trilha (EQ → compressor → volume → pan) + envios de reverb e delay. */
 export class Mixer {
+  /** entrada do master (todas as trilhas e efeitos somam aqui) */
   master: GainNode;
+  /** cadeia de master (EQ, compressor, saturação, limitador, medidores) */
+  chain: MasterChain;
   analyser: AnalyserNode;
   strips = new Map<string, Strip>();
   private reverb: ConvolverNode;
@@ -37,20 +41,15 @@ export class Mixer {
     public ctx: BaseAudioContext,
     dest: AudioNode,
     private getBuffer: (id: string) => AudioBuffer | undefined = () => undefined,
+    /** ao vivo (limitador e medidores no AudioWorklet) ou exportação (limitador aplicado depois) */
+    live = true,
   ) {
-    this.master = ctx.createGain();
-    this.master.gain.value = 0.75;
-    const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -3;
-    limiter.knee.value = 0;
-    limiter.ratio.value = 20;
-    limiter.attack.value = 0.002;
-    limiter.release.value = 0.1;
+    this.chain = new MasterChain(ctx, dest, live);
+    this.master = this.chain.input;
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.analyser.smoothingTimeConstant = 0.78;
-    this.master.connect(limiter).connect(dest);
-    limiter.connect(this.analyser);
+    this.chain.output.connect(this.analyser);
 
     this.reverb = ctx.createConvolver();
     this.reverb.buffer = impulse(ctx, 2.4);

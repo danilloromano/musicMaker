@@ -5,6 +5,7 @@ import { BottomTab, savePref, useStore } from '../store';
 import { Track, TrackFx } from '../types';
 import { AmpRack } from './AmpRack';
 import { AudioEditor } from './AudioEditor';
+import { MasterPanel } from './MasterPanel';
 import { PianoRoll } from './PianoRoll';
 import { LOOP_MIME } from './Timeline';
 import { KIND_ICON, Meter, Slider, Spectrum } from './ui';
@@ -17,6 +18,7 @@ const TABS: [BottomTab, string][] = [
   ['amp', 'Amp & Pedais'],
   ['keys', 'Teclado'],
   ['audio', 'Editor de Áudio'],
+  ['master', 'Master'],
 ];
 
 export function BottomPanel() {
@@ -35,6 +37,7 @@ export function BottomPanel() {
         {tab === 'editor' && <PianoRoll />}
         {tab === 'loops' && <Loops />}
         {tab === 'audio' && <AudioEditor />}
+        {tab === 'master' && <MasterPanel />}
         {tab === 'fx' && (track ? <Fx track={track} /> : <div className="empty">Selecione uma trilha.</div>)}
         {tab === 'amp' && (track ? <AmpRack track={track} /> : <div className="empty">Selecione uma trilha.</div>)}
         {tab === 'keys' && (track && track.kind !== 'audio' ? <Keys track={track} /> : <div className="empty">Selecione uma trilha de instrumento ou bateria para tocar.</div>)}

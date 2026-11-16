@@ -156,7 +156,7 @@ export const PRESETS: Record<string, SynthPreset> = {
     a: 0.001, d: 0.8, s: 0.15, r: 0.04, cutoff: 900, q: 2.5, envAmt: 7000, fDecay: 0.2, gain: 0.92,
     velBright: true, hammer: 0.08,
     // clavinete modelado: corda percutida e captadores
-    sample: { set: 'clav', gain: 1.5, release: 0.04 },
+    sample: { set: 'clav', gain: 1.0, release: 0.04 },
   },
   harpsi: {
     name: 'Cravo', group: 'Pianos',
@@ -259,7 +259,7 @@ export const PRESETS: Record<string, SynthPreset> = {
       { type: 'sine', octave: 0, detune: 0, gain: 0.6 },
     ],
     a: 0.004, d: 0.6, s: 0.5, r: 0.08, cutoff: 700, q: 1, envAmt: 1500, fDecay: 0.15, gain: 0.55,
-    sample: { set: 'bass', gain: 4.5, release: 0.08 },
+    sample: { set: 'bass', gain: 0.9, release: 0.08 },
   },
   bass: {
     name: 'Baixo Synth', group: 'Baixos',

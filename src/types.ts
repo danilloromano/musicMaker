@@ -73,6 +73,21 @@ export interface Track {
   amp?: AmpRig;
 }
 
+/** Master: EQ, compressor de "cola", saturação, limitador e como exportar. */
+export interface MasterSettings {
+  /** dB: graves (prateleira 100 Hz), médio-graves (400 Hz), presença (3 kHz), brilho (prateleira 10 kHz) */
+  eq: { low: number; lowMid: number; highMid: number; high: number };
+  /** limiar (dB), razão, ataque e recuperação (ms), ganho de compensação (dB) */
+  comp: { on: boolean; threshold: number; ratio: number; attack: number; release: number; makeup: number };
+  /** saturação suave (0 a 1) */
+  saturation: number;
+  /** ganho de entrada (dB), teto de pico real (dBTP), recuperação (ms) */
+  limiter: { on: boolean; gain: number; ceiling: number; release: number };
+  /** alvo de loudness da exportação (ver EXPORT_TARGETS) */
+  exportTarget: 'none' | 'streaming' | 'apple' | 'loud';
+  exportBits: 16 | 24;
+}
+
 export interface Project {
   name: string;
   bpm: number;
@@ -80,6 +95,8 @@ export interface Project {
   loop?: LoopRange;
   tracks: Track[];
   regions: Region[];
+  /** ajustes do master (projetos antigos não têm: usam o padrão) */
+  master?: MasterSettings;
 }
 
 export const BEATS_PER_BAR = 4;
