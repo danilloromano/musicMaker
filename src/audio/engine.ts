@@ -1,6 +1,7 @@
 import { useStore } from '../store';
 import { BEATS_PER_BAR, Note, Project, Region, projectEnd, regionGainAt, uid } from '../types';
 import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments';
+import { loadDrumSamples, warmDrumKit } from './drumKit';
 import { Mixer } from './mixer';
 import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
@@ -35,6 +36,7 @@ class Engine {
   ensure() {
     if (!this.ready) {
       this.ctx = new AudioContext({ latencyHint: 'interactive' });
+      warmDrumKit(this.ctx);
       this.mixer = new Mixer(this.ctx, this.ctx.destination, (id) => this.buffers.get(id));
       const p = useStore.getState().project;
       this.bpm = p.bpm;
@@ -562,6 +564,7 @@ export async function renderWav(project: Project, buffers: Map<string, AudioBuff
   const spb = 60 / project.bpm;
   const seconds = projectEnd(project) * spb + 3;
   const off = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
+  await loadDrumSamples(off);
   const mixer = new Mixer(off, off.destination, (id) => buffers.get(id));
   mixer.sync(project.tracks, project.bpm);
   const tracks = new Map(project.tracks.map((t) => [t.id, t]));

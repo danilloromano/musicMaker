@@ -1,5 +1,6 @@
 // Instrumentos virtuais: sintetizadores subtrativos e bateria sintetizada.
 // Tudo recebe um BaseAudioContext para funcionar igual em tempo real e na exportação offline.
+import { playKitPiece } from './drumKit';
 
 export interface SynthPreset {
   name: string;
@@ -326,106 +327,21 @@ function noiseBuffer(ctx: BaseAudioContext): AudioBuffer {
   return b;
 }
 
-function decay(g: AudioParam, t: number, peak: number, time: number) {
-  g.setValueAtTime(peak, t);
-  g.exponentialRampToValueAtTime(0.001, t + time);
-}
-
-function noiseHit(
-  ctx: BaseAudioContext,
-  dest: AudioNode,
-  t: number,
-  peak: number,
-  time: number,
-  type: BiquadFilterType,
-  freq: number,
-  q = 0.7,
-): GainNode {
+/** Bateria: kit acústico modelado (ver drumKit.ts); notas fora do kit dão um toque curto de ruído. */
+export function playDrum(ctx: BaseAudioContext, dest: AudioNode, pitch: number, t: number, vel: number) {
+  if (playKitPiece(ctx, dest, pitch, t, vel)) return;
   const src = ctx.createBufferSource();
   src.buffer = noiseBuffer(ctx);
-  src.loop = true;
   const f = ctx.createBiquadFilter();
-  f.type = type;
-  f.frequency.value = freq;
-  f.Q.value = q;
+  f.type = 'bandpass';
+  f.frequency.value = 3000;
+  f.Q.value = 2;
   const g = ctx.createGain();
-  decay(g.gain, t, peak, time);
+  g.gain.setValueAtTime(0.3 * (vel / 127) ** 1.3, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
   src.connect(f).connect(g).connect(dest);
   src.start(t, Math.random());
-  src.stop(t + time + 0.05);
-  return g;
-}
-
-function tone(
-  ctx: BaseAudioContext,
-  dest: AudioNode,
-  t: number,
-  type: OscillatorType,
-  f0: number,
-  f1: number,
-  sweep: number,
-  peak: number,
-  time: number,
-) {
-  const osc = ctx.createOscillator();
-  osc.type = type;
-  osc.frequency.setValueAtTime(f0, t);
-  osc.frequency.exponentialRampToValueAtTime(f1, t + sweep);
-  const g = ctx.createGain();
-  decay(g.gain, t, peak, time);
-  osc.connect(g).connect(dest);
-  osc.start(t);
-  osc.stop(t + time + 0.05);
-}
-
-export function playDrum(ctx: BaseAudioContext, dest: AudioNode, pitch: number, t: number, vel: number) {
-  const v = (vel / 127) ** 1.3;
-  switch (pitch) {
-    case 36: // bumbo
-      tone(ctx, dest, t, 'sine', 160, 42, 0.11, v * 1.0, 0.42);
-      noiseHit(ctx, dest, t, v * 0.15, 0.02, 'highpass', 2000);
-      break;
-    case 38: // caixa
-      tone(ctx, dest, t, 'triangle', 220, 140, 0.06, v * 0.5, 0.13);
-      noiseHit(ctx, dest, t, v * 0.6, 0.2, 'highpass', 1400);
-      break;
-    case 39: { // palmas
-      const g = noiseHit(ctx, dest, t, v * 0.6, 0.22, 'bandpass', 1300, 1.2);
-      g.gain.cancelScheduledValues(t);
-      [0, 0.012, 0.024].forEach((o) => {
-        g.gain.setValueAtTime(v * 0.6, t + o);
-        g.gain.exponentialRampToValueAtTime(v * 0.1, t + o + 0.01);
-      });
-      g.gain.setValueAtTime(v * 0.6, t + 0.036);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
-      break;
-    }
-    case 42: // chimbal fechado
-      noiseHit(ctx, dest, t, v * 0.35, 0.05, 'highpass', 7500);
-      break;
-    case 46: // chimbal aberto
-      noiseHit(ctx, dest, t, v * 0.32, 0.32, 'highpass', 7000);
-      break;
-    case 49: // prato
-      noiseHit(ctx, dest, t, v * 0.35, 1.3, 'highpass', 5200);
-      noiseHit(ctx, dest, t, v * 0.2, 0.5, 'bandpass', 9000, 2);
-      break;
-    case 45:
-      tone(ctx, dest, t, 'sine', 130, 75, 0.2, v * 0.8, 0.4);
-      break;
-    case 48:
-      tone(ctx, dest, t, 'sine', 180, 105, 0.18, v * 0.8, 0.35);
-      break;
-    case 50:
-      tone(ctx, dest, t, 'sine', 240, 150, 0.15, v * 0.8, 0.3);
-      break;
-    case 56: // cowbell
-      tone(ctx, dest, t, 'square', 800, 800, 0.1, v * 0.18, 0.18);
-      tone(ctx, dest, t, 'square', 540, 540, 0.1, v * 0.18, 0.18);
-      break;
-    default:
-      noiseHit(ctx, dest, t, v * 0.3, 0.08, 'bandpass', 3000, 2);
-  }
+  src.stop(t + 0.13);
 }
 
 /** Dispara uma nota com duração conhecida (reprodução e exportação). */
