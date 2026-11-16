@@ -205,14 +205,21 @@ export function applyDrumStyle(loopId: string, trackId: string, beat: number) {
   useStore.getState().set({ selectedRegionId: r.id, selectedTrackId: trackId });
 }
 
+/** Categorias de instrumento cujo padrão continua repetindo quando a região é esticada. */
+const STRETCH_REPEATS: Loop['category'][] = ['Baixo', 'Acordes'];
+
 /**
- * Ritmo de uma região de bateria esticada para `length` tempos: mantém as notas que já estavam dentro
- * dela e preenche o trecho novo repetindo o padrão (o ciclo do estilo de origem ou, se não houver,
- * o próprio tamanho original da região), alinhado ao início da região.
+ * Notas de uma região esticada para `length` tempos: mantém as que já estavam dentro dela e preenche
+ * o trecho novo repetindo o padrão, alinhado ao início da região. O ciclo é o do loop de origem; uma
+ * região de bateria que não veio de um estilo repete o próprio tamanho original. Regiões de instrumento
+ * só repetem se vieram de um loop de baixo ou acordes; as demais ficam como estão.
  */
-export function extendDrumPattern(r: Region, length: number): Note[] | undefined {
+export function extendPattern(r: Region, length: number, kind: Loop['kind']): Note[] | undefined {
   if (!r.notes || length <= r.length || r.length <= 0) return r.notes;
-  const loop = LOOPS.find((l) => l.kind === 'drums' && l.name === r.name);
+  const loop = LOOPS.find(
+    (l) => l.kind === kind && l.name === r.name && (kind === 'drums' || STRETCH_REPEATS.includes(l.category)),
+  );
+  if (!loop && kind !== 'drums') return r.notes;
   const cycle = Math.min(r.length, loop ? loop.bars * BEATS_PER_BAR : r.length);
   const kept = r.notes.filter((n) => n.start < r.length);
   const base = kept.filter((n) => n.start < cycle);
