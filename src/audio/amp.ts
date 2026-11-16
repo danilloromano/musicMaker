@@ -168,6 +168,10 @@ export const PEDALS: PedalDef[] = [
     { id: 'fuzzGerm', name: 'Germânio', color: '#b0412e', desc: 'Fuzz redondo e quente dos anos 60; limpa quando você toca mais leve',
       params: [{ label: 'Fuzz', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
   ]),
+  { id: 'univibe', name: 'Univibe', color: '#8a6e4b', post: false,
+    desc: 'O pulso "latejante" do fim dos anos 60: quatro fases em frequências diferentes varridas por uma lâmpada · Chorus: soma com o som direto (redemoinho) · Vibrato: só o som ondulado (a afinação balança)',
+    params: [{ label: 'Velocidade', def: 0.35 }, { label: 'Intens.', def: 0.65 }, { label: 'Volume', def: 0.5 }],
+    toggles: [{ labels: ['Chorus', 'Vibrato'], titles: ['Chorus: o som direto somado ao defasado, o "redemoinho" clássico', 'Vibrato: só o som defasado, a afinação ondula'], def: 0 }] },
   { id: 'eq', name: 'Equalizador', color: '#e9e9e4', post: false, faders: true,
     desc: 'Equalizador gráfico de 7 bandas (±15 dB) e volume: depois dos drives, molda o timbre antes do amp (ex.: médios para solos, graves cortados para limpar)',
     params: [
@@ -880,6 +884,38 @@ function compPedal(ctx: BaseAudioContext, put: Put): Fx {
 // ---------- Phaser ----------
 
 /** Phaser do AudioWorklet 'mm-phaser' (ver master.worklet.ts): direto + sinal defasado = os vales que andam. */
+/**
+ * Univibe (AudioWorklet 'mm-univibe', ver master.worklet.ts) com o pré do circuito original: um pouco de
+ * ganho e saturação suave na entrada. Sem os worklets carregados, só passa o som (com o volume).
+ */
+function univibePedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
+  const pre = ctx.createGain();
+  pre.gain.value = 1.4;
+  const sat = shaper(ctx, 'tape');
+  inp.connect(pre).connect(sat);
+  sat.connect(dry).connect(out);
+  const node = workletsReady(ctx)
+    ? new AudioWorkletNode(ctx, 'mm-univibe', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] })
+    : null;
+  if (node) sat.connect(node).connect(wet).connect(out);
+  return {
+    in: inp,
+    out,
+    set: ([rate, depth, vol, mode]) => {
+      const vibrato = (mode ?? 0) >= 0.5;
+      if (node) {
+        put(node.parameters.get('rate')!, expMap(rate ?? 0.35, 0.4, 12));
+        put(node.parameters.get('depth')!, depth ?? 0.65);
+      }
+      // Chorus: direto + defasado (meio a meio); Vibrato: só o defasado; sem worklet: só o direto
+      put(dry.gain, !node ? 1 : vibrato ? 0 : 0.5);
+      put(wet.gain, vibrato ? 1 : 0.5);
+      put(out.gain, ((vol ?? 0.5) * 2) / 1.4 * (vibrato ? 1 : 1.3));
+    },
+  };
+}
+
 function phaserPedal(ctx: BaseAudioContext, put: Put): Fx {
   const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
   const node = new AudioWorkletNode(ctx, 'mm-phaser', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
@@ -1821,6 +1857,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
     case 'fuzz': return drivePedal(ctx, put, 60, 600, 'asym', 700, 6000, 0.25);
     case 'chorus': return chorusPedal(ctx, put);
     case 'rotary': return rotaryPedal(ctx, put);
+    case 'univibe': return univibePedal(ctx, put);
     case 'phaser': {
       if (workletsReady(ctx)) return phaserPedal(ctx, put);
       // sem os worklets (logo ao abrir): phaser simples de nós nativos até o rack ser remontado

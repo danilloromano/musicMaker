@@ -1,5 +1,5 @@
 // AudioWorklets: o do master (limitador de pico real + medidores: LUFS, pico real, correlação,
-// redução de ganho), o seguidor de envelope do sidechain e o octaver, o harmonizador, o delay reverso e o phaser da pedaleira. Rodam na thread de áudio.
+// redução de ganho), o seguidor de envelope do sidechain e o octaver, o harmonizador, o delay reverso, o phaser e o univibe da pedaleira. Rodam na thread de áudio.
 import { StereoLimiter } from './limiter';
 import { Correlation, Loudness, TruePeak, dbfs } from './loudness';
 
@@ -507,3 +507,58 @@ class PhaserProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('mm-phaser', PhaserProcessor);
+
+/**
+ * Univibe: quatro estágios passa-tudo como um phaser, mas cada um numa frequência diferente (no circuito
+ * original os capacitores de cada estágio são de valores bem diferentes), o que espalha os vales de um
+ * jeito irregular e "líquido". A varredura vem de uma lâmpada iluminando fotocélulas: o brilho da lâmpada
+ * segue o quadrado da onda do oscilador e a fotocélula reage rápido quando a luz sobe e devagar quando
+ * desce, então o pulso "lateja" de forma assimétrica. Saída: só o sinal defasado (o modo Chorus soma o
+ * direto fora, o modo Vibrato usa só este: a afinação ondula).
+ */
+class UnivibeProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'rate', defaultValue: 2, minValue: 0.1, maxValue: 15, automationRate: 'k-rate' },
+      { name: 'depth', defaultValue: 0.7, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ];
+  }
+  /** frequência de cada estágio com a lâmpada apagada (Hz) */
+  private readonly base = [55, 210, 680, 2400];
+  private phase = 0;
+  private lamp = 0;
+  private readonly up = Math.exp(-1 / (sampleRate * 0.012)); // fotocélula: responde em ~12 ms à luz
+  private readonly down = Math.exp(-1 / (sampleRate * 0.07)); // e demora ~70 ms para "esquecer"
+  private st = new Float64Array(8);
+  process(inputs: Float32Array[][], outputs: Float32Array[][], params: Record<string, Float32Array>) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    const n = out[0].length;
+    const rate = params.rate[0], depth = params.depth[0];
+    const octaves = 0.4 + depth * 2.6;
+    for (let i = 0; i < n; i++) {
+      this.phase = (this.phase + rate / sampleRate) % 1;
+      const osc = 0.5 + 0.5 * Math.sin(2 * Math.PI * this.phase);
+      const bright = osc * osc; // brilho da lâmpada
+      this.lamp = bright > this.lamp ? bright + (this.lamp - bright) * this.up : bright + (this.lamp - bright) * this.down;
+      const mult = 2 ** (this.lamp * octaves);
+      let x = 0;
+      for (const ch of inp) x += ch[i];
+      if (inp.length > 1) x /= inp.length;
+      let v = x;
+      for (let k = 0; k < 4; k++) {
+        const t = Math.tan((Math.PI * Math.min(this.base[k] * mult, sampleRate * 0.45)) / sampleRate);
+        const a = (t - 1) / (t + 1);
+        const x1 = this.st[2 * k], y1 = this.st[2 * k + 1];
+        const y = a * v + x1 - a * y1;
+        this.st[2 * k] = v;
+        this.st[2 * k + 1] = y;
+        v = y;
+      }
+      for (const ch of out) ch[i] = v;
+    }
+    return true;
+  }
+}
+
+registerProcessor('mm-univibe', UnivibeProcessor);
