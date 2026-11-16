@@ -87,7 +87,31 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 /** Posição do wah sem automação (botão Posição do pedal; 0 = fechado, 1 = aberto). */
 const wahKnob = (t: Track) => t.amp?.pedals?.wah?.p?.[0] ?? 0.5;
 
-/** Parâmetros automatizáveis de uma trilha (volume, pan, um por envio e, com rack de amp, o wah). */
+/** Chave lento/rápido do rotary sem automação (0 = lento, 1 = rápido). */
+const rotaryKnob = (t: Track) => ((t.amp?.pedals?.rotary?.p?.[3] ?? 0) >= 0.5 ? 1 : 0);
+
+/**
+ * Trocas de velocidade do rotary numa curva de automação: a curva acima da metade = rápido. Devolve o
+ * estado em `from` e os tempos (em tempos da música, depois de `from`) em que ela cruza a metade.
+ */
+export function speedChanges(points: AutoLane['points'], from: number): { start: boolean; changes: { beat: number; fast: boolean }[] } {
+  const start = valueAt(points, from) >= 0.5;
+  const changes: { beat: number; fast: boolean }[] = [];
+  let state = start;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i];
+    if (b.beat <= from) continue;
+    const fb = b.value >= 0.5;
+    if (fb === state) continue;
+    // cruza a metade dentro do trecho (linear entre os pontos); ponto vertical = troca no próprio ponto
+    const beat = b.beat === a.beat || a.value === b.value ? b.beat : a.beat + ((0.5 - a.value) / (b.value - a.value)) * (b.beat - a.beat);
+    if (beat > from) changes.push({ beat, fast: fb });
+    state = fb;
+  }
+  return { start, changes };
+}
+
+/** Parâmetros automatizáveis de uma trilha (volume, pan, um por envio e, com rack de amp, wah e rotary). */
 export function autoParams(p: Project, t?: Track): AutoParamInfo[] {
   return [
     {
@@ -108,6 +132,9 @@ export function autoParams(p: Project, t?: Track): AutoParamInfo[] {
       ? [{
           id: 'wah', name: 'Wah (posição)', min: 0, max: 1, base: wahKnob,
           format: (v: number) => (v < 0.05 ? 'Fechado' : v > 0.95 ? 'Aberto' : pct(v)),
+        }, {
+          id: 'rotary', name: 'Rotary (lento/rápido)', min: 0, max: 1, base: rotaryKnob,
+          format: (v: number) => (v >= 0.5 ? 'Rápido' : 'Lento'),
         }]
       : []),
   ];

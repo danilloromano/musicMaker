@@ -1,7 +1,7 @@
 import { Project, Track } from '../types';
 import { Rig, rigKey } from './amp';
 import { MasterChain, ensureWorklets, workletsReady } from './master';
-import { activeLanes, audibleSet, outputOf, sendAmount, sendsOf, sidechainOf, valueAt } from './routing';
+import { activeLanes, audibleSet, outputOf, sendAmount, sendsOf, sidechainOf, speedChanges, valueAt } from './routing';
 import { SendReturn } from './sends';
 import { applyComp, applyEq, compOf, createEqNodes, eqOf } from './trackfx';
 
@@ -270,6 +270,9 @@ export class Mixer {
       // wah automatizado: tocando, a curva agendada manda; parado, vale o ponto da curva no cursor
       const wah = activeLanes(t).find((l) => l.param === 'wah');
       s.rig?.wah.override(wah ? (this.automating ? 'scheduled' : valueAt(wah.points, this.cursor)) : undefined);
+      // rotary automatizado: idem (parado, a velocidade da curva no cursor)
+      const rot = activeLanes(t).find((l) => l.param === 'rotary');
+      s.rig?.rotary.override(rot ? (this.automating ? 'scheduled' : valueAt(rot.points, this.cursor)) : undefined);
     }
     for (const t of tracks) this.syncSidechain(this.strips.get(t.id)!, t);
   }
@@ -294,6 +297,14 @@ export class Mixer {
           wah.freq.cancelScheduledValues(at);
           wah.freq.setValueAtTime(wah.toHz(valueAt(l.points, fromBeat)), at);
           for (const pt of l.points) if (pt.beat > fromBeat) wah.freq.exponentialRampToValueAtTime(wah.toHz(pt.value), timeOf(pt.beat));
+          continue;
+        }
+        if (l.param === 'rotary') {
+          const rot = s.rig?.rotary;
+          if (!rot) continue;
+          rot.override('scheduled');
+          const { start, changes } = speedChanges(l.points, fromBeat);
+          rot.schedule(start, at, changes.map((c) => ({ time: timeOf(c.beat), fast: c.fast })));
           continue;
         }
         const send = l.param.startsWith('send:') ? s.sends.get(l.param.slice(5)) : undefined;
@@ -329,6 +340,7 @@ export class Mixer {
       s.pan.pan.cancelScheduledValues(now);
       for (const g of s.sends.values()) g.gain.cancelScheduledValues(now);
       s.rig?.wah.freq.cancelScheduledValues(now);
+      s.rig?.rotary.hold(now); // os rotores param de mudar onde estão e o sync leva à velocidade do cursor
     }
     this.sync(project);
   }

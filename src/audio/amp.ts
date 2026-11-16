@@ -541,7 +541,18 @@ const ROTORS = {
  * Dois microfones, um de cada lado, captam o rotor em fases diferentes: o estéreo "gira".
  * Trocar Lento/Rápido não pula de velocidade: a corneta acelera em ~1 s e o tambor em ~4 s.
  */
-function rotaryPedal(ctx: BaseAudioContext, put: Put): Fx {
+/** Velocidade do rotary vinda da automação: número (≥ 0,5 = rápido) parado no cursor; 'scheduled' = a automação agenda as trocas. */
+export type SpeedOverride = number | 'scheduled' | undefined;
+
+interface RotaryFx extends Fx {
+  override(v: SpeedOverride): void;
+  /** agenda a velocidade: começa indo para `startFast` em `at` e troca em cada instante de `changes` (com a inércia de cada rotor) */
+  schedule(startFast: boolean, at: number, changes: { time: number; fast: boolean }[]): void;
+  /** congela as rampas onde estão (ao parar a música) */
+  hold(now: number): void;
+}
+
+function rotaryPedal(ctx: BaseAudioContext, put: Put): RotaryFx {
   const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
   inp.connect(dry).connect(out);
   const drive = ctx.createGain();
@@ -586,12 +597,42 @@ function rotaryPedal(ctx: BaseAudioContext, put: Put): Fx {
     });
     return { name, r, level, oscs: rotorOscs };
   });
-  let fast: boolean | null = null;
-  return {
+  /** última velocidade pedida (null = ainda não ajustada; undefined = a automação mexeu, não se sabe) */
+  let fast: boolean | null | undefined = null;
+  let over: SpeedOverride;
+  let last: number[] = [];
+  /** leva os rotores para a velocidade com a inércia de cada um, a partir de `t` */
+  const rampTo = (want: boolean, t: number) => {
+    for (const rt of rotors) {
+      const f = want ? rt.r.fast : rt.r.slow;
+      // todos os osciladores do rotor recebem a mesma curva: continuam travados nas fases deles
+      for (const o of rt.oscs) o.frequency.setTargetAtTime(f, t, rt.r.tau);
+    }
+  };
+  const fx: RotaryFx = {
     in: inp,
     out,
     oscs,
-    set: ([drv, bal, mix, speed]) => {
+    override: (v) => {
+      over = v;
+      fx.set(last);
+    },
+    schedule: (startFast, at, changes) => {
+      for (const o of oscs) o.frequency.cancelScheduledValues(at);
+      rampTo(startFast, at);
+      for (const c of changes) rampTo(c.fast, c.time);
+      fast = undefined;
+    },
+    hold: (now) => {
+      for (const o of oscs) {
+        if (o.frequency.cancelAndHoldAtTime) o.frequency.cancelAndHoldAtTime(now);
+        else o.frequency.cancelScheduledValues(now);
+      }
+      fast = undefined;
+    },
+    set: (p) => {
+      last = p;
+      const [drv, bal, mix, knob] = p;
       // a curva soft amplifica ~2,5x os sinais baixos: a saída compensa, então o Drive muda o caráter e não o volume
       const dg = 0.4 + (drv ?? 0.2) * 6;
       put(drive.gain, dg);
@@ -601,25 +642,25 @@ function rotaryPedal(ctx: BaseAudioContext, put: Put): Fx {
       const m = mix ?? 1;
       put(dry.gain, 1 - m);
       put(wet.gain, m * 0.9);
-      const want = (speed ?? 0) >= 0.5;
+      // automação tocando: as trocas já estão agendadas (mexer aqui brigaria com elas)
+      if (over === 'scheduled') return;
+      const want = (typeof over === 'number' ? over : knob ?? 0) >= 0.5;
       if (want === fast) return;
       const first = fast === null;
       fast = want;
-      const now = ctx.currentTime;
-      for (const rt of rotors) {
-        const f = want ? rt.r.fast : rt.r.slow;
-        for (const o of rt.oscs) {
-          if (first) o.frequency.value = f;
-          // todos os osciladores do rotor recebem a mesma curva: continuam travados nas fases deles
-          else {
-            o.frequency.cancelScheduledValues(now);
-            o.frequency.setValueAtTime(o.frequency.value, now);
-            o.frequency.setTargetAtTime(f, now, rt.r.tau);
-          }
-        }
+      if (first) {
+        for (const rt of rotors) for (const o of rt.oscs) o.frequency.value = want ? rt.r.fast : rt.r.slow;
+        return;
       }
+      const now = ctx.currentTime;
+      for (const o of oscs) {
+        o.frequency.cancelScheduledValues(now);
+        o.frequency.setValueAtTime(o.frequency.value, now);
+      }
+      rampTo(want, now);
     },
   };
+  return fx;
 }
 
 // ---------- Mais distorções ----------
@@ -1496,6 +1537,8 @@ export class Rig {
   private first = true;
   /** pedal de wah (a posição dele pode ser automatizada) */
   wah: WahFx;
+  /** pedal de rotary (a troca lento/rápido pode ser automatizada) */
+  rotary: RotaryFx;
   private put: Put = (p, v) => {
     if (this.first) p.value = v;
     else p.setTargetAtTime(v, this.ctx.currentTime, 0.015);
@@ -1506,6 +1549,7 @@ export class Rig {
     this.output = ctx.createGain();
     for (const p of PEDALS) this.slots.set(p.id, new Slot(ctx, makePedal(ctx, p.id, this.put)));
     this.wah = this.slots.get('wah')!.fx as WahFx;
+    this.rotary = this.slots.get('rotary')!.fx as RotaryFx;
 
     let node: AudioNode = this.input;
     for (const p of PEDALS.filter((x) => !x.post)) {
