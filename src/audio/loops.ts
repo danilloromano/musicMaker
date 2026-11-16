@@ -63,6 +63,7 @@ const eighths = (roots: number[]): [number, number, number][] =>
 
 const POP = [[60, 64, 67], [59, 62, 67], [57, 60, 64], [57, 60, 65]]; // C G Am F
 const MINOR = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
+const PSYCH = [[52, 55, 59, 62], [57, 61, 64], [52, 55, 59, 62], [50, 54, 57]]; // Em7 A Em7 D (mi dórico)
 
 export const LOOPS: Loop[] = [
   drums('d-rock', 'Rock Direto', 2, { 36: 'x.......x.x.....', 38: '....x.......x...', 42: 'x.x.x.x.x.x.x.x.' }),
@@ -128,6 +129,30 @@ export const LOOPS: Loop[] = [
     38: '........x.......',
     42: 'x.ox.oxox.ox.oxo',
   }),
+  // Psicodélico anos 70: groove de rock com chimbal solto, groove tribal nos tons e meio tempo pesado.
+  drums('d-psych-groove', 'Psicodélico Groove', 2, {
+    36: 'x.....x...x.....x.....x.x...x...',
+    38: '....x.......x.......x..o....x.oo',
+    42: 'x.x.x.x.x.x.x.x.x.x.x.x.x.x.....',
+    46: '..............................x.',
+    49: 'x...............................',
+  }),
+  drums('d-psych-tribal', 'Psicodélico Tribal', 2, {
+    36: 'x.....x.x.....x.x.....x.x...x.x.',
+    45: '..x...x...x..xx...x...x...x.xxxx',
+    48: '....x.......x.......x.......x...',
+    42: 'x...x...x...x...x...x...x...x...',
+    49: 'x...............................',
+  }),
+  drums('d-psych-heavy', 'Psicodélico Pesado', 2, {
+    36: 'x.......x.x.....x.......x.....x.',
+    38: '........x...............x.......',
+    46: 'x...x...x...x...x...x...x.......',
+    50: '............................xx..',
+    48: '..............................x.',
+    45: '...............................x',
+    49: 'x...............................',
+  }),
   drums('d-toms', 'Virada de Tons', 1, { 36: 'x...x...x...x...', 50: 'xx.x............', 48: '....xx.x........', 45: '........xx.xx.x.', 49: '...............x' }),
 
   mel('b-pop', 'Baixo Pop', 'Baixo', 'ebass', 4, eighths([36, 31, 33, 29])),
@@ -135,6 +160,18 @@ export const LOOPS: Loop[] = [
   mel('b-groove', 'Baixo Groove', 'Baixo', 'ebass', 2,
     [[0, 36, 0.5], [0.75, 36, 0.25], [1.5, 48, 0.25], [2, 36, 0.5], [2.75, 39, 0.25], [3, 41, 0.5], [3.5, 43, 0.5]], 4),
 
+  // Psicodélico anos 70 (em mi dórico: a sexta maior, Dó#, dá o colorido "viajante")
+  mel('b-psych', 'Baixo Psicodélico', 'Baixo', 'ebass', 2, [
+    [0, 40, 0.5], [0.75, 40, 0.25], [1, 43, 0.5], [1.5, 45, 0.5], [2, 40, 0.5], [2.5, 50, 0.25], [2.75, 49, 0.25], [3, 47, 0.5], [3.5, 45, 0.5],
+    [4, 40, 0.75], [4.75, 40, 0.25], [5, 43, 0.5], [5.5, 45, 0.5], [6, 47, 0.5], [6.5, 49, 0.25], [6.75, 47, 0.25], [7, 45, 0.5], [7.5, 43, 0.5],
+  ]),
+  mel('c-psych-organ', 'Órgão Psicodélico', 'Acordes', 'organfast', 4, chords(PSYCH), 16, 80),
+  mel('m-psych-lead', 'Frase Psicodélica', 'Melodia', 'lead', 4, [
+    [0, 76, 1.5], [1.5, 74, 0.5], [2, 71, 0.5], [2.5, 69, 0.5], [3, 67, 1],
+    [4, 64, 0.5], [4.5, 67, 0.5], [5, 69, 1], [6, 71, 0.75], [6.75, 73, 0.25], [7, 71, 1],
+    [8, 79, 1], [9, 76, 0.5], [9.5, 74, 0.5], [10, 76, 1.5], [11.5, 73, 0.5],
+    [12, 71, 0.5], [12.5, 69, 0.5], [13, 67, 0.5], [13.5, 64, 0.5], [14, 64, 2],
+  ]),
   mel('c-pop', 'Acordes Pop', 'Acordes', 'epiano', 4, chords(POP), 16, 85),
   mel('c-minor', 'Acordes Menores', 'Acordes', 'epiano', 4, chords(MINOR), 16, 85),
   mel('c-pad', 'Pad Atmosférico', 'Acordes', 'pad', 4, chords(MINOR.map((c) => c.map((p) => p - 12).concat(c[2]))), 16, 80),
@@ -173,6 +210,7 @@ export const DRUM_STYLES: { group: string; ids: string[] }[] = [
   { group: 'Hardcore', ids: ['d-hc-skank', 'd-hc-dbeat'] },
   { group: 'Funk', ids: ['d-funk', 'd-funk-us', 'd-funk-break'] },
   { group: 'Reggae', ids: ['d-reggae-onedrop', 'd-reggae-rockers', 'd-reggae-steppers'] },
+  { group: 'Psicodélico anos 70', ids: ['d-psych-groove', 'd-psych-tribal', 'd-psych-heavy'] },
   { group: 'Hip-hop e eletrônico', ids: ['d-hiphop', 'd-trap', 'd-house', 'd-dembow'] },
 ];
 

@@ -287,6 +287,18 @@ export const RIG_PRESETS: { name: string; make: () => AmpRig }[] = [
   { name: 'Hard Rock', make: () => preset('crunch', { gain: 0.8, bass: 0.55, mid: 0.6 }, '4x12', { gate: [0.45, 0.25], boost: [0.5, 0.2] }) },
   { name: 'Hardcore / Metal', make: () => preset('high', { gain: 0.7, bass: 0.6, mid: 0.4, treble: 0.6 }, '4x12', { gate: [0.55, 0.2], overdrive: { model: 'odGreen', p: [0, 0.6, 0.9] } }) },
   { name: 'Fuzz Anos 60', make: () => preset('clean', { gain: 0.3 }, '2x12', { fuzzbox: { model: 'fuzz', p: [0.7, 0.45, 0.5] } }) },
+  // Psicodélico anos 70: fuzz de germânio, phaser lento, delay de fita na colcheia pontuada e mola
+  { name: 'Psicodélico 70', make: () => preset('crunch', { gain: 0.45, bass: 0.5, mid: 0.6, treble: 0.55 }, '2x12', {
+    fuzzbox: { model: 'fuzzGerm', p: [0.7, 0.5] },
+    phaser: [0.15, 0.65, 0.6, 0.35, 0, 1],
+    delay: [0.625, 0.4, 0.25, 0.35, 0, 1, 0, 1],
+    reverb: [0.5, 0.5, 0.3, 0],
+  }) },
+  // órgão pelo rack: um pouco de crunch e a caixa rotativa no rápido
+  { name: 'Órgão Psicodélico', make: () => preset('crunch', { gain: 0.25, bass: 0.55, mid: 0.55, treble: 0.5 }, '1x12', {
+    rotary: [0.3, 0.5, 1, 1],
+    reverb: [0.45, 0.45, 0.25, 0],
+  }) },
   { name: 'Lo-fi', make: () => preset('crunch', { gain: 0.4, bass: 0.3 }, '1x8', { tremolo: [0.35, 0.35] }) },
   { name: 'Baixo', make: () => preset('bass', { gain: 0.25, bass: 0.55 }, '8x10b', { comp: [0.5, 0.5] }) },
 ];
