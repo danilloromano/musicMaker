@@ -80,11 +80,12 @@ export const PEDALS: PedalDef[] = [
   { id: 'vibrato', name: 'Vibrato', color: '#e8a33c', post: true, desc: 'Ondula a afinação (não o volume, como o tremolo): só o sinal modulado, sem o direto',
     params: [{ label: 'Velocidade', def: 0.35 }, { label: 'Profund.', def: 0.35 }] },
   { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
-  { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong',
+  { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong · Reverso: cada trecho volta de trás para frente',
     params: [{ label: 'Tempo', def: 0.35 }, { label: 'Ecos', def: 0.35 }, { label: 'Mix', def: 0.3 }],
     toggles: [
       { labels: ['Fita', 'Digital'], titles: ['Delay de fita', 'Delay digital'], def: 0 },
       { labels: ['Mono', 'Estéreo'], titles: ['Mono: repetições no centro', 'Estéreo: repetições alternando entre esquerda e direita'], def: 0 },
+      { labels: ['Normal', 'Reverso'], titles: ['Repetições normais', 'Reverso: o som volta de trás para frente, com tempo = tamanho de cada trecho invertido'], def: 0 },
     ] },
   { id: 'reverb', name: 'Reverb', color: '#3f8fe0', post: true, desc: 'Mola: o "boing" metálico dos amps antigos · Sala: cauda lisa e escura',
     params: [{ label: 'Tempo', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Mix', def: 0.35 }],
@@ -624,7 +625,37 @@ function delayNet(ctx: BaseAudioContext, tape: boolean, stereo: boolean): DelayN
   };
 }
 
-/** Pedal de delay: troca de tipo/saída monta outra rede e faz crossfade com a anterior. */
+/**
+ * Delay reverso (AudioWorklet 'mm-reverse', ver master.worklet.ts). Na fita as repetições saem mais
+ * escuras e saturadas; no estéreo, abertas (um lado um pouco atrasado). Sem os worklets carregados,
+ * cai para o delay comum.
+ */
+function reverseNet(ctx: BaseAudioContext, tape: boolean, stereo: boolean): DelayNet {
+  if (!workletsReady(ctx)) return delayNet(ctx, tape, stereo);
+  const input = ctx.createGain(), output = ctx.createGain();
+  const node = new AudioWorkletNode(ctx, 'mm-reverse', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+  let tail: AudioNode = input.connect(node);
+  if (tape) tail = tail.connect(filter(ctx, 'lowpass', 3200)).connect(shaper(ctx, 'tape'));
+  if (stereo) {
+    // abre o eco: esquerda direto, direita 12 ms depois
+    const merge = ctx.createChannelMerger(2);
+    const d = ctx.createDelay(0.05);
+    d.delayTime.value = 0.012;
+    tail.connect(merge, 0, 0);
+    tail.connect(d).connect(merge, 0, 1);
+    tail = merge;
+  }
+  tail.connect(output);
+  return {
+    input, output, oscs: [],
+    set: (time, rep, put) => {
+      put(node.parameters.get('time')!, 0.15 + time * 1.35); // trechos de 0,15 a 1,5 s
+      put(node.parameters.get('feedback')!, rep * 0.85);
+    },
+  };
+}
+
+/** Pedal de delay: troca de tipo/saída/sentido monta outra rede e faz crossfade com a anterior. */
 function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
   const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
   inp.connect(out); // sinal seco
@@ -635,14 +666,15 @@ function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
     in: inp,
     out,
     oscs: [],
-    set: ([time, rep, mix, kind, side]) => {
+    set: ([time, rep, mix, kind, side, dir]) => {
       put(wet.gain, mix);
       const tape = (kind ?? 0) < 0.5;
       const stereo = (side ?? 0) >= 0.5;
-      const k = `${tape}|${stereo}`;
+      const reverse = (dir ?? 0) >= 0.5;
+      const k = `${tape}|${stereo}|${reverse}`;
       if (k !== key) {
         key = k;
-        const net = delayNet(ctx, tape, stereo);
+        const net = reverse ? reverseNet(ctx, tape, stereo) : delayNet(ctx, tape, stereo);
         const g = ctx.createGain();
         inp.connect(net.input);
         net.output.connect(g).connect(wet);

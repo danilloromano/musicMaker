@@ -1,5 +1,5 @@
 // AudioWorklets: o do master (limitador de pico real + medidores: LUFS, pico real, correlação,
-// redução de ganho), o seguidor de envelope do sidechain e o octaver e o harmonizador da pedaleira. Rodam na thread de áudio.
+// redução de ganho), o seguidor de envelope do sidechain e o octaver, o harmonizador e o delay reverso da pedaleira. Rodam na thread de áudio.
 import { StereoLimiter } from './limiter';
 import { Correlation, Loudness, TruePeak, dbfs } from './loudness';
 
@@ -383,3 +383,67 @@ class HarmonyProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('mm-harmony', HarmonyProcessor);
+
+/**
+ * Delay reverso: grava o sinal em trechos do tamanho do tempo do delay e toca cada trecho de trás para
+ * frente. Uma cabeça de leitura parte do instante atual e anda para trás (atraso = 2·t, de 0 a 2·tempo);
+ * no fim do trecho ela recomeça. Duas cabeças meio trecho defasadas, cada uma com janela sin² (zero
+ * nas pontas, onde ela salta), cobrem os saltos uma da outra. As repetições (realimentação) voltam
+ * para a gravação, então cada eco também sai invertido de novo. Saída: só as repetições.
+ */
+class ReverseProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'time', defaultValue: 0.4, minValue: 0.05, maxValue: 3, automationRate: 'k-rate' },
+      { name: 'feedback', defaultValue: 0, minValue: 0, maxValue: 0.95, automationRate: 'k-rate' },
+    ];
+  }
+  private buf = new Float32Array(Math.ceil(sampleRate * 7));
+  private n = 0;
+  private heads = [
+    { start: 0, len: 0 },
+    { start: 0, len: 0 },
+  ];
+  private last = 0;
+  process(inputs: Float32Array[][], outputs: Float32Array[][], params: Record<string, Float32Array>) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    const len = Math.max(64, Math.round(params.time[0] * sampleRate));
+    const fb = params.feedback[0];
+    const L = this.buf.length;
+    for (const [k, h] of this.heads.entries()) {
+      if (!h.len) {
+        h.len = len;
+        h.start = this.n - (k * len) / 2; // a 2ª cabeça começa meio trecho adiantada
+      }
+    }
+    for (let i = 0; i < out[0].length; i++) {
+      let x = 0;
+      for (const ch of inp) x += ch[i];
+      if (inp.length > 1) x /= inp.length;
+      this.buf[this.n % L] = x + fb * this.last;
+      let y = 0, ws = 0;
+      for (const h of this.heads) {
+        let t = this.n - h.start;
+        if (t >= h.len) {
+          // fim do trecho: recomeça daqui, já com o tempo atual
+          h.start = this.n;
+          h.len = len;
+          t = 0;
+        }
+        const win = Math.sin((Math.PI * t) / h.len) ** 2;
+        const idx = h.start - t; // anda para trás a partir do início do trecho
+        y += win * (idx >= 0 ? this.buf[Math.floor(idx) % L] : 0);
+        ws += win;
+      }
+      // as cabeças podem se desalinhar quando o tempo muda: normaliza pela soma das janelas
+      const v = ws > 0.05 ? y / ws : y / 0.05;
+      this.last = v;
+      for (const ch of out) ch[i] = v;
+      this.n++;
+    }
+    return true;
+  }
+}
+
+registerProcessor('mm-reverse', ReverseProcessor);
