@@ -169,9 +169,8 @@ export const PEDALS: PedalDef[] = [
       params: [{ label: 'Fuzz', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
   ]),
   { id: 'univibe', name: 'Univibe', color: '#8a6e4b', post: false,
-    desc: 'O pulso "latejante" do fim dos anos 60: quatro fases em frequências diferentes varridas por uma lâmpada · Chorus: soma com o som direto (redemoinho) · Vibrato: só o som ondulado (a afinação balança)',
-    params: [{ label: 'Velocidade', def: 0.35 }, { label: 'Intens.', def: 0.65 }, { label: 'Volume', def: 0.5 }],
-    toggles: [{ labels: ['Chorus', 'Vibrato'], titles: ['Chorus: o som direto somado ao defasado, o "redemoinho" clássico', 'Vibrato: só o som defasado, a afinação ondula'], def: 0 }] },
+    desc: 'O pulso "latejante" do fim dos anos 60: quatro fases em frequências diferentes varridas por uma lâmpada, com o redemoinho do chorus e a afinação balançando do vibrato ao mesmo tempo',
+    params: [{ label: 'Velocidade', def: 0.35 }, { label: 'Intens.', def: 0.65 }, { label: 'Volume', def: 0.5 }] },
   { id: 'eq', name: 'Equalizador', color: '#e9e9e4', post: false, faders: true,
     desc: 'Equalizador gráfico de 7 bandas (±15 dB) e volume: depois dos drives, molda o timbre antes do amp (ex.: médios para solos, graves cortados para limpar)',
     params: [
@@ -902,16 +901,16 @@ function univibePedal(ctx: BaseAudioContext, put: Put): Fx {
   return {
     in: inp,
     out,
-    set: ([rate, depth, vol, mode]) => {
-      const vibrato = (mode ?? 0) >= 0.5;
+    set: ([rate, depth, vol]) => {
       if (node) {
         put(node.parameters.get('rate')!, expMap(rate ?? 0.35, 0.4, 12));
         put(node.parameters.get('depth')!, depth ?? 0.65);
       }
-      // Chorus: direto + defasado (meio a meio); Vibrato: só o defasado; sem worklet: só o direto
-      put(dry.gain, !node ? 1 : vibrato ? 0 : 0.5);
-      put(wet.gain, vibrato ? 1 : 0.5);
-      put(out.gain, ((vol ?? 0.5) * 2) / 1.4 * (vibrato ? 1 : 1.3));
+      // chorus e vibrato juntos: o defasado na frente (a afinação balança) e um pouco do direto somado
+      // (vales mais rasos que no chorus puro: o redemoinho fica por baixo); sem worklet: só o direto
+      put(dry.gain, node ? 0.3 : 1);
+      put(wet.gain, 0.7);
+      put(out.gain, (((vol ?? 0.5) * 2) / 1.4) * 1.1);
     },
   };
 }
