@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { engine } from '../audio/engine';
 import { importFiles } from '../audio/importFiles';
-import { DRUM_STYLES, LOOPS, addLoop, applyDrumStyle } from '../audio/loops';
+import { DRUM_STYLES, LOOPS, addLoop, applyDrumStyle, extendDrumPattern } from '../audio/loops';
 import { presetGroups } from '../audio/instruments';
 import { useStore } from '../store';
 import { BEATS_PER_BAR, Region, Track, TrackKind, projectEnd, regionLen } from '../types';
@@ -114,6 +114,7 @@ export function Timeline() {
     if (r.bufferId) st.set({ audioEditId: r.id, bottomTab: 'audio' });
     const x0 = e.clientX;
     const bpm = project.bpm;
+    const isDrums = project.tracks.find((t) => t.id === r.trackId)?.kind === 'drums';
     let snapped = false;
     const move = (ev: PointerEvent) => {
       const snap = ev.altKey ? 0.25 : 1;
@@ -123,7 +124,12 @@ export function Timeline() {
       else if (r.bufferId) {
         const max = (engine.buffers.get(r.bufferId)?.duration ?? 0) - (r.offset ?? 0);
         patch = { duration: Math.min(max, Math.max(0.1, (r.duration ?? 0) + (d * 60) / bpm)) };
-      } else patch = { length: Math.max(1, r.length + d) };
+      } else {
+        const length = Math.max(1, r.length + d);
+        patch = { length };
+        // bateria: ao esticar, o ritmo continua repetindo no trecho novo
+        if (isDrums) patch.notes = extendDrumPattern(r, length);
+      }
       if (!snapped && d !== 0) {
         st.snapshot();
         snapped = true;

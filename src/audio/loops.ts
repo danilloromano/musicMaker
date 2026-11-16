@@ -1,6 +1,6 @@
 // Biblioteca de loops: padrões MIDI originais que tocam nos instrumentos do próprio app.
 import { useStore } from '../store';
-import { BEATS_PER_BAR, Note, uid } from '../types';
+import { BEATS_PER_BAR, Note, Region, uid } from '../types';
 
 type N = Omit<Note, 'id'>;
 
@@ -203,4 +203,25 @@ export function applyDrumStyle(loopId: string, trackId: string, beat: number) {
   const start = Math.max(0, Math.floor(beat / BEATS_PER_BAR) * BEATS_PER_BAR);
   const r = s.addRegion({ trackId, name: loop.name, start, length, notes: tile(loop, length) });
   useStore.getState().set({ selectedRegionId: r.id, selectedTrackId: trackId });
+}
+
+/**
+ * Ritmo de uma região de bateria esticada para `length` tempos: mantém as notas que já estavam dentro
+ * dela e preenche o trecho novo repetindo o padrão (o ciclo do estilo de origem ou, se não houver,
+ * o próprio tamanho original da região), alinhado ao início da região.
+ */
+export function extendDrumPattern(r: Region, length: number): Note[] | undefined {
+  if (!r.notes || length <= r.length || r.length <= 0) return r.notes;
+  const loop = LOOPS.find((l) => l.kind === 'drums' && l.name === r.name);
+  const cycle = Math.min(r.length, loop ? loop.bars * BEATS_PER_BAR : r.length);
+  const kept = r.notes.filter((n) => n.start < r.length);
+  const base = kept.filter((n) => n.start < cycle);
+  const notes = [...kept];
+  for (let o = 0; o < length; o += cycle) {
+    for (const n of base) {
+      const s = o + n.start;
+      if (s >= r.length && s < length) notes.push({ ...n, start: s, id: uid() });
+    }
+  }
+  return notes;
 }
