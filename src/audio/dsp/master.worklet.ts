@@ -562,3 +562,126 @@ class UnivibeProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('mm-univibe', UnivibeProcessor);
+
+/**
+ * Pitch shifter WSOLA (funciona com acordes, não precisa achar a nota). Duas vozes leem o sinal gravado
+ * na velocidade da transposição (mais rápido = mais agudo) e se revezam em janelas sin² (meio ciclo
+ * defasadas: a soma das janelas é sempre 1). Quando uma voz recomeça, em vez de saltar para um ponto
+ * fixo, ela procura (±16 ms em volta) o ponto em que a forma de onda mais se parece com a que a outra
+ * voz está tocando (correlação normalizada, ±16 ms). Assim as emendas caem em fase e o "tremido" de um pitch
+ * shifter comum some. A busca é feita numa cópia do sinal reduzida a 1/4 da taxa e refinada na taxa
+ * cheia. Saída: só o som transposto.
+ */
+class PitchProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: 'ratio', defaultValue: 2, minValue: 0.25, maxValue: 4, automationRate: 'k-rate' }];
+  }
+  private readonly ring = new Float32Array(1 << 16);
+  private readonly dec = new Float32Array(1 << 14);
+  private w = 0;
+  private acc = 0;
+  private phase = 0;
+  private prev = [0, 0.5];
+  private pos = [0, 0];
+  private started = false;
+  // ajustados por medição (pureza da nota transposta x atraso): grão de 50 ms e busca de ±16 ms
+  private readonly W = 0.05 * sampleRate; // quanto o atraso varia num ciclo de cada voz
+  private readonly S = Math.round(0.016 * sampleRate); // alcance da busca da emenda
+  private readonly minD = 64; // atraso mínimo (a leitura nunca alcança a gravação)
+  private readonly N = 96; // amostras (reduzidas) comparadas na busca
+  /** ciclo de cada voz (amostras) e atraso de partida para a razão `r` */
+  private cycle(r: number) {
+    const d = Math.abs(1 - r);
+    const P = Math.min(0.3 * sampleRate, Math.max(0.03 * sampleRate, d > 1e-6 ? this.W / d : Infinity));
+    const start = this.minD + this.S + (r > 1 ? (r - 1) * P : 0);
+    return { P, start };
+  }
+  private read(p: number): number {
+    if (p < 0) return 0;
+    const i = Math.floor(p), f = p - i, M = this.ring.length - 1;
+    const a = this.ring[i & M], b = this.ring[(i + 1) & M];
+    return a + (b - a) * f;
+  }
+  private readDec(p: number): number {
+    const i = Math.floor(p / 4);
+    return i < 0 ? 0 : this.dec[i & (this.dec.length - 1)];
+  }
+  /** correlação normalizada entre os trechos que terminam em `a` e em `b`, lidos para trás na velocidade `r` */
+  private corr(a: number, b: number, r: number, fine: boolean): number {
+    let ab = 0, aa = 0, bb = 0;
+    const step = 4 * r;
+    for (let j = 0; j < this.N; j++) {
+      const x = fine ? this.read(a - j * step) : this.readDec(a - j * step);
+      const y = fine ? this.read(b - j * step) : this.readDec(b - j * step);
+      ab += x * y;
+      aa += x * x;
+      bb += y * y;
+    }
+    return aa > 1e-12 && bb > 1e-12 ? ab / Math.sqrt(aa * bb) : 0;
+  }
+  /** recomeça a voz k: perto do atraso de partida, no ponto mais parecido com o que a outra voz toca */
+  private restart(k: number, r: number) {
+    const target = this.w - this.cycle(r).start;
+    const other = this.pos[1 - k];
+    let best = 0, bestC = -2;
+    for (let d = -this.S; d <= this.S; d += 4) {
+      const c = this.corr(target + d, other, r, false);
+      if (c > bestC) {
+        bestC = c;
+        best = d;
+      }
+    }
+    // refino na taxa cheia em volta do melhor ponto
+    let fineBest = best;
+    for (let d = best - 3; d <= best + 3; d++) {
+      const c = this.corr(target + d, other, r, true);
+      if (c > bestC) {
+        bestC = c;
+        fineBest = d;
+      }
+    }
+    this.pos[k] = target + fineBest;
+  }
+  process(inputs: Float32Array[][], outputs: Float32Array[][], params: Record<string, Float32Array>) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    const n = out[0].length;
+    const r = params.ratio[0];
+    const { P, start } = this.cycle(r);
+    const M = this.ring.length - 1;
+    for (let i = 0; i < n; i++) {
+      let x = 0;
+      for (const ch of inp) x += ch[i];
+      if (inp.length > 1) x /= inp.length;
+      this.ring[this.w & M] = x;
+      this.acc += x;
+      if ((this.w & 3) === 3) {
+        this.dec[(this.w >> 2) & (this.dec.length - 1)] = this.acc / 4;
+        this.acc = 0;
+      }
+      this.w++;
+      if (!this.started) {
+        // vozes já na metade de ciclo uma da outra
+        this.pos[0] = this.w - start;
+        this.pos[1] = this.w - (start + (r > 1 ? -1 : 1) * Math.abs(1 - r) * P * 0.5);
+        this.started = true;
+      }
+      this.phase = (this.phase + 1 / P) % 1;
+      let y = 0;
+      for (let k = 0; k < 2; k++) {
+        const pk = (this.phase + k * 0.5) % 1;
+        if (pk < this.prev[k]) this.restart(k, r);
+        this.prev[k] = pk;
+        // segurança: se a razão mudou no meio do ciclo, não deixa a leitura passar da gravação
+        if (this.w - this.pos[k] < this.minD) this.pos[k] = this.w - this.minD;
+        const win = Math.sin(Math.PI * pk) ** 2;
+        y += win * this.read(this.pos[k]);
+        this.pos[k] += r;
+      }
+      for (const ch of out) ch[i] = y;
+    }
+    return true;
+  }
+}
+
+registerProcessor('mm-pitch', PitchProcessor);

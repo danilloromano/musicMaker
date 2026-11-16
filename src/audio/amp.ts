@@ -1564,6 +1564,29 @@ function pitchRamps(ctx: BaseAudioContext) {
  * Quando a rampa chega ao fim ela salta de volta; nesse instante a janela daquela voz está em zero e a
  * outra voz (meio ciclo defasada, janela no máximo) cobre o salto. sin² + cos² = 1: volume constante.
  */
+/**
+ * Pedal de pitch com o pitch shifter WSOLA do AudioWorklet 'mm-pitch' (emendas em fase, sem o tremido;
+ * ver master.worklet.ts). Mesmos botões do pitch nativo abaixo, que fica para quando os worklets ainda
+ * não carregaram e para o laço do shimmer do reverb.
+ */
+function pitchPedalHQ(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
+  const node = new AudioWorkletNode(ctx, 'mm-pitch', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+  const tone = filter(ctx, 'lowpass', 9000); // arredonda o chiado que sobe junto na transposição para cima
+  inp.connect(dry).connect(out);
+  inp.connect(node).connect(tone).connect(wet).connect(out);
+  return {
+    in: inp,
+    out,
+    set: ([interval, fine, mix]) => {
+      put(node.parameters.get('ratio')!, 2 ** ((pitchSemis(interval ?? 1) + ((fine ?? 0.5) - 0.5)) / 12));
+      const m = mix ?? 0.5;
+      put(dry.gain, Math.min(1, 2 * (1 - m)));
+      put(wet.gain, Math.min(1, 2 * m));
+    },
+  };
+}
+
 function pitchPedal(ctx: BaseAudioContext, put: Put): Fx {
   const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
   const tone = filter(ctx, 'lowpass', 7000); // o som transposto para cima fica áspero: arredonda
@@ -1782,7 +1805,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   const def = PEDALS.find((x) => x.id === id);
   if (def?.models) return modelPedal(ctx, put, def);
   switch (id) {
-    case 'pitch': return pitchPedal(ctx, put);
+    case 'pitch': return workletsReady(ctx) ? pitchPedalHQ(ctx, put) : pitchPedal(ctx, put);
     case 'octave': return octavePedal(ctx, put);
     case 'harmony': return harmonyPedal(ctx, put);
     case 'reverb': return reverbPedal(ctx, put);
