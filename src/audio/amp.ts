@@ -59,6 +59,8 @@ export const PEDALS: PedalDef[] = [
   { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
   { id: 'flanger', name: 'Flanger', color: '#7fd6e8', post: true, desc: 'O "avião a jato": eco curtíssimo que varre, com realimentação para ficar mais metálico',
     params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Realim.', def: 0.5 }] },
+  { id: 'vibrato', name: 'Vibrato', color: '#e8a33c', post: true, desc: 'Ondula a afinação (não o volume, como o tremolo): só o sinal modulado, sem o direto',
+    params: [{ label: 'Velocidade', def: 0.35 }, { label: 'Profund.', def: 0.35 }] },
   { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
   { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong',
     params: [{ label: 'Tempo', def: 0.35 }, { label: 'Ecos', def: 0.35 }, { label: 'Mix', def: 0.3 }],
@@ -916,6 +918,23 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
           put(fb.gain, regen * 0.85);
           put(wet.gain, 0.8);
           put(out.gain, 0.75 * (1 - regen * 0.3)); // segura o volume quando a realimentação sobe
+        },
+      };
+    }
+    case 'vibrato': {
+      // atraso varrido por um LFO, 100% molhado: a afinação sobe e desce. A profundidade fixa o desvio
+      // de afinação (até ~±1 semitom); o quanto o atraso varia depende da velocidade (desvio = 2π·f·A).
+      const d = ctx.createDelay(0.06);
+      const l = lfo(ctx);
+      l.depth.connect(d.delayTime);
+      return {
+        in: d, out: d, oscs: [l.o],
+        set: ([rate, depth]) => {
+          const f = expMap(rate, 0.5, 10);
+          const amp = ((depth * 0.06) / (2 * Math.PI * f)); // segundos
+          put(l.o.frequency, f);
+          put(l.depth.gain, amp);
+          put(d.delayTime, 0.001 + amp);
         },
       };
     }
