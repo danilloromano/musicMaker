@@ -168,9 +168,8 @@ export interface MasterSettings {
   multiband?: { on: boolean; lowFreq: number; highFreq: number; bands: { threshold: number; ratio: number; gain: number }[] };
   /** imagem estéreo: largura (0 = mono, 1 = original, 2 = aberto) e graves em mono abaixo de monoFreq */
   stereo?: { width: number; monoBass: boolean; monoFreq: number };
-  /** formato do arquivo exportado */
-  exportFormat?: 'wav' | 'flac' | 'mp3';
-  mp3Bitrate?: 128 | 192 | 256 | 320;
+  /** formato do arquivo exportado (os dois com codificador próprio, sem bibliotecas de terceiros) */
+  exportFormat?: 'wav' | 'flac';
 }
 
 export interface Project {

@@ -148,34 +148,14 @@ export function quantize(chans: Float32Array[], bits: 16 | 24): Int32Array[] {
   });
 }
 
-/** MP3 (encoder LAME em WebAssembly, carregado só quando necessário). */
-export async function encodeMp3(chans: Float32Array[], sr: number, bitrate: 128 | 192 | 256 | 320, onProgress?: (p: number) => void): Promise<Blob> {
-  const { createMp3Encoder } = await import('wasm-media-encoders');
-  const enc = await createMp3Encoder();
-  enc.configure({ sampleRate: sr, channels: chans.length as 1 | 2, bitrate });
-  const parts: BlobPart[] = [];
-  const step = 1152 * 64;
-  for (let i = 0; i < chans[0].length; i += step) {
-    parts.push(enc.encode(chans.map((c) => c.subarray(i, i + step))).slice());
-    if ((i / step) % 16 === 15) {
-      onProgress?.(i / chans[0].length);
-      await new Promise((ok) => setTimeout(ok, 0));
-    }
-  }
-  parts.push(enc.finalize().slice());
-  return new Blob(parts, { type: 'audio/mpeg' });
-}
-
 /** Grava no formato escolhido no master; devolve o arquivo e a extensão. */
 export async function encodeExport(
   chans: Float32Array[],
   sr: number,
-  m: { exportFormat?: 'wav' | 'flac' | 'mp3'; exportBits: 16 | 24; mp3Bitrate?: 128 | 192 | 256 | 320 },
+  m: { exportFormat?: 'wav' | 'flac'; exportBits: 16 | 24 },
   onProgress?: (p: number) => void,
 ): Promise<{ blob: Blob; ext: string }> {
-  const format = m.exportFormat ?? 'wav';
-  if (format === 'mp3') return { blob: await encodeMp3(chans, sr, m.mp3Bitrate ?? 320, onProgress), ext: 'mp3' };
-  if (format === 'flac') {
+  if (m.exportFormat === 'flac') {
     const { encodeFlac } = await import('./flac');
     return { blob: await encodeFlac(quantize(chans, m.exportBits), sr, m.exportBits, onProgress), ext: 'flac' };
   }

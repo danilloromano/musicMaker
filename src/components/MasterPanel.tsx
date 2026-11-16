@@ -100,36 +100,25 @@ export function MasterPanel() {
         </select>
         <label className="hint">Formato</label>
         <div className="presets">
-          {([['wav', 'WAV'], ['flac', 'FLAC'], ['mp3', 'MP3']] as const).map(([f, name]) => (
+          {([['wav', 'WAV'], ['flac', 'FLAC']] as const).map(([f, name]) => (
             <button key={f} className={m.exportFormat === f ? 'on' : ''} onClick={() => setMaster((x) => ({ ...x, exportFormat: f }), true)}
-              title={f === 'wav' ? 'Sem compressão: o padrão de estúdio' : f === 'flac' ? 'Sem perda de qualidade e ~40% menor que o WAV' : 'Com perda, bem menor: para enviar e ouvir no celular'}>
+              title={f === 'wav' ? 'Sem compressão: o padrão de estúdio' : 'Sem perda de qualidade e ~30% menor que o WAV'}>
               {name}
             </button>
           ))}
         </div>
-        {m.exportFormat === 'mp3' ? (
-          <div className="presets">
-            {([320, 256, 192, 128] as const).map((b) => (
-              <button key={b} className={m.mp3Bitrate === b ? 'on' : ''} onClick={() => setMaster((x) => ({ ...x, mp3Bitrate: b }), true)}>
-                {b} kbps
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="presets">
-            {([24, 16] as const).map((b) => (
-              <button key={b} className={m.exportBits === b ? 'on' : ''} onClick={() => setMaster((x) => ({ ...x, exportBits: b }), true)}>
-                {b} bits
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="presets">
+          {([24, 16] as const).map((b) => (
+            <button key={b} className={m.exportBits === b ? 'on' : ''} onClick={() => setMaster((x) => ({ ...x, exportBits: b }), true)}>
+              {b} bits
+            </button>
+          ))}
+        </div>
         <small className="hint">
           {target.lufs !== null
             ? `Na exportação, o ganho do limitador é ajustado sozinho até a música ficar em ${target.lufs} LUFS, com picos até ${fmt(m.limiter.ceiling)} dBTP.`
             : 'A música sai com o ganho do limitador ajustado aqui.'}
-          {m.exportFormat !== 'mp3' && m.exportBits === 16 ? ' 16 bits recebe dither (ruído inaudível que evita distorção).' : ''}
-          {m.exportFormat === 'mp3' ? ' No MP3, deixe o teto em -1 dBTP ou abaixo: a compressão cria picos novos.' : ''}
+          {m.exportBits === 16 ? ' 16 bits recebe dither (ruído inaudível que evita distorção).' : ''}
         </small>
         {last && (
           <div className="last-export">

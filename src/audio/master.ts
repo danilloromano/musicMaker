@@ -31,12 +31,15 @@ export const DEFAULT_MASTER: MasterSettings = {
   multiband: DEFAULT_MULTIBAND,
   stereo: DEFAULT_STEREO,
   exportFormat: 'wav',
-  mp3Bitrate: 320,
 };
 
 /** Ajustes do master do projeto, com os campos que projetos antigos não têm preenchidos pelo padrão. */
-export const masterOf = (m?: MasterSettings): Required<MasterSettings> =>
-  ({ ...DEFAULT_MASTER, ...m }) as Required<MasterSettings>;
+export function masterOf(m?: MasterSettings): Required<MasterSettings> {
+  const full = { ...DEFAULT_MASTER, ...m } as Required<MasterSettings>;
+  // formato que não existe mais (o MP3 saiu): exporta em WAV
+  if (full.exportFormat !== 'wav' && full.exportFormat !== 'flac') full.exportFormat = 'wav';
+  return full;
+}
 
 /** Alvos de loudness da exportação (LUFS integrado). */
 export const EXPORT_TARGETS: { id: MasterSettings['exportTarget']; label: string; lufs: number | null }[] = [
