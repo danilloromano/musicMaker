@@ -1,6 +1,7 @@
 // Instrumentos virtuais: sintetizadores subtrativos e bateria sintetizada.
 // Tudo recebe um BaseAudioContext para funcionar igual em tempo real e na exportação offline.
 import { playKitPiece } from './drumKit';
+import { SampleOpts, startSampleVoice } from './sampler';
 
 export interface SynthPreset {
   name: string;
@@ -31,6 +32,8 @@ export interface SynthPreset {
   keyDecay?: boolean;
   /** volume do "toc" do martelo no ataque (0 = sem) */
   hammer?: number;
+  /** toca as gravações de um instrumento real (o resto do preset é o sintetizado de reserva, até elas carregarem) */
+  sample?: SampleOpts;
 }
 
 // Harmônicos medidos/aproximados de cada instrumento (amplitude do 1º, 2º, 3º... harmônico)
@@ -54,6 +57,7 @@ export const PRESETS: Record<string, SynthPreset> = {
     ],
     a: 0.002, d: 3.6, s: 0, r: 0.55, cutoff: 650, q: 0.4, envAmt: 9000, fDecay: 0.8, gain: 0.42,
     velBright: true, keyDecay: true, hammer: 0.12,
+    sample: { set: 'piano', gain: 0.63, release: 0.35, undampedFrom: 89 },
   },
   upright: {
     name: 'Piano de Armário', group: 'Pianos',
@@ -64,6 +68,8 @@ export const PRESETS: Record<string, SynthPreset> = {
     ],
     a: 0.002, d: 2.4, s: 0, r: 0.4, cutoff: 800, q: 0.5, envAmt: 6000, fDecay: 0.6, gain: 0.56,
     velBright: true, keyDecay: true, hammer: 0.18,
+    // o mesmo piano gravado, mais escuro e com abafador mais rápido
+    sample: { set: 'piano', gain: 0.6, release: 0.25, undampedFrom: 89, cutoff: 2600, velBright: true },
   },
   honky: {
     name: 'Honky-tonk', group: 'Pianos',
@@ -75,6 +81,8 @@ export const PRESETS: Record<string, SynthPreset> = {
     ],
     a: 0.002, d: 2.2, s: 0, r: 0.35, cutoff: 900, q: 0.6, envAmt: 6000, fDecay: 0.5, gain: 0.68,
     velBright: true, keyDecay: true, hammer: 0.2,
+    // duas cópias do piano gravado desafinadas entre si
+    sample: { set: 'piano', gain: 0.66, release: 0.3, undampedFrom: 89, cutoff: 5000, detune: [-13, 13] },
   },
   felt: {
     name: 'Piano Abafado', group: 'Pianos',
@@ -85,6 +93,7 @@ export const PRESETS: Record<string, SynthPreset> = {
     ],
     a: 0.006, d: 2.8, s: 0, r: 0.6, cutoff: 420, q: 0.3, envAmt: 1400, fDecay: 0.5, gain: 0.37,
     velBright: true, keyDecay: true, hammer: 0.05,
+    sample: { set: 'piano', gain: 0.58, release: 0.4, undampedFrom: 89, cutoff: 750, velBright: true },
   },
   epiano: {
     name: 'Piano Elétrico Suave', group: 'Pianos',
@@ -176,8 +185,18 @@ export const PRESETS: Record<string, SynthPreset> = {
     ],
     a: 0.15, d: 0.4, s: 0.85, r: 0.5, cutoff: 2200, q: 0.7, envAmt: 800, fDecay: 0.6, gain: 0.22,
   },
+  // ---------- Baixos ----------
+  ebass: {
+    name: 'Baixo Elétrico', group: 'Baixos',
+    oscs: [
+      { type: 'sawtooth', octave: 0, detune: 0, gain: 0.5 },
+      { type: 'sine', octave: 0, detune: 0, gain: 0.6 },
+    ],
+    a: 0.004, d: 0.6, s: 0.5, r: 0.08, cutoff: 700, q: 1, envAmt: 1500, fDecay: 0.15, gain: 0.55,
+    sample: { set: 'bass', gain: 4.5, release: 0.08 },
+  },
   bass: {
-    name: 'Baixo Synth', group: 'Teclados e synths',
+    name: 'Baixo Synth', group: 'Baixos',
     oscs: [
       { type: 'sawtooth', octave: 0, detune: 0, gain: 0.6 },
       { type: 'square', octave: -1, detune: 0, gain: 0.4 },
@@ -233,6 +252,10 @@ export function startVoice(
   t: number,
   vel: number,
 ): Voice {
+  if (p.sample) {
+    const sv = startSampleVoice(ctx, dest, p.sample, pitch, t, vel);
+    if (sv) return sv;
+  }
   const freq = 440 * 2 ** ((pitch - 69) / 12);
   const peak = p.gain * (vel / 127) ** 1.5;
   // piano: as notas agudas morrem mais depressa que as graves

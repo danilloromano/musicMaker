@@ -5,6 +5,7 @@ export default defineConfig({
   base: './', // o Electron carrega dist/index.html via file://
   plugins: [react()],
   server: { port: 5173, strictPort: true },
-  // o pacote de amostras da bateria (src/audio/drums/kitData.js, ~7 MB) é um chunk à parte, carregado sob demanda
-  build: { chunkSizeWarningLimit: 8000 },
+  // pacotes de amostras (bateria, piano, baixo: src/audio/drums e src/audio/samples) são chunks à parte,
+  // carregados sob demanda; o maior tem ~9 MB
+  build: { chunkSizeWarningLimit: 10000 },
 });

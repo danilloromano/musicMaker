@@ -130,9 +130,9 @@ export const LOOPS: Loop[] = [
   }),
   drums('d-toms', 'Virada de Tons', 1, { 36: 'x...x...x...x...', 50: 'xx.x............', 48: '....xx.x........', 45: '........xx.xx.x.', 49: '...............x' }),
 
-  mel('b-pop', 'Baixo Pop', 'Baixo', 'bass', 4, eighths([36, 31, 33, 29])),
-  mel('b-minor', 'Baixo Menor', 'Baixo', 'bass', 4, eighths([33, 29, 36, 31])),
-  mel('b-groove', 'Baixo Groove', 'Baixo', 'bass', 2,
+  mel('b-pop', 'Baixo Pop', 'Baixo', 'ebass', 4, eighths([36, 31, 33, 29])),
+  mel('b-minor', 'Baixo Menor', 'Baixo', 'ebass', 4, eighths([33, 29, 36, 31])),
+  mel('b-groove', 'Baixo Groove', 'Baixo', 'ebass', 2,
     [[0, 36, 0.5], [0.75, 36, 0.25], [1.5, 48, 0.25], [2, 36, 0.5], [2.75, 39, 0.25], [3, 41, 0.5], [3.5, 43, 0.5]], 4),
 
   mel('c-pop', 'Acordes Pop', 'Acordes', 'epiano', 4, chords(POP), 16, 85),
