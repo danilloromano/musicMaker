@@ -39,7 +39,10 @@ export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ..
 
 export const PEDALS: PedalDef[] = [
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
-  { id: 'comp', name: 'Compressor', color: '#38d9c0', post: false, params: [{ label: 'Sustain', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'comp', name: 'Compressor', color: '#38d9c0', post: false,
+    desc: 'Ataque: devagar deixa passar a palhetada antes de comprimir · Blend: mistura o som limpo (compressão paralela) · Pedal: o "squash" clássico, mais escuro · Estúdio: transparente',
+    params: [{ label: 'Sustain', def: 0.5 }, { label: 'Nível', def: 0.5 }, { label: 'Ataque', def: 0.35 }, { label: 'Blend', def: 0.85 }],
+    toggles: [{ labels: ['Pedal', 'Estúdio'], titles: ['Pedal: compressão forte e rápida, agudo um pouco arredondado (estilo Dyna Comp)', 'Estúdio: compressão suave, joelho largo, som transparente'], def: 0 }] },
   { id: 'octave', name: 'Octaver', color: '#6a5acd', post: false,
     desc: 'Oitava e duas oitavas abaixo, como os octavers analógicos: grave gordo, toque uma nota por vez',
     params: [{ label: 'Direto', def: 0.7 }, { label: '-1 Oit.', def: 0.6 }, { label: '-2 Oit.', def: 0 }] },
@@ -663,6 +666,53 @@ function rotaryPedal(ctx: BaseAudioContext, put: Put): RotaryFx {
   return fx;
 }
 
+// ---------- Compressor ----------
+
+/** Nível de referência de uma palhetada (dBFS) usado na compensação automática de volume. */
+const COMP_REF = -12;
+
+/**
+ * Compressor de pedal com quatro botões e dois caracteres:
+ * - Sustain: limiar e razão juntos (mais sustain = comprime mais cedo e mais forte);
+ * - Ataque: de 1 a 40 ms; devagar, o começo da nota passa antes da compressão (palhetada com "estalo");
+ * - Blend: compressão paralela, mistura o som limpo de volta (dinâmica natural + sustain);
+ * - Nível: volume de saída; no meio, uma palhetada sai no mesmo volume que entrou (compensação automática).
+ * Pedal (estilo Dyna Comp): razão alta, joelho curto, recuperação rápida e agudo arredondado.
+ * Estúdio: razão baixa, joelho largo, recuperação mais lenta, sem mexer no timbre.
+ */
+function compPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
+  const c = ctx.createDynamicsCompressor();
+  const tone = filter(ctx, 'lowpass', 20000, 0.5);
+  inp.connect(dry).connect(out);
+  inp.connect(c).connect(tone).connect(wet).connect(out);
+  return {
+    in: inp,
+    out: out,
+    set: ([sus, lvl, att, blend, mode]) => {
+      const studio = (mode ?? 0) >= 0.5;
+      const s = sus ?? 0.5;
+      const threshold = studio ? -6 - s * 34 : -10 - s * 40;
+      const ratio = studio ? 2 + s * 4 : 6 + s * 14;
+      put(c.threshold, threshold);
+      put(c.ratio, ratio);
+      put(c.knee, studio ? 12 : 3);
+      put(c.attack, expMap(att ?? 0.35, 0.001, 0.04));
+      put(c.release, studio ? 0.3 : 0.1);
+      put(tone.frequency, studio ? 20000 : 6500);
+      // compensação: o quanto uma palhetada no nível de referência é reduzida. O compressor do Web Audio já
+      // aplica sozinho um ganho de ~60% da redução de um sinal em 0 dBFS; aqui entra só a diferença.
+      const slope = 1 - 1 / ratio;
+      const reduction = Math.max(0, (COMP_REF - threshold) * slope);
+      const builtIn = 0.6 * -threshold * slope;
+      const b = blend ?? 0.85;
+      put(wet.gain, b * 10 ** ((reduction - builtIn) / 20));
+      put(dry.gain, 1 - b);
+      put(out.gain, (lvl ?? 0.5) * 2);
+    },
+  };
+}
+
 // ---------- Mais distorções ----------
 
 /** Distorção Preta (estilo RAT): op-amp com ganho até ~400x, diodos de silício, filtro passa-baixas na saída. */
@@ -1271,23 +1321,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
     case 'harmony': return harmonyPedal(ctx, put);
     case 'reverb': return reverbPedal(ctx, put);
     case 'gate': return noiseGate(ctx, put);
-    case 'comp': {
-      const c = ctx.createDynamicsCompressor();
-      c.knee.value = 6;
-      c.attack.value = 0.004;
-      c.release.value = 0.18;
-      const g = ctx.createGain();
-      c.connect(g);
-      return {
-        in: c,
-        out: g,
-        set: ([s, lvl]) => {
-          put(c.threshold, -12 - s * 38);
-          put(c.ratio, 3 + s * 9);
-          put(g.gain, (0.5 + lvl) * (1 + s * 2.5));
-        },
-      };
-    }
+    case 'comp': return compPedal(ctx, put);
     case 'wah': return wahPedal(ctx, put);
     case 'boost': {
       const g = ctx.createGain();
