@@ -49,6 +49,8 @@ export const PEDALS: PedalDef[] = [
   { id: 'fuzz', name: 'Fuzz', color: '#e8564a', post: false, params: [{ label: 'Fuzz', def: 0.6 }, { label: 'Tom', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
   { id: 'chorus', name: 'Chorus', color: '#5fb4ff', post: true, params: [{ label: 'Velocidade', def: 0.3 }, { label: 'Profund.', def: 0.5 }, { label: 'Mix', def: 0.5 }] },
   { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
+  { id: 'flanger', name: 'Flanger', color: '#7fd6e8', post: true, desc: 'O "avião a jato": eco curtíssimo que varre, com realimentação para ficar mais metálico',
+    params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Realim.', def: 0.5 }] },
   { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
   { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong',
     params: [{ label: 'Tempo', def: 0.35 }, { label: 'Ecos', def: 0.35 }, { label: 'Mix', def: 0.3 }],
@@ -790,6 +792,31 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
           put(l.depth.gain, 100 + depth * 800);
           put(wet.gain, amt);
           put(out.gain, 1 / (1 + amt * 0.5));
+        },
+      };
+    }
+    case 'flanger': {
+      // eco de 3 a ~11 ms varrido por um LFO lento; a realimentação reforça os picos do filtro de pente.
+      // (num laço o Web Audio não deixa o atraso abaixo de 128 amostras, ~2,7 ms: o piso fica logo acima)
+      const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain(), fb = ctx.createGain();
+      const d = ctx.createDelay(0.02);
+      const dc = filter(ctx, 'highpass', 30); // o laço de realimentação não acumula grave/DC
+      const l = lfo(ctx);
+      l.depth.connect(d.delayTime);
+      inp.connect(out);
+      inp.connect(d);
+      d.connect(wet).connect(out);
+      d.connect(dc).connect(fb).connect(d);
+      return {
+        in: inp, out, oscs: [l.o],
+        set: ([rate, depth, regen]) => {
+          const sweep = 0.0005 + depth * 0.0035; // meia excursão do atraso
+          put(l.o.frequency, 0.05 + rate * 2);
+          put(d.delayTime, 0.003 + sweep);
+          put(l.depth.gain, sweep);
+          put(fb.gain, regen * 0.85);
+          put(wet.gain, 0.8);
+          put(out.gain, 0.75 * (1 - regen * 0.3)); // segura o volume quando a realimentação sobe
         },
       };
     }
