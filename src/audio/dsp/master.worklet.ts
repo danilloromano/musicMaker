@@ -1,5 +1,5 @@
 // AudioWorklets: o do master (limitador de pico real + medidores: LUFS, pico real, correlação,
-// redução de ganho), o seguidor de envelope do sidechain e o octaver, o harmonizador e o delay reverso da pedaleira. Rodam na thread de áudio.
+// redução de ganho), o seguidor de envelope do sidechain e o octaver, o harmonizador, o delay reverso e o phaser da pedaleira. Rodam na thread de áudio.
 import { StereoLimiter } from './limiter';
 import { Correlation, Loudness, TruePeak, dbfs } from './loudness';
 
@@ -447,3 +447,63 @@ class ReverseProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('mm-reverse', ReverseProcessor);
+
+/**
+ * Phaser: cadeia de filtros passa-tudo de 1ª ordem (4 ou 8 estágios) cuja frequência é varrida por um
+ * LFO numa escala logarítmica (cada oitava leva o mesmo tempo, como nos phasers analógicos), com
+ * realimentação da saída para a entrada (os vales ficam mais fundos e os picos ressoam). No estéreo o
+ * canal direito varre 90° defasado do esquerdo. Saída: só o sinal defasado (o direto é somado fora:
+ * é a soma dos dois que cria os vales).
+ */
+class PhaserProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'rate', defaultValue: 0.5, minValue: 0.01, maxValue: 12, automationRate: 'k-rate' },
+      { name: 'depth', defaultValue: 0.6, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'feedback', defaultValue: 0, minValue: 0, maxValue: 0.95, automationRate: 'k-rate' },
+      { name: 'stages', defaultValue: 4, minValue: 2, maxValue: 12, automationRate: 'k-rate' },
+      { name: 'stereo', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ];
+  }
+  private phase = 0;
+  // estado de cada estágio (x1, y1) por canal, e a última saída (realimentação)
+  private st = [new Float64Array(24), new Float64Array(24)];
+  private last = [0, 0];
+  process(inputs: Float32Array[][], outputs: Float32Array[][], params: Record<string, Float32Array>) {
+    const inp = inputs[0];
+    const out = outputs[0];
+    const n = out[0].length;
+    const rate = params.rate[0], depth = params.depth[0], fb = params.feedback[0];
+    const stages = Math.round(params.stages[0]);
+    const stereo = params.stereo[0] >= 0.5;
+    const fMin = 180, octaves = 0.5 + depth * 5; // varre de 180 Hz até 180·2^(0,5..5,5) (até ~8 kHz)
+    for (let i = 0; i < n; i++) {
+      this.phase = (this.phase + rate / sampleRate) % 1;
+      let x = 0;
+      for (const ch of inp) x += ch[i];
+      if (inp.length > 1) x /= inp.length;
+      for (let c = 0; c < out.length && c < 2; c++) {
+        const ph = this.phase + (stereo && c === 1 ? 0.25 : 0);
+        const lfo = 0.5 - 0.5 * Math.cos(2 * Math.PI * ph); // 0..1
+        const f = fMin * 2 ** (lfo * octaves);
+        const t = Math.tan((Math.PI * Math.min(f, sampleRate * 0.45)) / sampleRate);
+        const a = (t - 1) / (t + 1);
+        const st = this.st[c];
+        let v = x + fb * this.last[c];
+        for (let k = 0; k < stages; k++) {
+          const x1 = st[2 * k], y1 = st[2 * k + 1];
+          const y = a * v + x1 - a * y1;
+          st[2 * k] = v;
+          st[2 * k + 1] = y;
+          v = y;
+        }
+        // limita a realimentação (com muita ressonância e sinal alto, não deixa disparar)
+        this.last[c] = Math.max(-4, Math.min(4, v));
+        out[c][i] = v;
+      }
+    }
+    return true;
+  }
+}
+
+registerProcessor('mm-phaser', PhaserProcessor);

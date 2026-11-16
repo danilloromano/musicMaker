@@ -96,7 +96,13 @@ export const PEDALS: PedalDef[] = [
       { labels: ['Analógico', 'Digital'], titles: ['Chorus analógico: quente, escuro, onda triangular', 'Chorus digital: limpo e brilhante, onda senoidal'], def: 0 },
       { labels: ['Mono', 'Estéreo'], titles: ['Mono: vozes no centro', 'Estéreo: uma voz de cada lado e uma no centro'], def: 1 },
     ] },
-  { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true, params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }] },
+  { id: 'phaser', name: 'Phaser', color: '#b98cff', post: true,
+    desc: '4 estágios: o "whoosh" suave clássico · 8 estágios: mais vales, mais intenso · Realim.: ressonância, o som fica "falado"',
+    params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Intens.', def: 0.6 }, { label: 'Realim.', def: 0.3 }],
+    toggles: [
+      { labels: ['4', '8'], titles: ['4 estágios: suave e clássico', '8 estágios: mais vales, varredura mais intensa'], def: 0 },
+      { labels: ['Mono', 'Estéreo'], titles: ['Mono: os dois lados juntos', 'Estéreo: o lado direito varre defasado do esquerdo'], def: 1 },
+    ] },
   { id: 'flanger', name: 'Flanger', color: '#7fd6e8', post: true, desc: 'O "avião a jato": eco curtíssimo que varre, com realimentação para ficar mais metálico',
     params: [{ label: 'Velocidade', def: 0.25 }, { label: 'Profund.', def: 0.6 }, { label: 'Realim.', def: 0.5 }] },
   { id: 'vibrato', name: 'Vibrato', color: '#e8a33c', post: true, desc: 'Ondula a afinação (não o volume, como o tremolo): só o sinal modulado, sem o direto',
@@ -709,6 +715,32 @@ function compPedal(ctx: BaseAudioContext, put: Put): Fx {
       put(wet.gain, b * 10 ** ((reduction - builtIn) / 20));
       put(dry.gain, 1 - b);
       put(out.gain, (lvl ?? 0.5) * 2);
+    },
+  };
+}
+
+// ---------- Phaser ----------
+
+/** Phaser do AudioWorklet 'mm-phaser' (ver master.worklet.ts): direto + sinal defasado = os vales que andam. */
+function phaserPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
+  const node = new AudioWorkletNode(ctx, 'mm-phaser', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  inp.connect(out);
+  inp.connect(node).connect(wet).connect(out);
+  const param = (name: string) => node.parameters.get(name)!;
+  return {
+    in: inp,
+    out,
+    set: ([rate, depth, amt, fb, stages, side]) => {
+      put(param('rate'), expMap(rate ?? 0.25, 0.05, 8));
+      put(param('depth'), depth ?? 0.6);
+      const feedback = (fb ?? 0.3) * 0.85;
+      put(param('feedback'), feedback);
+      param('stages').value = (stages ?? 0) >= 0.5 ? 8 : 4; // número de estágios não pode passar por valores intermediários
+      param('stereo').value = (side ?? 1) >= 0.5 ? 1 : 0;
+      const m = amt ?? 0.6;
+      put(wet.gain, m * (1 - feedback * 0.7)); // a ressonância sobe o volume do defasado: compensa
+      put(out.gain, 1 / (1 + m * 0.5));
     },
   };
 }
@@ -1345,6 +1377,8 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
     case 'chorus': return chorusPedal(ctx, put);
     case 'rotary': return rotaryPedal(ctx, put);
     case 'phaser': {
+      if (workletsReady(ctx)) return phaserPedal(ctx, put);
+      // sem os worklets (logo ao abrir): phaser simples de nós nativos até o rack ser remontado
       const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
       const l = lfo(ctx);
       let node: AudioNode = inp;
