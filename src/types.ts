@@ -33,12 +33,46 @@ export interface LoopRange {
 }
 
 export interface TrackFx {
+  /** EQ antigo (graves/médios/agudos fixos): só vale enquanto `eq` não existir */
   low: number; // dB
   mid: number;
   high: number;
   reverb: number; // 0..1
   delay: number; // 0..1
+  /** compressor antigo (liga/desliga): só vale enquanto `compressor` não existir */
   comp: boolean;
+  /** EQ paramétrico (ver trackfx.ts: eqOf converte os projetos antigos) */
+  eq?: TrackEq;
+  /** compressor completo (ver trackfx.ts: compOf) */
+  compressor?: TrackComp;
+}
+
+/** Banda do EQ: frequência (Hz), ganho (dB) e Q (largura; as prateleiras ignoram). */
+export interface EqBand {
+  on: boolean;
+  freq: number;
+  gain: number;
+  q: number;
+}
+
+export interface TrackEq {
+  /** passa-altas: corta abaixo da frequência, 12 ou 24 dB por oitava */
+  hp: { on: boolean; freq: number; slope: 12 | 24 };
+  /** passa-baixas: corta acima da frequência */
+  lp: { on: boolean; freq: number };
+  /** prateleira de graves, médio 1, médio 2, prateleira de agudos */
+  bands: EqBand[];
+}
+
+/** Compressor: limiar e joelho (dB), razão, ataque e recuperação (ms), compensação (dB). */
+export interface TrackComp {
+  on: boolean;
+  threshold: number;
+  ratio: number;
+  attack: number;
+  release: number;
+  knee: number;
+  makeup: number;
 }
 
 /** Um pedal da pedaleira: ligado/desligado e os botões (0..1, na ordem definida em amp.ts). */

@@ -6,7 +6,7 @@ import { DEFAULT_MASTER, EXPORT_TARGETS, MASTER_PRESETS, masterOf } from '../aud
 import { MAX_AUTO_GAIN } from '../audio/export';
 import { useStore } from '../store';
 import { MasterSettings } from '../types';
-import { Slider, Spectrum, useRaf } from './ui';
+import { Reduction, Slider, Spectrum, useRaf } from './ui';
 
 const fmt = (v: number | undefined, digits = 1) => (v === undefined || !Number.isFinite(v) ? '–∞' : v.toFixed(digits).replace('.', ','));
 const signed = (v: number, unit: string) => `${v > 0 ? '+' : ''}${fmt(v)} ${unit}`;
@@ -128,25 +128,6 @@ function Row({ label, v, unit, min, max, step, reset, onChange }: {
       <span className="m-label">{label}</span>
       <Slider min={min} max={max} step={step} value={v} reset={reset} onChange={onChange} />
       <span className="fx-val">{unit === 'dB' ? signed(v, unit) : `${fmt(v, step < 1 ? 1 : 0)} ${unit}`}</span>
-    </div>
-  );
-}
-
-/** Barra de redução de ganho (0 a -12 dB), atualizada a cada quadro. */
-function Reduction({ get }: { get: () => number }) {
-  const bar = useRef<HTMLDivElement>(null);
-  const txt = useRef<HTMLSpanElement>(null);
-  const shown = useRef(0);
-  useRaf(() => {
-    const r = Math.min(0, get());
-    shown.current = r < shown.current ? r : shown.current * 0.9 + r * 0.1;
-    if (bar.current) bar.current.style.width = `${Math.min(100, (-shown.current / 12) * 100)}%`;
-    if (txt.current) txt.current.textContent = `${fmt(shown.current)} dB`;
-  });
-  return (
-    <div className="m-gr" title="Redução de ganho">
-      <div className="m-gr-track"><div className="m-gr-fill" ref={bar} /></div>
-      <span ref={txt} />
     </div>
   );
 }

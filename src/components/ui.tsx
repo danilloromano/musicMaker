@@ -154,4 +154,25 @@ export function Spectrum({ trackId, color, points, labels = false, className = '
   return <canvas className={`spectrum ${className}`} ref={ref} />;
 }
 
+const fmtDb = (v: number) => (Number.isFinite(v) ? v.toFixed(1).replace('.', ',') : '–∞');
+
+/** Barra de redução de ganho (0 a -12 dB), atualizada a cada quadro. */
+export function Reduction({ get }: { get: () => number }) {
+  const bar = useRef<HTMLDivElement>(null);
+  const txt = useRef<HTMLSpanElement>(null);
+  const shown = useRef(0);
+  useRaf(() => {
+    const r = Math.min(0, get());
+    shown.current = r < shown.current ? r : shown.current * 0.9 + r * 0.1;
+    if (bar.current) bar.current.style.width = `${Math.min(100, (-shown.current / 12) * 100)}%`;
+    if (txt.current) txt.current.textContent = `${fmtDb(shown.current)} dB`;
+  });
+  return (
+    <div className="m-gr" title="Redução de ganho">
+      <div className="m-gr-track"><div className="m-gr-fill" ref={bar} /></div>
+      <span ref={txt} />
+    </div>
+  );
+}
+
 export const KIND_ICON = { instrument: '🎹', drums: '🥁', audio: '🎤' } as const;

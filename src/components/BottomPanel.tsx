@@ -5,6 +5,7 @@ import { BottomTab, savePref, useStore } from '../store';
 import { Track, TrackFx } from '../types';
 import { AmpRack } from './AmpRack';
 import { AudioEditor } from './AudioEditor';
+import { CompEditor, EqEditor } from './TrackFxPanels';
 import { MasterPanel } from './MasterPanel';
 import { PianoRoll } from './PianoRoll';
 import { LOOP_MIME } from './Timeline';
@@ -81,10 +82,7 @@ function Loops() {
 
 // ---------- Efeitos ----------
 
-const FX: { key: keyof Omit<TrackFx, 'comp'>; label: string; min: number; max: number; step: number; unit: string }[] = [
-  { key: 'low', label: 'Graves', min: -12, max: 12, step: 0.5, unit: 'dB' },
-  { key: 'mid', label: 'Médios', min: -12, max: 12, step: 0.5, unit: 'dB' },
-  { key: 'high', label: 'Agudos', min: -12, max: 12, step: 0.5, unit: 'dB' },
+const FX: { key: 'reverb' | 'delay'; label: string; min: number; max: number; step: number; unit: string }[] = [
   { key: 'reverb', label: 'Reverb', min: 0, max: 1, step: 0.01, unit: '%' },
   { key: 'delay', label: 'Eco (delay)', min: 0, max: 1, step: 0.01, unit: '%' },
 ];
@@ -95,10 +93,6 @@ function Fx({ track: t }: { track: Track }) {
   return (
     <div className="fx">
       {t.kind === 'audio' && <AudioInput />}
-      <div className="fx-card wide">
-        <h4>Espectro de frequências (Hz)</h4>
-        <Spectrum trackId={t.id} color={t.color} points={160} labels className="big" />
-      </div>
       {t.kind === 'instrument' && (
         <div className="fx-card wide">
           <h4>Instrumento</h4>
@@ -116,21 +110,16 @@ function Fx({ track: t }: { track: Track }) {
           ))}
         </div>
       )}
+      <EqEditor track={t} />
+      <CompEditor track={t} />
       {FX.map((f) => (
         <div className="fx-card" key={f.key}>
           <h4>{f.label}</h4>
           <Slider min={f.min} max={f.max} step={f.step} value={t.fx[f.key]} reset={0} onChange={(v) => setFx({ [f.key]: v })} />
-          <span className="fx-val">
-            {f.unit === 'dB' ? `${t.fx[f.key] > 0 ? '+' : ''}${t.fx[f.key].toFixed(1)} dB` : `${Math.round(t.fx[f.key] * 100)}%`}
-          </span>
+          <span className="fx-val">{Math.round(t.fx[f.key] * 100)}%</span>
         </div>
       ))}
-      <div className="fx-card">
-        <h4>Compressor</h4>
-        <button className={t.fx.comp ? 'toggle on' : 'toggle'} onClick={() => setFx({ comp: !t.fx.comp }, true)}>
-          {t.fx.comp ? 'Ligado' : 'Desligado'}
-        </button>
-      </div>
+
     </div>
   );
 }

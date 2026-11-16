@@ -1,13 +1,14 @@
 import { Track } from '../types';
 import { Rig, rigKey } from './amp';
 import { MasterChain } from './master';
+import { applyComp, applyEq, compOf, createEqNodes, eqOf } from './trackfx';
 
 export interface Strip {
   input: GainNode;
-  low: BiquadFilterNode;
-  mid: BiquadFilterNode;
-  high: BiquadFilterNode;
+  /** EQ paramétrico em série (ver trackfx.ts: createEqNodes) */
+  eq: BiquadFilterNode[];
   comp: DynamicsCompressorNode;
+  makeup: GainNode;
   gain: GainNode;
   pan: StereoPannerNode;
   revSend: GainNode;
@@ -68,17 +69,9 @@ export class Mixer {
   private createStrip(): Strip {
     const c = this.ctx;
     const input = c.createGain();
-    const low = c.createBiquadFilter();
-    low.type = 'lowshelf';
-    low.frequency.value = 200;
-    const mid = c.createBiquadFilter();
-    mid.type = 'peaking';
-    mid.frequency.value = 1000;
-    mid.Q.value = 0.8;
-    const high = c.createBiquadFilter();
-    high.type = 'highshelf';
-    high.frequency.value = 5000;
+    const eq = createEqNodes(c);
     const comp = c.createDynamicsCompressor();
+    const makeup = c.createGain();
     const gain = c.createGain();
     const pan = c.createStereoPanner();
     const revSend = c.createGain();
@@ -86,11 +79,12 @@ export class Mixer {
     const analyser = c.createAnalyser();
     analyser.fftSize = 2048; // resolução suficiente para o espectro nos graves
     analyser.smoothingTimeConstant = 0.78;
-    input.connect(low).connect(mid).connect(high).connect(comp).connect(gain).connect(pan).connect(this.master);
+    input.connect(eq[0]);
+    eq[eq.length - 1].connect(comp).connect(makeup).connect(gain).connect(pan).connect(this.master);
     pan.connect(revSend).connect(this.reverb);
     pan.connect(dlySend).connect(this.delay);
     pan.connect(analyser);
-    return { input, low, mid, high, comp, gain, pan, revSend, dlySend, analyser };
+    return { input, eq, comp, makeup, gain, pan, revSend, dlySend, analyser };
   }
 
   /** Rack de amp/pedais entre a entrada do canal e o EQ: remonta só quando muda amp, caixa ou IR. */
@@ -102,13 +96,13 @@ export class Mixer {
       s.input.disconnect();
       s.rig.dispose();
       s.rig = undefined;
-      s.input.connect(s.low);
+      s.input.connect(s.eq[0]);
     }
     if (want && key && !s.rig) {
       s.rig = new Rig(this.ctx, key, want, ir);
       s.input.disconnect();
       s.input.connect(s.rig.input);
-      s.rig.output.connect(s.low);
+      s.rig.output.connect(s.eq[0]);
     } else if (want) s.rig?.update(want);
   }
 
@@ -136,11 +130,8 @@ export class Mixer {
       const audible = !t.mute && (!anySolo || t.solo);
       smooth(s.gain.gain, audible ? t.volume ** 2 * 1.4 : 0);
       smooth(s.pan.pan, t.pan);
-      s.low.gain.value = t.fx.low;
-      s.mid.gain.value = t.fx.mid;
-      s.high.gain.value = t.fx.high;
-      s.comp.threshold.value = t.fx.comp ? -24 : 0;
-      s.comp.ratio.value = t.fx.comp ? 4 : 1;
+      applyEq(s.eq, eqOf(t.fx), true);
+      applyComp(s.comp, s.makeup, compOf(t.fx), true);
       smooth(s.revSend.gain, t.fx.reverb);
       smooth(s.dlySend.gain, t.fx.delay);
       this.syncRig(s, t);
