@@ -34,6 +34,17 @@ const HARMONY_DEF = 5 / (HARMONY_STEPS.length - 1); // terça acima
 export const pitchSemis = (v: number) => Math.round(v * 24 - 12);
 const fmtSemis = (s: number) => (s === 12 ? '+8ª' : s === -12 ? '-8ª' : `${s > 0 ? '+' : ''}${s} st`);
 
+/** Tipos do pedal de reverb (ordem do botão Tipo) e a faixa de tempo (s) de cada um. */
+const REVERB_TYPES = [
+  { id: 'spring', name: 'Mola', min: 0.8, max: 3.5 },
+  { id: 'plate', name: 'Placa', min: 0.6, max: 5 },
+  { id: 'shimmer', name: 'Shimmer', min: 2, max: 9 },
+  { id: 'hall', name: 'Hall', min: 1.5, max: 8 },
+  { id: 'room', name: 'Sala', min: 0.8, max: 5 },
+] as const;
+type ReverbType = (typeof REVERB_TYPES)[number]['id'];
+const reverbType = (v: number) => Math.min(REVERB_TYPES.length - 1, Math.round(v * (REVERB_TYPES.length - 1)));
+
 /** Valores padrão de um pedal: botões e, se houver, a chave. */
 export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ...(d.toggles ?? []).map((t) => t.def)];
 
@@ -125,9 +136,14 @@ export const PEDALS: PedalDef[] = [
       { labels: ['Mono', 'Estéreo'], titles: ['Mono: repetições no centro', 'Estéreo: repetições alternando entre esquerda e direita'], def: 0 },
       { labels: ['Normal', 'Reverso'], titles: ['Repetições normais', 'Reverso: o som volta de trás para frente, com tempo = tamanho de cada trecho invertido'], def: 0 },
     ] },
-  { id: 'reverb', name: 'Reverb', color: '#3f8fe0', post: true, desc: 'Mola: o "boing" metálico dos amps antigos · Sala: cauda lisa e escura',
-    params: [{ label: 'Tempo', def: 0.4 }, { label: 'Tom', def: 0.5 }, { label: 'Mix', def: 0.35 }],
-    toggles: [{ labels: ['Mola', 'Sala'], titles: ['Reverb de mola', 'Reverb sem mola: sala'], def: 0 }] },
+  { id: 'reverb', name: 'Reverb', color: '#3f8fe0', post: true,
+    desc: 'Mola: o "boing" dos amps antigos · Placa: denso e brilhante, de estúdio · Shimmer: cauda que sobe uma oitava, etérea · Hall: sala de concerto, longo e escuro · Sala: ambiente menor, cauda lisa',
+    params: [
+      { label: 'Tempo', def: 0.4 },
+      { label: 'Tom', def: 0.5 },
+      { label: 'Mix', def: 0.35 },
+      { label: 'Tipo', def: 0, fmt: (v) => REVERB_TYPES[reverbType(v)].name },
+    ] },
 ];
 
 type Curve = 'soft' | 'hard' | 'asym' | 'germ' | 'tape' | 'diode' | 'germAsym';
@@ -1037,17 +1053,82 @@ function hallIR(sr: number, seconds: number): Float32Array[] {
   });
 }
 
+/** Ruído pseudoaleatório reprodutível (as IRs saem sempre iguais). */
+function noiseGen(seed: number) {
+  let x = seed;
+  return () => ((x = (x * 16807) % 2147483647) / 2147483647) * 2 - 1;
+}
+
+/**
+ * Placa: uma chapa de aço vibrando. Sem reflexões iniciais (não há paredes), densidade altíssima desde o
+ * começo e cauda brilhante que escurece pouco. Canais independentes = estéreo largo.
+ */
+function plateIR(sr: number, seconds: number): Float32Array[] {
+  const len = Math.ceil(sr * seconds);
+  const rnd = noiseGen(11);
+  return [0, 1].map(() => {
+    const bright = new Float32Array(len), body = new Float32Array(len);
+    for (let n = 0; n < len; n++) {
+      const t = n / sr;
+      const attack = 1 - Math.exp(-t / 0.002);
+      bright[n] = rnd() * attack * Math.exp((-6.9 * t) / (seconds * 0.8));
+      body[n] = rnd() * attack * Math.exp((-6.9 * t) / seconds);
+    }
+    biquad(body, 'lowpass', 4500, sr);
+    const out = new Float32Array(len);
+    for (let n = 0; n < len; n++) out[n] = 0.7 * bright[n] + body[n];
+    biquad(out, 'highpass', 180, sr);
+    biquad(out, 'lowpass', 11000, sr);
+    return out;
+  });
+}
+
+/**
+ * Hall (sala de concerto): pré-atraso de ~25 ms, reflexões iniciais esparsas das paredes, cauda que
+ * cresce devagar (~40 ms) e escurece com o tempo (o ar e as paredes absorvem os agudos antes dos graves).
+ */
+function concertIR(sr: number, seconds: number): Float32Array[] {
+  const len = Math.ceil(sr * (seconds + 0.05));
+  const pre = Math.round(0.025 * sr);
+  const rnd = noiseGen(29);
+  return [0, 1].map((c) => {
+    const hi = new Float32Array(len), mid = new Float32Array(len), lo = new Float32Array(len);
+    for (let n = pre; n < len; n++) {
+      const t = (n - pre) / sr;
+      const build = 1 - Math.exp(-t / 0.04);
+      hi[n] = rnd() * build * Math.exp((-6.9 * t) / (seconds * 0.35));
+      mid[n] = rnd() * build * Math.exp((-6.9 * t) / (seconds * 0.7));
+      lo[n] = rnd() * build * Math.exp((-6.9 * t) / seconds);
+    }
+    biquad(mid, 'lowpass', 3500, sr);
+    biquad(lo, 'lowpass', 900, sr);
+    const out = new Float32Array(len);
+    for (let n = 0; n < len; n++) out[n] = 0.45 * hi[n] + 0.8 * mid[n] + lo[n];
+    const er = c
+      ? [[12, 0.45], [21, -0.32], [34, 0.3], [49, -0.22], [63, 0.2], [81, -0.15]]
+      : [[10, 0.5], [24, -0.3], [31, 0.28], [52, -0.24], [70, 0.18], [77, -0.14]];
+    for (const [ms, g] of er) out[pre + Math.round((ms / 1000) * sr)] += g * 4;
+    biquad(out, 'highpass', 90, sr);
+    return out;
+  });
+}
+
 const reverbCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
-/** IR do reverb (em cache): `spring` true = mola; `step` = tempo quantizado (0..15) para não recalcular a cada movimento. */
-function reverbIR(ctx: BaseAudioContext, spring: boolean, step: number): AudioBuffer {
+/** IR do reverb (em cache): `type` = tipo; `step` = tempo quantizado (0..15) para não recalcular a cada movimento. */
+function reverbIR(ctx: BaseAudioContext, type: ReverbType, step: number): AudioBuffer {
   let cache = reverbCache.get(ctx);
   if (!cache) reverbCache.set(ctx, (cache = new Map()));
-  const key = `${spring}|${step}`;
+  const key = `${type}|${step}`;
   let buf = cache.get(key);
   if (!buf) {
-    const t = step / 15;
-    const seconds = spring ? 0.8 + t * 2.7 : 0.8 + t * 4.2; // mola 0,8–3,5 s · sala 0,8–5 s
-    const chans = spring ? springIR(ctx.sampleRate, seconds) : hallIR(ctx.sampleRate, seconds);
+    const spec = REVERB_TYPES.find((r) => r.id === type)!;
+    const seconds = spec.min + (step / 15) * (spec.max - spec.min);
+    const sr = ctx.sampleRate;
+    const chans =
+      type === 'spring' ? springIR(sr, seconds)
+      : type === 'plate' ? plateIR(sr, seconds)
+      : type === 'room' ? hallIR(sr, seconds)
+      : concertIR(sr, seconds); // hall e shimmer (o shimmer soma a oitava acima no laço, ver reverbPedal)
     buf = ctx.createBuffer(2, chans[0].length, ctx.sampleRate);
     chans.forEach((d, c) => buf!.getChannelData(c).set(d));
     cache.set(key, buf);
@@ -1055,31 +1136,54 @@ function reverbIR(ctx: BaseAudioContext, spring: boolean, step: number): AudioBu
   return buf;
 }
 
-/** Pedal de reverb: troca de IR (tipo/tempo) com crossfade entre dois convolvers, sem estalo. */
+/**
+ * Pedal de reverb: troca de IR (tipo/tempo) com crossfade entre dois convolvers, sem estalo.
+ * Shimmer: a cauda do hall passa por um pitch shifter (+1 oitava) e volta para a entrada do reverb;
+ * cada volta sobe mais uma oitava e vai sumindo, o "brilho" etéreo dos pads de ambiente. O laço tem
+ * filtros e um limitador suave, então não dispara mesmo com tempo longo.
+ */
 function reverbPedal(ctx: BaseAudioContext, put: Put): Fx {
   const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain();
   const hp = filter(ctx, 'highpass', 120);
+  const sum = ctx.createGain(); // saída somada dos convolvers
   const tone = filter(ctx, 'lowpass', 5000);
   inp.connect(out); // sinal seco
   inp.connect(hp);
-  tone.connect(wet).connect(out);
+  sum.connect(tone).connect(wet).connect(out);
+  // laço do shimmer: reverb → oitava acima → filtros → limitador suave → atraso curto → entrada do reverb
+  const shift = pitchPedal(ctx, put);
+  shift.set([1, 0.5, 1]); // +12 semitons, só o som transposto
+  const loop = ctx.createGain();
+  loop.gain.value = 0;
+  const loopDelay = ctx.createDelay(0.2);
+  loopDelay.delayTime.value = 0.08;
+  sum.connect(shift.in);
+  shift.out
+    .connect(filter(ctx, 'highpass', 400))
+    .connect(filter(ctx, 'lowpass', 7000))
+    .connect(loop)
+    .connect(shaper(ctx, 'tape')) // limitador suave com ganho 1 nos sinais baixos (não aumenta o laço)
+    .connect(loopDelay)
+    .connect(hp);
   let cur: { conv: ConvolverNode; g: GainNode } | null = null;
   let key = '';
   return {
     in: inp,
     out,
+    oscs: shift.oscs,
     set: ([time, t, mix, kind]) => {
       put(tone.frequency, expMap(t, 1500, 9000));
       put(wet.gain, mix * 1.2);
-      const spring = (kind ?? 0) < 0.5;
+      const type = REVERB_TYPES[reverbType(kind ?? 0)].id;
+      put(loop.gain, type === 'shimmer' ? 0.32 : 0);
       const step = Math.round(time * 15);
-      const k = `${spring}|${step}`;
+      const k = `${type}|${step}`;
       if (k === key) return;
       key = k;
       const conv = ctx.createConvolver();
-      conv.buffer = reverbIR(ctx, spring, step);
+      conv.buffer = reverbIR(ctx, type, step);
       const g = ctx.createGain();
-      hp.connect(conv).connect(g).connect(tone);
+      hp.connect(conv).connect(g).connect(sum);
       const old = cur;
       cur = { conv, g };
       if (!old) return;
