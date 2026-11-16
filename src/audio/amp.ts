@@ -13,10 +13,15 @@ export interface PedalDef {
   post: boolean;
   /** descrição curta do timbre, mostrada no pedal */
   desc?: string;
-  params: { label: string; def: number }[];
+  /** `fmt` mostra o valor do botão na unidade dele (ex.: semitons) em vez da escala 0–10 */
+  params: { label: string; def: number; fmt?: (v: number) => string }[];
   /** chave de dois lados (como as mini-chaves de pedal): guardada como 0/1 logo depois dos botões */
   toggles?: { labels: [string, string]; titles: [string, string]; def: 0 | 1 }[];
 }
+
+/** Botão de intervalo do pedal de pitch (0..1) → semitons inteiros de -12 a +12. */
+export const pitchSemis = (v: number) => Math.round(v * 24 - 12);
+const fmtSemis = (s: number) => (s === 12 ? '+8ª' : s === -12 ? '-8ª' : `${s > 0 ? '+' : ''}${s} st`);
 
 /** Valores padrão de um pedal: botões e, se houver, a chave. */
 export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ...(d.toggles ?? []).map((t) => t.def)];
@@ -24,6 +29,13 @@ export const pedalDefaults = (d: PedalDef) => [...d.params.map((x) => x.def), ..
 export const PEDALS: PedalDef[] = [
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
   { id: 'comp', name: 'Compressor', color: '#38d9c0', post: false, params: [{ label: 'Sustain', def: 0.5 }, { label: 'Nível', def: 0.5 }] },
+  { id: 'pitch', name: 'Pitch', color: '#d2457a', post: false,
+    desc: 'Muda a afinação: oitava acima/abaixo, quinta, terça… Mix no máximo = só o som transposto; no meio = harmonia',
+    params: [
+      { label: 'Intervalo', def: 1, fmt: (v) => fmtSemis(pitchSemis(v)) },
+      { label: 'Fino', def: 0.5, fmt: (v) => `${Math.round((v - 0.5) * 100)} ct` },
+      { label: 'Mix', def: 0.5 },
+    ] },
   { id: 'boost', name: 'Booster', color: '#e0b48a', post: false, params: [{ label: 'Ganho', def: 0.4 }, { label: 'Brilho', def: 0.3 }] },
   // Três overdrives com o comportamento de circuitos clássicos (os nomes na tela são genéricos de propósito):
   // Dourado ≈ Klon Centaur, Verde ≈ Ibanez TS808, Amarelo ≈ Boss SD-1.
@@ -193,7 +205,7 @@ interface Fx {
   in: AudioNode;
   out: AudioNode;
   set(p: number[]): void;
-  oscs?: OscillatorNode[];
+  oscs?: AudioScheduledSourceNode[];
 }
 
 type Put = (param: AudioParam, v: number) => void;
@@ -627,8 +639,88 @@ function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
   return fx;
 }
 
+// ---------- Pitch shifter ----------
+
+const PITCH_WINDOW = 0.05; // s: janela de cada "grão" (latência ~25 ms; menor = mais metálico, maior = mais eco)
+const rampCache = new WeakMap<BaseAudioContext, { saw: AudioBuffer; win: AudioBuffer }>();
+
+/** Ciclo de dente de serra (0→1) e janela sin² (zero nas pontas), tocados em loop como moduladores. */
+function pitchRamps(ctx: BaseAudioContext) {
+  let r = rampCache.get(ctx);
+  if (!r) {
+    const n = 4096;
+    const saw = ctx.createBuffer(1, n, ctx.sampleRate), win = ctx.createBuffer(1, n, ctx.sampleRate);
+    const s = saw.getChannelData(0), w = win.getChannelData(0);
+    for (let i = 0; i < n; i++) {
+      s[i] = i / n;
+      w[i] = Math.sin((Math.PI * i) / n) ** 2;
+    }
+    rampCache.set(ctx, (r = { saw, win }));
+  }
+  return r;
+}
+
+/**
+ * Pitch shifter de linha de atraso (nós nativos: funciona ao vivo e na exportação). Duas vozes leem o
+ * sinal com um atraso que cresce ou encolhe em rampa: atraso encolhendo = lê mais rápido = mais agudo.
+ * Quando a rampa chega ao fim ela salta de volta; nesse instante a janela daquela voz está em zero e a
+ * outra voz (meio ciclo defasada, janela no máximo) cobre o salto. sin² + cos² = 1: volume constante.
+ */
+function pitchPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
+  const tone = filter(ctx, 'lowpass', 7000); // o som transposto para cima fica áspero: arredonda
+  inp.connect(dry).connect(out);
+  tone.connect(wet).connect(out);
+  const { saw, win } = pitchRamps(ctx);
+  const base = ctx.createConstantSource();
+  base.start(0);
+  const loops: AudioBufferSourceNode[] = [];
+  const depths: GainNode[] = [];
+  const looped = (buf: AudioBuffer, offset: number) => {
+    const s = ctx.createBufferSource();
+    s.buffer = buf;
+    s.loop = true;
+    s.start(0, offset * buf.duration);
+    loops.push(s);
+    return s;
+  };
+  for (const phase of [0, 0.5]) {
+    const d = ctx.createDelay(PITCH_WINDOW * 2 + 0.02);
+    d.delayTime.value = 0;
+    const depth = ctx.createGain();
+    looped(saw, phase).connect(depth).connect(d.delayTime);
+    base.connect(d.delayTime);
+    depths.push(depth);
+    const vca = ctx.createGain();
+    vca.gain.value = 0;
+    looped(win, phase).connect(vca.gain);
+    inp.connect(d).connect(vca).connect(tone);
+  }
+  return {
+    in: inp,
+    out,
+    oscs: [base, ...loops],
+    set: ([interval, fine, mix]) => {
+      const ratio = 2 ** ((pitchSemis(interval ?? 1) + ((fine ?? 0.5) - 0.5)) / 12);
+      // velocidade da rampa: o atraso muda (1 - ratio) segundos por segundo
+      const rate = (saw.duration * Math.abs(1 - ratio)) / PITCH_WINDOW;
+      for (const s of loops) put(s.playbackRate, rate);
+      // acima: atraso de W até 0 (encolhendo) · abaixo: de 0 até W (crescendo)
+      const up = ratio > 1;
+      put(base.offset, 0.002 + (up ? PITCH_WINDOW : 0));
+      // sem transposição as rampas param: as duas vozes ficam no mesmo atraso (sem filtro de pente)
+      const still = Math.abs(1 - ratio) < 1e-4;
+      for (const g of depths) put(g.gain, still ? 0 : up ? -PITCH_WINDOW : PITCH_WINDOW);
+      const m = mix ?? 0.5;
+      put(dry.gain, Math.min(1, 2 * (1 - m)));
+      put(wet.gain, Math.min(1, 2 * m));
+    },
+  };
+}
+
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   switch (id) {
+    case 'pitch': return pitchPedal(ctx, put);
     case 'reverb': return reverbPedal(ctx, put);
     case 'gate': return noiseGate(ctx, put);
     case 'comp': {

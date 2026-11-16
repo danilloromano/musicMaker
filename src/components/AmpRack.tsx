@@ -49,6 +49,7 @@ export function AmpRack({ track: t }: { track: Track }) {
               size={d.params.length > 2 ? 32 : 36}
               value={ps.p[i] ?? x.def}
               reset={x.def}
+              fmt={x.fmt}
               onChange={(v) => setPedal(d, { p: ps.p.map((o, j) => (j === i ? v : o)) })}
             />
           ))}

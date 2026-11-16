@@ -7,6 +7,8 @@ interface Props {
   onChange: (v: number) => void;
   reset?: number;
   size?: number;
+  /** texto do valor (padrão: escala 0–10) */
+  fmt?: (v: number) => string;
 }
 
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
@@ -16,7 +18,7 @@ const DRAG_PX = 160; // arrastar 160 px vai do mínimo ao máximo (com Shift, 4x
  * Botão giratório de pedal. Arraste para cima/baixo, use a roda do mouse ou as setas do teclado;
  * duplo clique volta ao valor padrão. Cada gesto vira uma única etapa de desfazer.
  */
-export function RotaryKnob({ label, value, onChange, reset, size = 34 }: Props) {
+export function RotaryKnob({ label, value, onChange, reset, size = 34, fmt = (v) => (v * 10).toFixed(1) }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(false);
   const live = useRef({ value, onChange });
@@ -96,7 +98,7 @@ export function RotaryKnob({ label, value, onChange, reset, size = 34 }: Props) 
         aria-valuemin={0}
         aria-valuemax={10}
         aria-valuenow={Math.round(value * 100) / 10}
-        title={`${label}: ${(value * 10).toFixed(1)} (arraste, roda do mouse ou setas · duplo clique volta ao padrão)`}
+        title={`${label}: ${fmt(value)} (arraste, roda do mouse ou setas · duplo clique volta ao padrão)`}
         style={{ width: size, height: size }}
         onPointerDown={down}
         onDoubleClick={() => {
@@ -117,7 +119,7 @@ export function RotaryKnob({ label, value, onChange, reset, size = 34 }: Props) 
           </g>
         </svg>
       </div>
-      <span className="rknob-label">{active ? (value * 10).toFixed(1) : label}</span>
+      <span className="rknob-label">{active ? fmt(value) : label}</span>
     </div>
   );
 }
