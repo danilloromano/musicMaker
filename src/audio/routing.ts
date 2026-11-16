@@ -84,8 +84,11 @@ export interface AutoParamInfo {
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-/** Parâmetros automatizáveis de uma trilha (volume, pan e um por envio). */
-export function autoParams(p: Project): AutoParamInfo[] {
+/** Posição do wah sem automação (botão Posição do pedal; 0 = fechado, 1 = aberto). */
+const wahKnob = (t: Track) => t.amp?.pedals?.wah?.p?.[0] ?? 0.5;
+
+/** Parâmetros automatizáveis de uma trilha (volume, pan, um por envio e, com rack de amp, o wah). */
+export function autoParams(p: Project, t?: Track): AutoParamInfo[] {
   return [
     {
       id: 'volume', name: 'Volume', min: 0, max: 1, base: (t) => t.volume,
@@ -101,6 +104,12 @@ export function autoParams(p: Project): AutoParamInfo[] {
     ...sendsOf(p).map((s) => ({
       id: `send:${s.id}`, name: `Envio: ${s.name}`, min: 0, max: 1, base: (t: Track) => sendAmount(t, s.id), format: pct,
     })),
+    ...(t?.amp
+      ? [{
+          id: 'wah', name: 'Wah (posição)', min: 0, max: 1, base: wahKnob,
+          format: (v: number) => (v < 0.05 ? 'Fechado' : v > 0.95 ? 'Aberto' : pct(v)),
+        }]
+      : []),
   ];
 }
 

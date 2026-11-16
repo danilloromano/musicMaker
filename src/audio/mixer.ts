@@ -266,6 +266,9 @@ export class Mixer {
       applyEq(s.eq, eqOf(t.fx), true);
       applyComp(s.comp, s.makeup, compOf(t.fx), true);
       this.syncRig(s, t);
+      // wah automatizado: tocando, a curva agendada manda; parado, vale o ponto da curva no cursor
+      const wah = activeLanes(t).find((l) => l.param === 'wah');
+      s.rig?.wah.override(wah ? (this.automating ? 'scheduled' : valueAt(wah.points, this.cursor)) : undefined);
     }
     for (const t of tracks) this.syncSidechain(this.strips.get(t.id)!, t);
   }
@@ -282,6 +285,16 @@ export class Mixer {
       const s = this.strips.get(t.id);
       if (!s) continue;
       for (const l of activeLanes(t)) {
+        if (l.param === 'wah') {
+          const wah = s.rig?.wah;
+          if (!wah) continue;
+          wah.override('scheduled');
+          // rampa exponencial em Hz = rampa linear na posição do pedal (a escala do pedal é exponencial)
+          wah.freq.cancelScheduledValues(at);
+          wah.freq.setValueAtTime(wah.toHz(valueAt(l.points, fromBeat)), at);
+          for (const pt of l.points) if (pt.beat > fromBeat) wah.freq.exponentialRampToValueAtTime(wah.toHz(pt.value), timeOf(pt.beat));
+          continue;
+        }
         const send = l.param.startsWith('send:') ? s.sends.get(l.param.slice(5)) : undefined;
         const p = l.param === 'volume' ? s.gain.gain : l.param === 'pan' ? s.pan.pan : send?.gain;
         if (!p) continue;
@@ -314,6 +327,7 @@ export class Mixer {
       s.gain.gain.cancelScheduledValues(now);
       s.pan.pan.cancelScheduledValues(now);
       for (const g of s.sends.values()) g.gain.cancelScheduledValues(now);
+      s.rig?.wah.freq.cancelScheduledValues(now);
     }
     this.sync(project);
   }

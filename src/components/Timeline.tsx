@@ -503,7 +503,7 @@ const AUTO_H = 72;
 /** Faixa de automação de uma trilha: cabeçalho (parâmetro) + curva editável. */
 function AutomationRow({ track: t, width, ppb }: { track: Track; width: number; ppb: number }) {
   const project = useStore((s) => s.project);
-  const params = autoParams(project);
+  const params = autoParams(project, t);
   const info = params.find((p) => p.id === t.autoView) ?? params[0];
   const lane = laneOf(t, info.id);
   const points = lane?.points ?? [];

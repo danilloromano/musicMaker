@@ -731,7 +731,20 @@ function pitchPedal(ctx: BaseAudioContext, put: Put): Fx {
  * "quack"). No modo Auto um seguidor de envelope (retificador + passa-baixas, como no noise gate) soma
  * a força do sinal à frequência: a palhetada abre o filtro e ele fecha conforme a nota morre.
  */
-function wahPedal(ctx: BaseAudioContext, put: Put): Fx {
+/** Frequência do wah (Hz) para uma posição 0..1 do pedal; no modo Auto a posição é só o ponto de partida. */
+const wahFreq = (pos: number, auto: boolean) => expMap(pos, 350, 2400) * (auto ? 0.6 : 1);
+
+/** Posição do wah vinda da automação: número = posição fixa (parado no cursor); 'scheduled' = a automação agenda a curva. */
+export type WahOverride = number | 'scheduled' | undefined;
+
+interface WahFx extends Fx {
+  /** parâmetro (Hz) que a automação agenda e a conversão posição → Hz no modo atual */
+  freq: AudioParam;
+  toHz(pos: number): number;
+  override(v: WahOverride): void;
+}
+
+function wahPedal(ctx: BaseAudioContext, put: Put): WahFx {
   const inp = ctx.createGain(), out = ctx.createGain(), wet = ctx.createGain(), dry = ctx.createGain();
   const bp = filter(ctx, 'bandpass', 800, 4);
   bp.frequency.value = 0; // a frequência vem toda das fontes abaixo (base + envelope)
@@ -745,13 +758,25 @@ function wahPedal(ctx: BaseAudioContext, put: Put): Fx {
   inp.connect(rect).connect(env).connect(amount).connect(bp.frequency);
   inp.connect(bp).connect(wet).connect(out);
   inp.connect(dry).connect(out); // um pouco do sinal direto mantém o corpo da nota
-  return {
+  let last: number[] = [];
+  let over: WahOverride;
+  let autoMode = false;
+  const fx: WahFx = {
     in: inp,
     out,
-    set: ([pos, sens, res, mode]) => {
-      const auto = (mode ?? 0) >= 0.5;
-      // no Auto a posição é o ponto de partida (pedal fechado = mais varredura)
-      put(base.offset, expMap(pos ?? 0.5, 350, 2400) * (auto ? 0.6 : 1));
+    oscs: [base],
+    freq: base.offset,
+    toHz: (pos) => wahFreq(pos, autoMode),
+    override: (v) => {
+      over = v;
+      fx.set(last);
+    },
+    set: (p) => {
+      last = p;
+      const [pos, sens, res, mode] = p;
+      const auto = (autoMode = (mode ?? 0) >= 0.5);
+      // automação tocando: a curva agendada manda na frequência (um put aqui brigaria com ela)
+      if (over !== 'scheduled') put(base.offset, wahFreq(typeof over === 'number' ? over : pos ?? 0.5, auto));
       put(amount.gain, auto ? (sens ?? 0.5) * 9000 : 0);
       const q = 2 + (res ?? 0.5) * 8;
       put(bp.Q, q);
@@ -759,6 +784,7 @@ function wahPedal(ctx: BaseAudioContext, put: Put): Fx {
       put(dry.gain, 0.12);
     },
   };
+  return fx;
 }
 
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
@@ -1024,6 +1050,8 @@ export class Rig {
   private cabDry: GainNode | null = null;
   private cabWet: GainNode | null = null;
   private first = true;
+  /** pedal de wah (a posição dele pode ser automatizada) */
+  wah: WahFx;
   private put: Put = (p, v) => {
     if (this.first) p.value = v;
     else p.setTargetAtTime(v, this.ctx.currentTime, 0.015);
@@ -1033,6 +1061,7 @@ export class Rig {
     this.input = ctx.createGain();
     this.output = ctx.createGain();
     for (const p of PEDALS) this.slots.set(p.id, new Slot(ctx, makePedal(ctx, p.id, this.put)));
+    this.wah = this.slots.get('wah')!.fx as WahFx;
 
     let node: AudioNode = this.input;
     for (const p of PEDALS.filter((x) => !x.post)) {
