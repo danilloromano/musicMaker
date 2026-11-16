@@ -127,7 +127,7 @@ export function Timeline() {
       } else {
         const length = Math.max(1, r.length + d);
         patch = { length };
-        // bateria, baixo e acordes: ao esticar, o padrão continua repetindo no trecho novo
+        // bateria e loops: ao esticar, o padrão continua repetindo no trecho novo
         if (trackKind === 'drums' || trackKind === 'instrument') patch.notes = extendPattern(r, length, trackKind);
       }
       if (!snapped && d !== 0) {
