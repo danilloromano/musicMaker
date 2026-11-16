@@ -111,7 +111,13 @@ export const PEDALS: PedalDef[] = [
     desc: 'Caixa rotativa: corneta (agudos) e tambor (graves) girando · Lento/Rápido acelera e freia aos poucos, como a de verdade',
     params: [{ label: 'Drive', def: 0.2 }, { label: 'Balanço', def: 0.5 }, { label: 'Mix', def: 1 }],
     toggles: [{ labels: ['Lento', 'Rápido'], titles: ['Lento (coral): giro calmo, ondulação larga', 'Rápido (tremolo): giro rápido, o som "gira" pela sala'], def: 0 }] },
-  { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true, params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }] },
+  { id: 'tremolo', name: 'Tremolo', color: '#ff5fa2', post: true,
+    desc: 'Forma: de ondulação suave a corte seco (o "helicóptero") · Harmônico: graves e agudos pulsam alternados, como nos amps americanos dos anos 60 · Estéreo: o som passeia de um lado ao outro',
+    params: [{ label: 'Velocidade', def: 0.4 }, { label: 'Profund.', def: 0.5 }, { label: 'Forma', def: 0.15 }],
+    toggles: [
+      { labels: ['Clássico', 'Harmônico'], titles: ['Clássico: o volume todo sobe e desce', 'Harmônico: graves e agudos se alternam (som mais "líquido", quase um phaser)'], def: 0 },
+      { labels: ['Mono', 'Estéreo'], titles: ['Mono: os dois lados juntos', 'Estéreo: os lados se alternam (auto-pan)'], def: 0 },
+    ] },
   { id: 'delay', name: 'Delay', color: '#a3b1c2', post: true, desc: 'Fita: repetições quentes que oscilam e escurecem · Digital: limpas e exatas · Estéreo: ping-pong · Reverso: cada trecho volta de trás para frente',
     params: [{ label: 'Tempo', def: 0.35 }, { label: 'Ecos', def: 0.35 }, { label: 'Mix', def: 0.3 }],
     toggles: [
@@ -741,6 +747,88 @@ function phaserPedal(ctx: BaseAudioContext, put: Put): Fx {
       const m = amt ?? 0.6;
       put(wet.gain, m * (1 - feedback * 0.7)); // a ressonância sobe o volume do defasado: compensa
       put(out.gain, 1 / (1 + m * 0.5));
+    },
+  };
+}
+
+// ---------- Tremolo ----------
+
+const tremCurves = new Map<number, Float32Array<ArrayBuffer>>();
+/** Curva que deforma a senoide do LFO: passo 0 = senoide pura, passo 20 = quase quadrada (corte seco). */
+function tremCurve(step: number) {
+  let c = tremCurves.get(step);
+  if (!c) {
+    const k = 0.3 + (step / 20) ** 2 * 30;
+    const n = 1024;
+    c = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1;
+      c[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+    tremCurves.set(step, c);
+  }
+  return c;
+}
+
+/**
+ * Tremolo: um LFO (senoide deformada pela Forma) mexe no volume. Clássico: o sinal inteiro. Harmônico:
+ * o sinal é dividido em 650 Hz e graves e agudos recebem o LFO com fases opostas (um sobe quando o
+ * outro desce). Estéreo: o lado direito recebe o LFO invertido, o som passeia entre os lados.
+ * Cada "VCA" tem a sua polaridade (+1/-1), então trocar o modo só ajusta ganhos, sem religar nada.
+ */
+function tremoloPedal(ctx: BaseAudioContext, put: Put): Fx {
+  const inp = ctx.createGain(), merge = ctx.createChannelMerger(2);
+  const o = ctx.createOscillator();
+  o.start(0);
+  const shape = ctx.createWaveShaper();
+  shape.curve = tremCurve(3);
+  const depth = ctx.createGain();
+  o.connect(shape).connect(depth);
+  const classic = ctx.createGain(), harm = ctx.createGain();
+  inp.connect(classic);
+  inp.connect(harm);
+  // agudos = sinal - graves (complementares: somados dão o sinal original, sem vale em 650 Hz)
+  const lp = filter(ctx, 'lowpass', 650), hp = ctx.createGain(), neg = ctx.createGain();
+  neg.gain.value = -1;
+  harm.connect(lp);
+  harm.connect(hp);
+  lp.connect(neg).connect(hp);
+  // VCAs: [fonte, canal, banda] → polaridade definida no set
+  const vcas = ([
+    [classic, 0, 'all'], [classic, 1, 'all'],
+    [lp, 0, 'low'], [lp, 1, 'low'],
+    [hp, 0, 'high'], [hp, 1, 'high'],
+  ] as const).map(([src, ch, band]) => {
+    const vca = ctx.createGain();
+    const pol = ctx.createGain();
+    depth.connect(pol).connect(vca.gain);
+    src.connect(vca).connect(merge, 0, ch);
+    return { vca, pol, ch, band };
+  });
+  let step = 3;
+  return {
+    in: inp,
+    out: merge,
+    oscs: [o],
+    set: ([rate, dep, form, mode, side]) => {
+      const harmonic = (mode ?? 0) >= 0.5;
+      const stereo = (side ?? 0) >= 0.5;
+      const d = dep ?? 0.5;
+      put(o.frequency, 1 + (rate ?? 0.4) * 11);
+      const st = Math.round((form ?? 0.15) * 20);
+      if (st !== step) {
+        step = st;
+        shape.curve = tremCurve(st);
+      }
+      put(depth.gain, d / 2);
+      put(classic.gain, harmonic ? 0 : 1);
+      put(harm.gain, harmonic ? 1 : 0);
+      for (const v of vcas) {
+        put(v.vca.gain, 1 - d / 2);
+        // agudos ao contrário dos graves; no estéreo, o lado direito ao contrário do esquerdo
+        const sign = (v.band === 'high' ? -1 : 1) * (stereo && v.ch === 1 ? -1 : 1);
+        put(v.pol.gain, sign);
+      }
     },
   };
 }
@@ -1441,19 +1529,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
         },
       };
     }
-    case 'tremolo': {
-      const vca = ctx.createGain();
-      const l = lfo(ctx);
-      l.depth.connect(vca.gain);
-      return {
-        in: vca, out: vca, oscs: [l.o],
-        set: ([rate, depth]) => {
-          put(l.o.frequency, 1 + rate * 11);
-          put(vca.gain, 1 - depth / 2);
-          put(l.depth.gain, depth / 2);
-        },
-      };
-    }
+    case 'tremolo': return tremoloPedal(ctx, put);
     default: return delayPedal(ctx, put);
   }
 }
