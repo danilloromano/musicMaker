@@ -83,7 +83,7 @@ class Engine {
       useStore.subscribe((s, prev) => {
         const a = s.project, b = prev.project;
         if (a.bpm !== b.bpm) this.retime(a.bpm);
-        if (a.tracks !== b.tracks || a.bpm !== b.bpm || a.sends !== b.sends) {
+        if (a.tracks !== b.tracks || a.bpm !== b.bpm || a.sends !== b.sends || a.key !== b.key) {
           this.mixer.sync(a);
           // tocando: reagenda a automação (curva editada, trilha ligada/desligada, andamento)
           if (this.playing) this.mixer.automate(a, this.getBeat(), this.ctx.currentTime, (beat) => this.timeAt(beat));

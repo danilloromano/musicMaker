@@ -1,6 +1,6 @@
 // Rack de guitarra/baixo: pedais → amplificador → caixa (impulse response) → pedais de modulação e tempo.
 // Tudo roda no canal da trilha, então a gravação continua seca e o timbre pode ser trocado depois (re-amp).
-import { AmpRig, PedalState } from '../types';
+import { AmpRig, MusicKey, PedalState } from '../types';
 import { workletsReady } from './master';
 import { AMPS, AmpModel, ToneStackParts, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from './ampCircuits';
 
@@ -114,13 +114,16 @@ export const PEDALS: PedalDef[] = [
       { label: 'Mix', def: 0.5 },
     ] },
   { id: 'harmony', name: 'Harmonizer', color: '#4fc3a1', post: false,
-    desc: 'Segunda voz no intervalo escolhido, dentro da escala do tom (terça maior ou menor conforme a nota). Uma nota por vez',
+    desc: 'Segunda voz no intervalo escolhido, dentro da escala do tom (terça maior ou menor conforme a nota). Uma nota por vez · Tom da música: segue o tom escolhido na barra de cima (sem tom escolhido, usa o botão Tom e a chave Maior/Menor) · Manual: usa sempre o botão Tom e a chave',
     params: [
       { label: 'Tom', def: 0, fmt: (v) => KEY_NAMES[harmonyKey(v)] },
       { label: 'Intervalo', def: HARMONY_DEF, fmt: (v) => HARMONY_STEPS[harmonyStep(v)].name },
       { label: 'Voz', def: 0.6 },
     ],
-    toggles: [{ labels: ['Maior', 'Menor'], titles: ['Escala maior', 'Escala menor natural'], def: 0 }] },
+    toggles: [
+      { labels: ['Maior', 'Menor'], titles: ['Escala maior', 'Escala menor natural'], def: 0 },
+      { labels: ['Da música', 'Manual'], titles: ['Segue o tom da música escolhido na barra de cima', 'Usa o botão Tom e a chave Maior/Menor do pedal'], def: 0 },
+    ] },
   { id: 'wah', name: 'Wah', color: '#9bd94a', post: false,
     desc: 'Pedal: o filtro fica parado na posição escolhida · Auto: abre sozinho com a força da palhetada',
     params: [{ label: 'Posição', def: 0.5 }, { label: 'Sensib.', def: 0.5 }, { label: 'Resson.', def: 0.5 }],
@@ -403,6 +406,8 @@ interface Fx {
   tempo?(bpm: number): void;
   /** recebe o modelo escolhido antes do set; só os pedais com modelos usam */
   model?(id: string | undefined): void;
+  /** recebe o tom da música antes do set; só o harmonizador usa */
+  musicKey?(k: MusicKey | undefined): void;
 }
 
 type Put = (param: AudioParam, v: number) => void;
@@ -1712,13 +1717,23 @@ function harmonyPedal(ctx: BaseAudioContext, put: Put): Fx {
     : null;
   if (node) inp.connect(node).connect(out);
   let sent = '';
+  let song: MusicKey | undefined;
   return {
     in: inp,
     out,
-    set: ([key, step, voice, minor]) => {
+    musicKey: (k) => {
+      song = k;
+    },
+    set: ([key, step, voice, minor, manual]) => {
       if (!node) return;
       put(node.parameters.get('level')!, (voice ?? 0.6) * 1.5);
-      const msg = { key: harmonyKey(key ?? 0), minor: (minor ?? 0) >= 0.5, offset: HARMONY_STEPS[harmonyStep(step ?? HARMONY_DEF)].deg };
+      // "Da música" com um tom escolhido no projeto: ele manda; senão, o botão Tom e a chave do pedal
+      const follow = (manual ?? 0) < 0.5 && song;
+      const msg = {
+        key: follow ? song!.root : harmonyKey(key ?? 0),
+        minor: follow ? song!.minor : (minor ?? 0) >= 0.5,
+        offset: HARMONY_STEPS[harmonyStep(step ?? HARMONY_DEF)].deg,
+      };
       const k = JSON.stringify(msg);
       if (k !== sent) {
         sent = k;
@@ -2104,7 +2119,7 @@ export class Rig {
     else p.setTargetAtTime(v, this.ctx.currentTime, 0.015);
   };
 
-  constructor(private ctx: BaseAudioContext, public key: string, rig: AmpRig, userIr?: AudioBuffer, bpm = 120) {
+  constructor(private ctx: BaseAudioContext, public key: string, rig: AmpRig, userIr?: AudioBuffer, bpm = 120, song?: MusicKey) {
     this.input = ctx.createGain();
     this.output = ctx.createGain();
     for (const p of PEDALS) this.slots.set(p.id, new Slot(ctx, makePedal(ctx, p.id, this.put)));
@@ -2143,15 +2158,16 @@ export class Rig {
       node = s.output;
     }
     node.connect(this.output);
-    this.update(rig, bpm);
+    this.update(rig, bpm, song);
     this.first = false;
   }
 
-  update(rig: AmpRig, bpm = 120) {
+  update(rig: AmpRig, bpm = 120, song?: MusicKey) {
     for (const p of PEDALS) {
       const st = pedalOf(rig, p);
       const slot = this.slots.get(p.id)!;
       slot.fx.tempo?.(bpm);
+      slot.fx.musicKey?.(song);
       slot.fx.model?.(st.model);
       slot.set(st.on, st.p, this.put);
     }

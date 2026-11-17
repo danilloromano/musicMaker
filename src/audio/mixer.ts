@@ -1,4 +1,4 @@
-import { Project, Track, activeFreeze } from '../types';
+import { MusicKey, Project, Track, activeFreeze } from '../types';
 import { Rig, rigKey } from './amp';
 import { MasterChain, ensureWorklets, workletsReady } from './master';
 import { activeLanes, audibleSet, outputOf, sendAmount, sendsOf, sidechainOf, speedChanges, valueAt } from './routing';
@@ -121,7 +121,7 @@ export class Mixer {
    * Rack de amp/pedais entre a entrada do canal e o EQ: remonta só quando muda amp, caixa ou IR. Trilha
    * congelada não tem rack (o som dele já está no áudio congelado, que entra direto no EQ).
    */
-  private syncRig(s: Strip, t: Track, bpm: number, frozen: boolean) {
+  private syncRig(s: Strip, t: Track, bpm: number, frozen: boolean, song?: MusicKey) {
     const want = t.amp?.on && !frozen ? t.amp : null;
     const ir = want?.cab === 'user' && want.irId ? this.getBuffer(want.irId) : undefined;
     // o octaver usa AudioWorklet: quando os worklets carregam, o rack é remontado para ganhá-lo
@@ -133,11 +133,11 @@ export class Mixer {
       s.input.connect(s.eq[0]);
     }
     if (want && key && !s.rig) {
-      s.rig = new Rig(this.ctx, key, want, ir, bpm);
+      s.rig = new Rig(this.ctx, key, want, ir, bpm, song);
       s.input.disconnect();
       s.input.connect(s.rig.input);
       s.rig.output.connect(s.eq[0]);
-    } else if (want) s.rig?.update(want, bpm);
+    } else if (want) s.rig?.update(want, bpm, song);
   }
 
   /**
@@ -275,7 +275,7 @@ export class Mixer {
       }
       applyEq(s.eq, eqOf(t.fx), true);
       applyComp(s.comp, s.makeup, compOf(t.fx), true);
-      this.syncRig(s, t, bpm, !!this.frozenOf(project, t));
+      this.syncRig(s, t, bpm, !!this.frozenOf(project, t), project.key);
       // wah automatizado: tocando, a curva agendada manda; parado, vale o ponto da curva no cursor
       const wah = activeLanes(t).find((l) => l.param === 'wah');
       s.rig?.wah.override(wah ? (this.automating ? 'scheduled' : valueAt(wah.points, this.cursor)) : undefined);

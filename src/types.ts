@@ -306,17 +306,18 @@ export function freezeKey(p: Project, t: Track): string {
   // cache: a mesma trilha com as mesmas regiões e o mesmo andamento dá a mesma impressão (é consultado a cada
   // agendamento de notas, então não pode refazer o JSON toda vez)
   const hit = keyCache.get(t);
-  if (hit && hit.regions === p.regions && hit.bpm === p.bpm) return hit.key;
+  if (hit && hit.regions === p.regions && hit.bpm === p.bpm && hit.song === p.key) return hit.key;
   const key = computeFreezeKey(p, t);
-  keyCache.set(t, { regions: p.regions, bpm: p.bpm, key });
+  keyCache.set(t, { regions: p.regions, bpm: p.bpm, song: p.key, key });
   return key;
 }
-const keyCache = new WeakMap<Track, { regions: Region[]; bpm: number; key: string }>();
+const keyCache = new WeakMap<Track, { regions: Region[]; bpm: number; song?: MusicKey; key: string }>();
 
 function computeFreezeKey(p: Project, t: Track): string {
   const regions = p.regions.filter((r) => r.trackId === t.id).sort((a, b) => (a.id < b.id ? -1 : 1));
   const lanes = (t.automation ?? []).filter((l) => l.param === 'wah' || l.param === 'rotary');
-  const text = JSON.stringify([p.bpm, t.kind, t.instrument, t.amp ?? null, t.arp?.on ? t.arp : null, lanes, regions.map((r) => ({ ...r, name: '' }))]);
+  const song = t.amp?.on && t.amp.pedals?.harmony?.on ? p.key ?? null : null;
+  const text = JSON.stringify([p.bpm, song, t.kind, t.instrument, t.amp ?? null, t.arp?.on ? t.arp : null, lanes, regions.map((r) => ({ ...r, name: '' }))]);
   // FNV-1a de 32 bits (duas passadas com sementes diferentes para não colidir por acaso)
   let a = 0x811c9dc5, b = 0x01000193 ^ text.length;
   for (let i = 0; i < text.length; i++) {
