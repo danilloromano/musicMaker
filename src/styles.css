@@ -272,6 +272,11 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .key.black { background: #23252b; border-bottom-color: #23252b; }
 .keys.drums .key { background: var(--panel2); color: var(--text); border-bottom-color: var(--line); text-align: left; padding-left: 8px; font-size: 11px; }
 .key:active { background: var(--accent) !important; }
+/* tom da música: notas da escala marcadas no teclado e na grade do Piano Roll */
+.key.in-key { box-shadow: inset -4px 0 0 rgba(var(--accent-rgb), 0.75); }
+.grid-key { position: absolute; left: 0; right: 0; background: rgba(var(--accent-rgb), 0.06); pointer-events: none; }
+.grid-key.root { background: rgba(var(--accent-rgb), 0.14); }
+.key-select { width: 58px; font: 600 12px var(--mono); }
 .grid {
   position: relative; flex: none; cursor: crosshair;
   background-image:
@@ -365,7 +370,12 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .roll-human select { padding: 2px 4px; }
 .aed .roll-bar label { white-space: nowrap; }
 .aed .hint { min-width: 0; flex: 1; }
-@media (max-width: 1500px) { .zoom input { width: 70px; } .meter.master { width: 60px; } }
+@media (max-width: 1500px) {
+  .zoom input { width: 56px; } .meter.master { width: 44px; }
+  .transport .toggle { padding-left: 8px; padding-right: 8px; }
+  .transport .proj-name { flex-basis: 104px; width: 104px; }
+  .transport { gap: 5px; }
+}
 .meter.master { flex: none; }
 
 /* barra superior: em telas mais estreitas os botões de alternância ficam só com o ícone; no limite, quebra em 2 linhas */

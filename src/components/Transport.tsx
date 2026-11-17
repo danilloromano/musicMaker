@@ -3,7 +3,7 @@ import { engine, renderWav } from '../audio/engine';
 import { masterOf } from '../audio/master';
 import { download, openProjectFile, saveProjectFile } from '../audio/persist';
 import { defaultProject, savePref, useStore } from '../store';
-import { BEATS_PER_BAR } from '../types';
+import { BEATS_PER_BAR, KEY_LETTERS, keyLabel, keyNamePt } from '../types';
 import { importFiles } from '../audio/importFiles';
 import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
@@ -141,6 +141,25 @@ export function Transport() {
         <span className="ico">♮</span><span className="lbl"> Afinador</span>
       </button>
       {tuner && <TunerModal onClose={() => setTuner(false)} />}
+      <select
+        className="key-select"
+        value={project.key ? `${project.key.root}:${project.key.minor ? 1 : 0}` : ''}
+        title={project.key ? `Tom da música: ${keyNamePt(project.key)} (o Piano Roll destaca as notas da escala)` : 'Tom da música: escolha para o Piano Roll destacar as notas da escala'}
+        aria-label="Tom da música"
+        onChange={(e) => {
+          const v = e.target.value;
+          st.update((p) => ({ ...p, key: v ? { root: +v.split(':')[0], minor: v.endsWith(':1') } : undefined }));
+          e.currentTarget.blur();
+        }}
+      >
+        <option value="">Tom</option>
+        <optgroup label="Maior">
+          {KEY_LETTERS.map((_, i) => <option key={i} value={`${i}:0`}>{keyLabel({ root: i, minor: false })}</option>)}
+        </optgroup>
+        <optgroup label="Menor">
+          {KEY_LETTERS.map((_, i) => <option key={i} value={`${i}:1`}>{keyLabel({ root: i, minor: true })}</option>)}
+        </optgroup>
+      </select>
 
       <div className="spacer" />
 

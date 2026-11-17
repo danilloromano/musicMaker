@@ -31,6 +31,27 @@ export interface Region {
 }
 
 /** Trecho tocado em repetição (em tempos). */
+/** Tom da música: tônica (0 = Dó … 11 = Si) e se é menor. */
+export interface MusicKey {
+  root: number;
+  minor: boolean;
+}
+
+/** Letras das notas (como nas cifras) e os nomes em português. */
+export const KEY_LETTERS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+export const KEY_NAMES_PT = ['Dó', 'Dó#', 'Ré', 'Mi♭', 'Mi', 'Fá', 'Fá#', 'Sol', 'Lá♭', 'Lá', 'Si♭', 'Si'];
+/** Cifra do tom: "A" (Lá maior) ou "Am" (Lá menor). */
+export const keyLabel = (k: MusicKey) => `${KEY_LETTERS[k.root]}${k.minor ? 'm' : ''}`;
+/** Nome por extenso: "Lá menor". */
+export const keyNamePt = (k: MusicKey) => `${KEY_NAMES_PT[k.root]} ${k.minor ? 'menor' : 'maior'}`;
+
+const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_STEPS = [0, 2, 3, 5, 7, 8, 10]; // menor natural
+/** A nota faz parte da escala do tom? */
+export function inKey(pitch: number, k: MusicKey): boolean {
+  return (k.minor ? MINOR_STEPS : MAJOR_STEPS).includes((((pitch - k.root) % 12) + 12) % 12);
+}
+
 /** Marcador de seção na timeline: a seção vai dele até o próximo marcador. */
 export interface Marker {
   id: string;
@@ -219,6 +240,8 @@ export interface Project {
   punch?: LoopRange;
   /** marcadores de seção (Intro, Verso, Refrão…), em ordem de posição */
   markers?: Marker[];
+  /** tom da música (ausente = não definido) */
+  key?: MusicKey;
   tracks: Track[];
   regions: Region[];
   /** ajustes do master (projetos antigos não têm: usam o padrão) */

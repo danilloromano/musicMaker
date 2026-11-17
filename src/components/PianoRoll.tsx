@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../audio/engine';
 import { DRUM_MAP } from '../audio/instruments';
 import { useStore } from '../store';
-import { Note, uid } from '../types';
+import { Note, inKey, keyNamePt, uid } from '../types';
 import { NoteWave } from './NoteWave';
 import { HUMANIZE_LEVELS, HumanizeLevel, humanize } from '../audio/humanize';
 import { useRaf } from './ui';
@@ -17,6 +17,7 @@ export function PianoRoll() {
   const track = useStore((s) => s.project.tracks.find((t) => t.id === region?.trackId));
   const selectedNoteId = useStore((s) => s.selectedNoteId);
   const bpm = useStore((s) => s.project.bpm);
+  const musicKey = useStore((s) => s.project.key);
   const st = useStore.getState();
   const [snap, setSnap] = useState(0.25);
   const [human, setHuman] = useState<HumanizeLevel>('medio');
@@ -177,7 +178,13 @@ export function PianoRoll() {
         <div className="roll-inner" style={{ height: rows.length * RH }}>
           <div className={`keys ${isDrums ? 'drums' : ''}`}>
             {rows.map((r) => (
-              <div key={r.pitch} className={r.black ? 'key black' : 'key'} style={{ height: RH }} onPointerDown={() => preview(r.pitch)}>
+              <div
+                key={r.pitch}
+                className={`${r.black ? 'key black' : 'key'} ${musicKey && !isDrums && inKey(r.pitch, musicKey) ? 'in-key' : ''}`}
+                style={{ height: RH }}
+                title={musicKey && !isDrums && inKey(r.pitch, musicKey) ? `Nota da escala de ${keyNamePt(musicKey)}` : undefined}
+                onPointerDown={() => preview(r.pitch)}
+              >
                 {r.label}
               </div>
             ))}
@@ -189,6 +196,10 @@ export function PianoRoll() {
             onContextMenu={(e) => e.preventDefault()}
           >
             {rows.map((r, i) => r.black && <div key={r.pitch} className="grid-black" style={{ top: i * RH, height: RH }} />)}
+            {/* tom da música: as linhas das notas da escala ficam marcadas (a tônica, mais forte) */}
+            {musicKey && !isDrums && rows.map((r, i) => inKey(r.pitch, musicKey) && (
+              <div key={`k${r.pitch}`} className={`grid-key ${(r.pitch - musicKey.root) % 12 === 0 ? 'root' : ''}`} style={{ top: i * RH, height: RH }} />
+            ))}
             {notes.map((n) => {
               const row = rowOf.get(n.pitch);
               if (row === undefined) return null;
