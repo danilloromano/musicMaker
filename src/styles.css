@@ -342,6 +342,8 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 /* botões não quebram linha; quem cede espaço são os espaçadores e a dica */
 .transport button, .aed .roll-bar button { white-space: nowrap; }
 .aed .roll-bar { gap: 10px; }
+.roll-human { display: inline-flex; gap: 3px; align-items: center; }
+.roll-human select { padding: 2px 4px; }
 .aed .roll-bar label { white-space: nowrap; }
 .aed .hint { min-width: 0; flex: 1; }
 @media (max-width: 1500px) { .zoom input { width: 70px; } .meter.master { width: 60px; } }

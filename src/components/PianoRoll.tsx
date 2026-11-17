@@ -4,6 +4,7 @@ import { DRUM_MAP } from '../audio/instruments';
 import { useStore } from '../store';
 import { Note, uid } from '../types';
 import { NoteWave } from './NoteWave';
+import { HUMANIZE_LEVELS, HumanizeLevel, humanize } from '../audio/humanize';
 import { useRaf } from './ui';
 
 const PPB = 80; // pixels por tempo
@@ -18,6 +19,7 @@ export function PianoRoll() {
   const bpm = useStore((s) => s.project.bpm);
   const st = useStore.getState();
   const [snap, setSnap] = useState(0.25);
+  const [human, setHuman] = useState<HumanizeLevel>('medio');
   const lastDur = useRef<number | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
@@ -143,6 +145,17 @@ export function PianoRoll() {
         >
           Quantizar
         </button>
+        <span className="roll-human">
+          <button
+            title="Humanizar: pequenas variações de tempo, força e duração, como um músico tocando (acentua a cabeça do compasso e dos tempos). Acordes continuam juntos. Ctrl+Z desfaz."
+            onClick={() => st.setNotes(region.id, humanize(notes, { level: human, bpm, length: region.length, drums: isDrums }))}
+          >
+            Humanizar
+          </button>
+          <select value={human} title="Quanto humanizar" onChange={(e) => { setHuman(e.target.value as HumanizeLevel); e.currentTarget.blur(); }}>
+            {HUMANIZE_LEVELS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </span>
         {selected && (
           <label>
             Intensidade
