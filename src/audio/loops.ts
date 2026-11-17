@@ -15,12 +15,17 @@ export interface Loop {
 }
 
 /** Cada string é um compasso em semicolcheias: x = forte, o = fraco, . = pausa. */
-function drums(id: string, name: string, bars: number, pat: Record<number, string>): Loop {
+/**
+ * Padrão de bateria: uma linha por peça, um caractere por passo ('x' forte, 'o' fraco/ghost, '.' nada),
+ * repetida até preencher. `div` = passos por tempo: 4 (semicolcheias, o normal) ou 3 (tercinas: shuffle,
+ * blues, jazz — 12 passos por compasso).
+ */
+function drums(id: string, name: string, bars: number, pat: Record<number, string>, div = 4): Loop {
   const notes: N[] = [];
   for (const [pitch, p] of Object.entries(pat)) {
-    for (let i = 0; i < bars * 16; i++) {
+    for (let i = 0; i < bars * BEATS_PER_BAR * div; i++) {
       const c = p[i % p.length];
-      if (c !== '.') notes.push({ pitch: +pitch, start: i / 4, duration: 0.25, velocity: c === 'x' ? 105 : 60 });
+      if (c !== '.') notes.push({ pitch: +pitch, start: i / div, duration: 1 / div, velocity: c === 'x' ? 105 : 60 });
     }
   }
   return { id, name, category: 'Bateria', kind: 'drums', instrument: 'drums', bars, notes };
@@ -153,6 +158,100 @@ export const LOOPS: Loop[] = [
     45: '...............................x',
     49: 'x...............................',
   }),
+  // Brasileiros
+  drums('d-samba', 'Samba', 2, {
+    36: 'x..xx..xx..xx..x',
+    42: 'xoxoxoxoxoxoxoxo',
+    38: 'o.o..o.o.o..o.o.o.o..o.o..o..o.o',
+  }),
+  drums('d-bossa', 'Bossa Nova', 2, {
+    36: 'x..xx..xx..xx..x',
+    38: 'o..o..o...o..o....o..o..o..o....',
+    42: 'x.o.x.o.x.o.x.o.',
+  }),
+  drums('d-baiao', 'Baião', 2, {
+    36: 'x..x....x..x....',
+    38: '....o.......x...',
+    42: 'xoxxxoxxxoxxxoxx',
+  }),
+  drums('d-xote', 'Xote', 2, {
+    36: 'x.....x.x.....x.',
+    38: '....x.......x..o',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  // Pop e dança
+  drums('d-pop', 'Pop', 2, {
+    36: 'x.....x.x.......x.....x.x..x....',
+    38: '....x.......x...',
+    42: 'x.x.x.x.x.x.x.x.x.x.x.x.x.x.x...',
+    46: '..............................x.',
+  }),
+  drums('d-ballad', 'Balada', 2, {
+    36: 'x.........x.....x.......x.x.....',
+    38: '........x.......',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  drums('d-disco', 'Disco', 2, {
+    36: 'x...x...x...x...',
+    38: '....x.......x...',
+    42: 'x...x...x...x...',
+    46: '..x...x...x...x.',
+  }),
+  drums('d-motown', 'Motown', 2, {
+    36: 'x.x...x.x.x...x.',
+    38: 'x...x...x...x...',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  // Shuffle, blues e jazz (grade de tercinas: 12 passos por compasso)
+  drums('d-shuffle', 'Shuffle', 2, {
+    36: 'x.....x.....',
+    38: '...x.....x..',
+    42: 'x.xx.xx.xx.x',
+  }, 3),
+  drums('d-blues', 'Blues Lento 12/8', 2, {
+    36: 'x.....x..x..',
+    38: '...x.....x..',
+    42: 'xooxooxooxoo',
+  }, 3),
+  drums('d-jazz', 'Jazz Swing', 2, {
+    42: 'x..x.xx..x.x',
+    36: 'o..o..o..o..',
+    38: '.....o.....o.......o..o.',
+  }, 3),
+  // Metal
+  drums('d-metal-double', 'Metal Bumbo Duplo', 2, {
+    36: 'xxxxxxxxxxxxxxxx',
+    38: '....x.......x...',
+    42: 'x.x.x.x.x.x.x.x.',
+    49: 'x...............................',
+  }),
+  drums('d-metal-gallop', 'Metal Galope', 2, {
+    36: 'x.xxx.xxx.xxx.xx',
+    38: '....x.......x...',
+    49: 'x...x...x...x...',
+  }),
+  drums('d-metal-blast', 'Metal Blast Beat', 2, {
+    36: 'x.x.x.x.x.x.x.x.',
+    38: '.x.x.x.x.x.x.x.x',
+    49: 'x.x.x.x.x.x.x.x.',
+  }),
+  // Eletrônico
+  drums('d-techno', 'Techno', 2, {
+    36: 'x...x...x...x...',
+    39: '....x.......x...',
+    42: 'oxoxoxoxoxoxoxox',
+    46: '..x...x...x...x.',
+  }),
+  drums('d-dnb', 'Drum and Bass', 2, {
+    36: 'x.........x.....x.x.......x.....',
+    38: '....x.......x.......x..o....x...',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  drums('d-lofi', 'Lo-fi Hip-hop', 2, {
+    36: 'x......x..x.....x.....x...x.....',
+    38: '....x.......x...',
+    42: 'x.o.x.oox.o.x.o.',
+  }),
   drums('d-toms', 'Virada de Tons', 1, { 36: 'x...x...x...x...', 50: 'xx.x............', 48: '....xx.x........', 45: '........xx.xx.x.', 49: '...............x' }),
 
   mel('b-pop', 'Baixo Pop', 'Baixo', 'ebass', 4, eighths([36, 31, 33, 29])),
@@ -211,7 +310,11 @@ export const DRUM_STYLES: { group: string; ids: string[] }[] = [
   { group: 'Funk', ids: ['d-funk', 'd-funk-us', 'd-funk-break'] },
   { group: 'Reggae', ids: ['d-reggae-onedrop', 'd-reggae-rockers', 'd-reggae-steppers'] },
   { group: 'Psicodélico anos 70', ids: ['d-psych-groove', 'd-psych-tribal', 'd-psych-heavy'] },
-  { group: 'Hip-hop e eletrônico', ids: ['d-hiphop', 'd-trap', 'd-house', 'd-dembow'] },
+  { group: 'Brasileiros', ids: ['d-samba', 'd-bossa', 'd-baiao', 'd-xote'] },
+  { group: 'Pop e dança', ids: ['d-pop', 'd-ballad', 'd-disco', 'd-motown'] },
+  { group: 'Shuffle, blues e jazz', ids: ['d-shuffle', 'd-blues', 'd-jazz'] },
+  { group: 'Metal', ids: ['d-metal-double', 'd-metal-gallop', 'd-metal-blast'] },
+  { group: 'Hip-hop e eletrônico', ids: ['d-hiphop', 'd-trap', 'd-house', 'd-dembow', 'd-techno', 'd-dnb', 'd-lofi'] },
 ];
 
 /** Repete o padrão do loop até preencher `beats` tempos. */
