@@ -1,7 +1,8 @@
 // Aba "Master": medidores de loudness (LUFS, pico real, correlação), presets e a cadeia do master
 // (EQ, compressor de cola, saturação, limitador) e o alvo de loudness da exportação.
 import { useEffect, useRef, useState } from 'react';
-import { analyzeProject, engine } from '../audio/engine';
+import { analyzeProject, engine, renderStems } from '../audio/engine';
+import { download } from '../audio/persist';
 import { Analysis, BANDS, SPEC_MAX, SPEC_MIN, SPEC_POINTS } from '../audio/analysis';
 import { Suggestion, suggestMaster } from '../audio/autoMaster';
 import { withLoading } from '../loading';
@@ -17,6 +18,21 @@ const signed = (v: number, unit: string) => `${v > 0 ? '+' : ''}${fmt(v)} ${unit
 /** Muda o master do projeto (sliders: o próprio Slider já marca o desfazer; botões: `history`). */
 function setMaster(fn: (m: MasterSettings) => MasterSettings, history = false) {
   useStore.getState().update((p) => ({ ...p, master: fn(masterOf(p.master)) }), history);
+}
+
+/** Exporta os stems (uma faixa por trilha) num .zip. */
+async function exportStems() {
+  const project = useStore.getState().project;
+  try {
+    const { blob, count } = await withLoading('Exportando stems…', (progress) => renderStems(project, engine.buffers, progress));
+    if (!count) {
+      alert('Nenhuma trilha com som para exportar (veja se não estão todas no mudo).');
+      return;
+    }
+    download(blob, `${project.name || 'musica'} - stems.zip`);
+  } catch (e) {
+    alert('Falha ao exportar os stems: ' + (e as Error).message);
+  }
 }
 
 export function MasterPanel() {
@@ -120,6 +136,13 @@ export function MasterPanel() {
             : 'A música sai com o ganho do limitador ajustado aqui.'}
           {m.exportBits === 16 ? ' 16 bits recebe dither (ruído inaudível que evita distorção).' : ''}
         </small>
+        <button
+          className="stems-btn"
+          title="Um arquivo por trilha (no formato e nos bits escolhidos acima), todos começando no início da música, num .zip. Cada stem é a trilha como soa na mix, com os efeitos dela, mas sem o master: para mixar ou masterizar em outro programa."
+          onClick={() => void exportStems()}
+        >
+          Exportar stems (.zip)
+        </button>
         {last && (
           <div className="last-export">
             Última exportação: <b>{fmt(last.lufs)} LUFS</b> · pico real <b>{fmt(last.truePeak)} dBTP</b>

@@ -7,6 +7,8 @@ import { DEFAULT_MASTER, ensureWorklets, masterOf } from './master';
 import { Analysis, analyze } from './analysis';
 import { ExportReport, encodeExport, finishMaster } from './export';
 import { Mixer } from './mixer';
+import { audibleSet } from './routing';
+import { makeZip } from './zip';
 import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
 import { withLoading } from '../loading';
@@ -846,6 +848,40 @@ export async function analyzeProject(
   let [l, r]: Float32Array[] = [rendered.getChannelData(0), rendered.getChannelData(1)];
   if (mode === 'mastered') [l, r] = (await finishMaster(rendered, master, (p) => onProgress?.(0.6 + p * 0.2))).channels;
   return analyze(l, r, rendered.sampleRate, (p) => onProgress?.(0.8 + p * 0.2));
+}
+
+/**
+ * Stems: uma faixa de áudio por trilha, todas do mesmo tamanho e começando no tempo 0, para abrir em outro
+ * programa e mixar lá. Cada uma é a trilha sozinha como soa na mix (EQ, compressor, volume, pan, automação,
+ * o grupo para onde ela vai e os efeitos de envio dela), sem o master: somando os stems dá a mix crua.
+ * Só entram as trilhas que tocam na mix agora (mudo/solo valem) e que têm alguma região. Devolve um .zip.
+ */
+export async function renderStems(
+  project: Project,
+  buffers: Map<string, AudioBuffer>,
+  onProgress?: (p: number) => void,
+): Promise<{ blob: Blob; count: number }> {
+  const master = masterOf(project.master);
+  const audible = audibleSet(project.tracks);
+  const tracks = project.tracks.filter((t) => t.kind !== 'bus' && audible.has(t.id) && project.regions.some((r) => r.trackId === t.id));
+  const files: { name: string; blob: Blob }[] = [];
+  const clean = (n: string) => n.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Trilha';
+  for (let i = 0; i < tracks.length; i++) {
+    const t = tracks[i];
+    const step = (p: number) => onProgress?.((i + p) / tracks.length);
+    // só esta trilha soando: as outras no mudo (continuam alimentando o sidechain, que vem antes do volume)
+    const solo: Project = {
+      ...project,
+      tracks: project.tracks.map((x) => (x.kind === 'bus' ? { ...x, solo: false } : { ...x, solo: false, mute: x.id !== t.id })),
+    };
+    const rendered = await renderMix(solo, buffers, NEUTRAL_MASTER, (p) => step(p * 0.8));
+    const chans = [rendered.getChannelData(0), rendered.getChannelData(1)];
+    const { blob, ext } = await encodeExport(chans, rendered.sampleRate, master, (p) => step(0.8 + p * 0.2));
+    files.push({ name: `${String(i + 1).padStart(2, '0')} ${clean(t.name)}.${ext}`, blob });
+  }
+  const blob = await makeZip(files);
+  onProgress?.(1);
+  return { blob, count: files.length };
 }
 
 /** Região "de mentira" que toca o áudio congelado de uma trilha inteiro, a partir do tempo 0. */

@@ -171,6 +171,7 @@ input:not([type]):hover, input:not([type]):focus { border-color: var(--line); ba
 .ms.freeze { font-size: 12px; }
 .ms.freeze.on { background: #2b6a96; border-color: #5fb4ff; color: #e6f4ff; }
 .ms.freeze.stale { border-color: #ffcf3f; color: #ffcf3f; }
+.stems-btn { margin-top: 6px; }
 .lane-hint { position: absolute; left: 12px; top: 40px; color: var(--faint); font-size: 12px; pointer-events: none; white-space: nowrap; }
 
 .region {
