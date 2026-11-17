@@ -1,7 +1,8 @@
 import { engine } from '../audio/engine';
 import { DRUM_MAP, presetGroups } from '../audio/instruments';
 import { LOOPS, Loop, addLoop } from '../audio/loops';
-import { BottomTab, savePref, useStore } from '../store';
+import { useEffect, useState } from 'react';
+import { BottomTab, pref, savePref, useStore } from '../store';
 import { Track } from '../types';
 import { AmpRack } from './AmpRack';
 import { AudioEditor } from './AudioEditor';
@@ -24,12 +25,58 @@ const TABS: [BottomTab, string][] = [
   ['master', 'Master'],
 ];
 
+const PANEL_H = 320; // altura padrão (duplo clique na alça volta para ela)
+const PANEL_MIN = 140;
+/** Altura máxima: sempre sobra espaço para a barra de transporte e algumas trilhas. */
+const panelMax = () => Math.max(PANEL_MIN, window.innerHeight - 230);
+const clampH = (h: number) => Math.round(Math.min(panelMax(), Math.max(PANEL_MIN, h)));
+
+/** Altura do painel de baixo, arrastável pela borda de cima e lembrada entre sessões. */
+function usePanelHeight() {
+  const [h, setH] = useState(() => clampH(Number(pref('mm.bottomH')) || PANEL_H));
+  useEffect(() => {
+    const fit = () => setH((v) => clampH(v));
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, []);
+  const save = (v: number) => { setH(v); savePref('mm.bottomH', String(v)); };
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    const y0 = e.clientY;
+    const h0 = h;
+    let last = h0;
+    document.body.classList.add('resizing-v');
+    const move = (ev: PointerEvent) => { last = clampH(h0 + y0 - ev.clientY); setH(last); };
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      document.body.classList.remove('resizing-v');
+      save(last);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+  };
+  return { h, onPointerDown, reset: () => save(clampH(PANEL_H)) };
+}
+
 export function BottomPanel() {
   const tab = useStore((s) => s.bottomTab);
   const track = useStore((s) => s.project.tracks.find((t) => t.id === s.selectedTrackId));
   const set = useStore.getState().set;
+  const panel = usePanelHeight();
   return (
-    <section className="bottom">
+    <section className="bottom" style={{ height: panel.h }}>
+      <div
+        className="bottom-resize"
+        title="Arraste para aumentar ou diminuir o painel (duplo clique: tamanho padrão)"
+        onPointerDown={panel.onPointerDown}
+        onDoubleClick={panel.reset}
+      />
       <nav className="tabs">
         {TABS.map(([id, label]) => (
           <button key={id} className={tab === id ? 'on' : ''} onClick={() => set({ bottomTab: id })}>{label}</button>

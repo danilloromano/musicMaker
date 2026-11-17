@@ -214,7 +214,12 @@ svg.region-body rect { fill: var(--c); }
 body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 
 /* ---------- Painel inferior ---------- */
-.bottom { flex: none; height: 320px; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line); }
+.bottom { position: relative; flex: none; height: 320px; display: flex; flex-direction: column; background: var(--panel); border-top: 1px solid var(--line); }
+.bottom-resize { position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: ns-resize; z-index: 20; touch-action: none; }
+.bottom-resize::after { content: ''; position: absolute; left: 50%; top: 2px; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--line); opacity: 0; transition: opacity 120ms; }
+.bottom-resize:hover::after, .resizing-v .bottom-resize::after { opacity: 1; background: var(--accent); }
+.bottom-resize:hover, .resizing-v .bottom-resize { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+body.resizing-v, body.resizing-v * { cursor: ns-resize !important; user-select: none; }
 .tabs { display: flex; align-items: stretch; gap: 0; padding: 0 10px; border-bottom: 1px solid var(--line); flex: none; height: 34px; }
 .tabs button {
   padding: 0 14px; background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
