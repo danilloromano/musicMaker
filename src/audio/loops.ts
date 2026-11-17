@@ -66,6 +66,15 @@ const eighths = (roots: number[]): [number, number, number][] =>
     Array.from({ length: 8 }, (_, k) => [i * 4 + k / 2, k === 6 ? r + 12 : r, 0.42] as [number, number, number]),
   );
 
+/**
+ * Linha de baixo: o mesmo desenho (`pat`: [início no compasso, intervalo em semitons sobre a fundamental,
+ * duração]) em cada compasso, sobre a fundamental do acorde daquele compasso (`roots`).
+ */
+const line = (roots: number[], pat: [number, number, number][]): [number, number, number][] =>
+  roots.flatMap((r, i) => pat.map(([st, iv, d]) => [i * 4 + st, r + iv, d] as [number, number, number]));
+/** Tercina: posição do passo `k` (0, 1, 2) dentro do tempo `beat`. */
+const trip = (beat: number, k: number) => beat + k / 3;
+
 const POP = [[60, 64, 67], [59, 62, 67], [57, 60, 64], [57, 60, 65]]; // C G Am F
 const MINOR = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
 const PSYCH = [[52, 55, 59, 62], [57, 61, 64], [52, 55, 59, 62], [50, 54, 57]]; // Em7 A Em7 D (mi dórico)
@@ -258,6 +267,59 @@ export const LOOPS: Loop[] = [
   mel('b-minor', 'Baixo Menor', 'Baixo', 'ebass', 4, eighths([33, 29, 36, 31])),
   mel('b-groove', 'Baixo Groove', 'Baixo', 'ebass', 2,
     [[0, 36, 0.5], [0.75, 36, 0.25], [1.5, 48, 0.25], [2, 36, 0.5], [2.75, 39, 0.25], [3, 41, 0.5], [3.5, 43, 0.5]], 4),
+
+  // Baixos por estilo (combinam com os estilos de bateria de mesmo nome)
+  mel('b-rock', 'Baixo Rock', 'Baixo', 'ebass', 4, line([33, 33, 38, 40], [
+    [0, 0, 0.42], [0.5, 0, 0.42], [1, 0, 0.42], [1.5, 0, 0.42], [2, 0, 0.42], [2.5, 0, 0.42], [3, 0, 0.42], [3.5, 7, 0.42],
+  ])),
+  mel('b-funk', 'Baixo Funk', 'Baixo', 'ebass', 2, line([28, 28], [
+    [0, 0, 0.22], [0.75, 0, 0.18], [1, 12, 0.12], [1.5, 10, 0.2], [1.75, 12, 0.12], [2.5, 0, 0.22], [2.75, 3, 0.18], [3, 5, 0.2], [3.25, 7, 0.12], [3.5, 10, 0.22],
+  ])),
+  mel('b-reggae', 'Baixo Reggae', 'Baixo', 'ebass', 4, line([33, 33, 38, 38], [
+    [1, 0, 0.7], [2, 7, 0.45], [2.5, 5, 0.22], [2.75, 3, 0.45], [3.5, 0, 0.45],
+  ])),
+  mel('b-samba', 'Baixo Samba', 'Baixo', 'ebass', 4, line([36, 33, 38, 31], [
+    [0, 0, 0.45], [0.75, 0, 0.22], [1, -5, 0.45], [1.75, -5, 0.22], [2, 0, 0.45], [2.75, 0, 0.22], [3, -5, 0.45], [3.75, -5, 0.22],
+  ])),
+  mel('b-bossa', 'Baixo Bossa Nova', 'Baixo', 'ebass', 4, line([36, 38, 31, 36], [
+    [0, 0, 1.3], [1.5, -5, 0.45], [2, -5, 1.3], [3.5, 0, 0.45],
+  ])),
+  mel('b-baiao', 'Baixo Baião', 'Baixo', 'ebass', 4, line([31, 31, 29, 31], [
+    [0, 0, 0.7], [0.75, 7, 0.6], [1.5, 10, 0.4], [2, 0, 0.7], [2.75, 7, 0.6], [3.5, 10, 0.4],
+  ])),
+  // walking bass num ii-V-I-VI em Dó: cada compasso termina numa nota cromática que leva ao próximo acorde
+  mel('b-walking', 'Baixo Walking (Jazz)', 'Baixo', 'ebass', 4, [
+    [0, 38, 0.9], [1, 41, 0.9], [2, 45, 0.9], [3, 42, 0.9],
+    [4, 43, 0.9], [5, 41, 0.9], [6, 38, 0.9], [7, 35, 0.9],
+    [8, 36, 0.9], [9, 40, 0.9], [10, 43, 0.9], [11, 44, 0.9],
+    [12, 45, 0.9], [13, 43, 0.9], [14, 40, 0.9], [15, 37, 0.9],
+  ]),
+  // boogie de blues em tercina (fundamental, terça, quinta e sexta), A A D A
+  mel('b-blues', 'Baixo Blues Shuffle', 'Baixo', 'ebass', 4, line([33, 33, 38, 33], [
+    [trip(0, 0), 0, 0.6], [trip(0, 2), 0, 0.3], [trip(1, 0), 4, 0.6], [trip(1, 2), 4, 0.3],
+    [trip(2, 0), 7, 0.6], [trip(2, 2), 7, 0.3], [trip(3, 0), 9, 0.6], [trip(3, 2), 7, 0.3],
+  ])),
+  mel('b-disco', 'Baixo Disco', 'Baixo', 'ebass', 4, line([33, 38, 31, 36],
+    Array.from({ length: 8 }, (_, k) => [k / 2, k % 2 ? 12 : 0, 0.35] as [number, number, number]))),
+  mel('b-motown', 'Baixo Motown', 'Baixo', 'ebass', 4, line([36, 33, 29, 31], [
+    [0, 0, 0.45], [0.5, 0, 0.22], [1, 4, 0.45], [1.5, 7, 0.45], [2, 9, 0.45], [2.5, 7, 0.22], [3, 4, 0.45], [3.5, 2, 0.45],
+  ])),
+  mel('b-metal', 'Baixo Metal Galope', 'Baixo', 'ebass', 4, line([28, 28, 31, 30], [
+    [0, 0, 0.4], [0.5, 0, 0.2], [0.75, 0, 0.2], [1, 0, 0.4], [1.5, 0, 0.2], [1.75, 0, 0.2],
+    [2, 0, 0.4], [2.5, 0, 0.2], [2.75, 0, 0.2], [3, 0, 0.4], [3.5, 0, 0.2], [3.75, 0, 0.2],
+  ])),
+  mel('b-house', 'Baixo House', 'Baixo', 'bass', 4, line([33, 33, 29, 31], [
+    [0.5, 0, 0.3], [1.5, 0, 0.3], [2.5, 0, 0.3], [3.5, 12, 0.3],
+  ])),
+  mel('b-trap', '808 Trap', 'Baixo', 'bass', 4, line([33, 33, 29, 31], [
+    [0, 0, 1.6], [1.75, 0, 0.6], [2.5, 12, 1.4],
+  ])),
+  mel('b-dnb', 'Baixo Drum and Bass', 'Baixo', 'bass', 4, line([33, 33, 29, 31], [
+    [0, 0, 1.4], [1.5, 0, 0.4], [2, 3, 1.4], [3.5, -2, 0.45],
+  ])),
+  mel('b-dembow', 'Baixo Reggaeton', 'Baixo', 'bass', 4, line([33, 29, 36, 31], [
+    [0, 0, 0.6], [0.75, 0, 0.6], [1.5, 0, 0.4], [2, 0, 0.6], [2.75, 0, 0.6], [3.5, 0, 0.4],
+  ])),
 
   // Psicodélico anos 70 (em mi dórico: a sexta maior, Dó#, dá o colorido "viajante")
   mel('b-psych', 'Baixo Psicodélico', 'Baixo', 'ebass', 2, [
