@@ -6,7 +6,7 @@ import { download } from '../audio/persist';
 import { Analysis, BANDS, SPEC_MAX, SPEC_MIN, SPEC_POINTS } from '../audio/analysis';
 import { Suggestion, suggestMaster } from '../audio/autoMaster';
 import { withLoading } from '../loading';
-import { DEFAULT_MASTER, DEFAULT_MULTIBAND, DEFAULT_STEREO, EXPORT_TARGETS, MASTER_PRESETS, activePreset, applyPreset, masterOf } from '../audio/master';
+import { DEFAULT_MASTER, DEFAULT_MULTIBAND, DEFAULT_STEREO, EXPORT_TARGETS, MASTER_GROUPS, MASTER_PRESETS, activePreset, applyPreset, masterOf } from '../audio/master';
 import { MAX_AUTO_GAIN } from '../audio/export';
 import { useStore } from '../store';
 import { MasterSettings } from '../types';
@@ -49,13 +49,19 @@ export function MasterPanel() {
     <div className="fx master">
       <div className="fx-card wide">
         <h4>Preset de master</h4>
-        <div className="presets">
-          {MASTER_PRESETS.map((p) => (
-            <button key={p.id} className={active?.id === p.id ? 'on' : ''} title={p.desc} onClick={() => setMaster((x) => applyPreset(x, p.s), true)}>
-              {p.name}
-            </button>
-          ))}
-        </div>
+        {MASTER_GROUPS.map((g) => (
+          <div key={g.group} className="preset-group">
+            <small>{g.group}</small>
+            <div className="presets">
+              {g.ids.map((id) => MASTER_PRESETS.find((p) => p.id === id)!).map((p) => (
+                <button key={p.id} className={active?.id === p.id ? 'on' : ''} title={p.desc} onClick={() => setMaster((x) => applyPreset(x, p.s), true)}>
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {active && <p className="hint preset-desc">{active.desc}</p>}
       </div>
 
       <AutoMasterCard />

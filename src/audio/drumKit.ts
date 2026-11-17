@@ -369,7 +369,8 @@ export function warmDrumKit(ctx: BaseAudioContext) {
 }
 
 // ---------- Kit gravado ----------
-// Virtuosity Drums (Versilian Studios, CC0), mixado por scripts/build-drums.cjs.
+// Virtuosity Drums (Versilian Studios, CC0), mixado por scripts/build-drums.cjs; condução, aro, chimbal no
+// pé, palmas e percussão (Virtuosity Drums e Body Percussion, CC0) por scripts/build-perc.cjs.
 
 /** Nota → peça gravada. O kit gravado tem dois tons: o médio é o agudo tocado um pouco mais grave. */
 const SAMPLED: Record<number, { piece: string; level: number; rate?: number }> = {
@@ -382,6 +383,34 @@ const SAMPLED: Record<number, { piece: string; level: number; rate?: number }> =
   48: { piece: 'highTom', level: 0.6, rate: 0.86 },
   50: { piece: 'highTom', level: 0.6 },
   56: { piece: 'cowbell', level: 0.25 },
+  // peças extras do kit
+  37: { piece: 'sidestick', level: 0.55 },
+  39: { piece: 'clap', level: 0.7 },
+  44: { piece: 'hhPedal', level: 0.38 },
+  51: { piece: 'ride', level: 0.8 },
+  53: { piece: 'rideBell', level: 0.5 },
+  // percussão (números do General MIDI)
+  54: { piece: 'tambourine', level: 0.6 },
+  60: { piece: 'bongoHi', level: 0.45 },
+  61: { piece: 'bongoLo', level: 0.45 },
+  62: { piece: 'congaMute', level: 0.45 },
+  63: { piece: 'congaOpen', level: 0.5 },
+  64: { piece: 'tumba', level: 0.5 },
+  65: { piece: 'timbaleHi', level: 0.4 },
+  66: { piece: 'timbaleLo', level: 0.4 },
+  67: { piece: 'agogoHi', level: 0.48 },
+  68: { piece: 'agogoLo', level: 0.48 },
+  69: { piece: 'cabasa', level: 0.3 },
+  70: { piece: 'shaker', level: 0.5 },
+  73: { piece: 'guiroShort', level: 0.42 },
+  74: { piece: 'guiroLong', level: 0.42 },
+  75: { piece: 'claves', level: 0.45 },
+  76: { piece: 'woodblockHi', level: 0.35 },
+  77: { piece: 'woodblockLo', level: 0.35 },
+  78: { piece: 'cuicaLo', level: 0.32 },
+  79: { piece: 'cuicaHi', level: 0.32 },
+  80: { piece: 'triangleMute', level: 0.5 },
+  81: { piece: 'triangleOpen', level: 0.5 },
 };
 
 /** peça → camadas (da mais fraca à mais forte) → repetições do mesmo golpe */
@@ -391,16 +420,19 @@ let loading: Promise<void> | null = null;
 /** Carrega e decodifica o kit gravado uma única vez (um AudioBuffer serve para qualquer contexto). */
 export function loadDrumSamples(ctx: BaseAudioContext): Promise<void> {
   loading ??= (async () => {
-    const { manifest, data } = await import('./drums/kitData.js');
-    const str = atob(data);
-    const bin = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) bin[i] = str.charCodeAt(i);
     const kit: Record<string, AudioBuffer[][]> = {};
-    for (const [piece, layers] of Object.entries(manifest)) {
-      kit[piece] = await Promise.all(
-        layers.map((takes) => Promise.all(takes.map(([o, n]) => ctx.decodeAudioData(bin.slice(o, o + n).buffer)))),
-      );
-    }
+    const unpack = async ({ manifest, data }: { manifest: Record<string, [number, number][][]>; data: string }) => {
+      const str = atob(data);
+      const bin = new Uint8Array(str.length);
+      for (let i = 0; i < str.length; i++) bin[i] = str.charCodeAt(i);
+      for (const [piece, layers] of Object.entries(manifest)) {
+        kit[piece] = await Promise.all(
+          layers.map((takes) => Promise.all(takes.map(([o, n]) => ctx.decodeAudioData(bin.slice(o, o + n).buffer)))),
+        );
+      }
+    };
+    // o kit principal e o pacote de peças extras/percussão carregam juntos
+    await Promise.all([import('./drums/kitData.js').then(unpack), import('./drums/percData.js').then(unpack)]);
     sampled = kit;
   })().catch((e) => {
     console.warn('Bateria gravada indisponível; usando a sintetizada.', e);
@@ -416,7 +448,12 @@ function playSample(ctx: BaseAudioContext, dest: AudioNode, pitch: number, t: nu
   const s = SAMPLED[pitch];
   const layers = s && sampled?.[s.piece];
   if (!layers?.length) return null;
-  const idx = Math.min(layers.length - 1, Math.floor(v * layers.length));
+  // Contra o "metralhadora" (o mesmo arquivo repetido): um baterista nunca bate igual duas vezes. A camada
+  // de intensidade às vezes é a vizinha, a afinação muda alguns cents (a baqueta cai num ponto diferente da
+  // pele) e o volume oscila um pouco. Quando a peça tem poucas repetições gravadas, varia mais.
+  const few = layers[0].length < 3;
+  const jitter = (Math.random() - 0.5) * (few ? 1.6 : 0.9);
+  const idx = Math.max(0, Math.min(layers.length - 1, Math.floor(v * layers.length + jitter)));
   const takes = layers[idx];
   const key = `${pitch}:${idx}`;
   let k = Math.floor(Math.random() * takes.length);
@@ -424,9 +461,10 @@ function playSample(ctx: BaseAudioContext, dest: AudioNode, pitch: number, t: nu
   lastTake.set(key, k);
   const src = ctx.createBufferSource();
   src.buffer = takes[k];
-  src.playbackRate.value = s.rate ?? 1;
+  const cents = (Math.random() - 0.5) * (few ? 16 : 8);
+  src.playbackRate.value = (s.rate ?? 1) * 2 ** (cents / 1200);
   const g = ctx.createGain();
-  g.gain.value = s.level * (0.55 + 0.45 * v);
+  g.gain.value = s.level * (0.55 + 0.45 * v) * 10 ** (((Math.random() - 0.5) * 1.2) / 20);
   src.connect(g).connect(dest);
   src.start(t);
   return g;
@@ -438,16 +476,34 @@ function playSample(ctx: BaseAudioContext, dest: AudioNode, pitch: number, t: nu
  */
 const hats = new WeakMap<AudioNode, { t: number; g?: GainNode }[]>();
 function chokeHats(dest: AudioNode, t: number, g?: GainNode) {
-  let list = hats.get(dest);
-  if (!list) hats.set(dest, (list = []));
+  choke(hats, dest, t, g);
+}
+function choke(map: WeakMap<AudioNode, { t: number; g?: GainNode }[]>, dest: AudioNode, t: number, g?: GainNode) {
+  let list = map.get(dest);
+  if (!list) map.set(dest, (list = []));
   for (const h of list) {
     if (h.g && h.t < t) h.g.gain.setTargetAtTime(0, t, 0.012);
     if (g && t < h.t) g.gain.setTargetAtTime(0, h.t, 0.012);
   }
   list.push({ t, g });
   const keep = list.filter((h) => Math.abs(h.t - t) < 2);
-  hats.set(dest, keep);
+  map.set(dest, keep);
 }
+
+/**
+ * Peças que soam até a próxima batida do mesmo "grupo" as abafar: o chimbal aberto (fechado pela mão ou
+ * pelo pé), o triângulo aberto (a mão segurando) e a cuíca.
+ */
+const CHOKE: Record<number, { group: string; rings: boolean }> = {
+  42: { group: 'hh', rings: false },
+  44: { group: 'hh', rings: false },
+  46: { group: 'hh', rings: true },
+  80: { group: 'tri', rings: false },
+  81: { group: 'tri', rings: true },
+  78: { group: 'cuica', rings: true },
+  79: { group: 'cuica', rings: true },
+};
+const chokeOuts = new Map<string, WeakMap<AudioNode, { t: number; g?: GainNode }[]>>();
 
 /** Toca uma peça do kit; devolve false se a nota não for uma peça conhecida. */
 export function playKitPiece(ctx: BaseAudioContext, dest: AudioNode, pitch: number, t: number, vel: number): boolean {
@@ -455,7 +511,11 @@ export function playKitPiece(ctx: BaseAudioContext, dest: AudioNode, pitch: numb
   const hat = pitch === 42 || pitch === 46;
   const sg = playSample(ctx, dest, pitch, t, v);
   if (sg) {
-    if (hat) chokeHats(dest, t, pitch === 46 ? sg : undefined);
+    const c = CHOKE[pitch];
+    if (c) {
+      if (!chokeOuts.has(c.group)) chokeOuts.set(c.group, new WeakMap());
+      choke(chokeOuts.get(c.group)!, dest, t, c.rings ? sg : undefined);
+    }
     return true;
   }
   const p = PIECES[pitch];

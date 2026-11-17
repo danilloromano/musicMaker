@@ -8,6 +8,7 @@ import {
 import { useStore } from '../store';
 import { Arp, Sidechain, Track, TrackComp, TrackEq } from '../types';
 import { ARP_MODES, ARP_RATES, DEFAULT_ARP } from '../audio/arp';
+import { FEEL_LEVELS, feelOf } from '../audio/feel';
 import { outputOf, sendAmount, sendsOf, sidechainOf } from '../audio/routing';
 import { KIND_ICON, Reduction, Slider, Spectrum } from './ui';
 
@@ -382,6 +383,25 @@ export function SidechainCard({ track: t }: { track: Track }) {
 // ---------- Arpejador ----------
 
 /** Arpejador da trilha de instrumento: segure um acorde e ele vira arpejo no ritmo da música. */
+/** Toque humano da trilha: robótico, natural (padrão) ou solto. */
+export function FeelCard({ track: t }: { track: Track }) {
+  const level = feelOf(t);
+  const cur = FEEL_LEVELS.find((l) => l.id === level) ?? FEEL_LEVELS[1];
+  return (
+    <div className="fx-card feel-card">
+      <h4>Toque humano</h4>
+      <div className="presets">
+        {FEEL_LEVELS.map((l) => (
+          <button key={l.id} className={level === l.id ? 'on' : ''} title={l.desc} onClick={() => useStore.getState().updateTrack(t.id, { feel: l.id })}>
+            {l.name}
+          </button>
+        ))}
+      </div>
+      <small className="hint">{cur.desc}. {t.kind === 'drums' ? 'Na bateria: chimbal com a dinâmica da mão do baterista, bumbo e caixa firmes no tempo.' : 'Nos acordes, os dedos não caem exatamente juntos.'} As notas escritas não mudam.</small>
+    </div>
+  );
+}
+
 export function ArpCard({ track: t }: { track: Track }) {
   const arp = t.arp ?? { ...DEFAULT_ARP, on: false };
   const set = (patch: Partial<Arp>, history = true) => {

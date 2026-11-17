@@ -208,6 +208,8 @@ export interface Track {
   frozen?: { bufferId: string; key: string };
   /** arpejador (só trilhas de instrumento): as notas seguradas viram arpejo ao tocar */
   arp?: Arp;
+  /** toque humano ao tocar: 0 = robótico, 1 = natural (padrão), 2 = solto (ver audio/feel.ts) */
+  feel?: number;
 }
 
 /** Master: EQ, compressor de "cola", saturação, limitador e como exportar. */
@@ -317,7 +319,7 @@ function computeFreezeKey(p: Project, t: Track): string {
   const regions = p.regions.filter((r) => r.trackId === t.id).sort((a, b) => (a.id < b.id ? -1 : 1));
   const lanes = (t.automation ?? []).filter((l) => l.param === 'wah' || l.param === 'rotary');
   const song = t.amp?.on && t.amp.pedals?.harmony?.on ? p.key ?? null : null;
-  const text = JSON.stringify([p.bpm, song, t.kind, t.instrument, t.amp ?? null, t.arp?.on ? t.arp : null, lanes, regions.map((r) => ({ ...r, name: '' }))]);
+  const text = JSON.stringify([p.bpm, song, t.kind, t.instrument, t.amp ?? null, t.arp?.on ? t.arp : null, t.feel ?? 1, lanes, regions.map((r) => ({ ...r, name: '' }))]);
   // FNV-1a de 32 bits (duas passadas com sementes diferentes para não colidir por acaso)
   let a = 0x811c9dc5, b = 0x01000193 ^ text.length;
   for (let i = 0; i < text.length; i++) {

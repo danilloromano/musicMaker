@@ -3,9 +3,14 @@
 //    https://github.com/sfzinstruments/SplendidGrandPiano
 //  - baixo: Fashionbass (baixo elétrico de dedo, gravado em linha, Karoryfer Lecords, CC0)
 //    https://github.com/sfzinstruments/karoryfer.fashionbass
-//  - cordas (seções de violoncelo, viola e violino) e órgão de tubos: VS Chamber Orchestra Community
-//    Edition (Versilian Studios, CC0; órgão gravado por Simon Dalzell/Ivy Audio)
+//  - cordas (seções de violoncelo, viola e violino), órgão de tubos, trompete, trombone, flauta e marimba:
+//    VS Chamber Orchestra Community Edition (Versilian Studios, CC0; órgão gravado por Simon Dalzell/Ivy Audio)
 //    https://github.com/sgossner/VSCO-2-CE
+//  - sax alto: Weresax (Karoryfer Samples, CC0) — https://github.com/sfzinstruments/karoryfer.weresax
+//  - guitarra elétrica limpa: Emilyguitar (Epiphone, D. Smolken/Karoryfer, CC0)
+//    https://github.com/sfzinstruments/karoryfer.emilyguitar
+//  - contrabaixo acústico de dedo (pizzicato): Otto Rubner 1958 (D. Smolken, CC0)
+//    https://github.com/sfzinstruments/dsmolken.double-bass
 //
 // Instrumentos que sustentam (cordas, órgão) ganham um trecho de repetição (loop) com transição suave,
 // para a nota durar o quanto a tecla ficar apertada.
@@ -67,6 +72,37 @@ async function vsco(sfz, cache) {
 }
 const raw2 = (repo, file) => `https://raw.githubusercontent.com/${repo}/master/${file.split('/').map(encodeURIComponent).join('/')}`;
 
+/**
+ * Regiões de um mapa SFZ qualquer de um repositório do sfzinstruments, separadas em intensidades pelo nome
+ * do arquivo: `match` acha a intensidade (1º grupo) nas gravações que interessam; `layers` diz a ordem (da
+ * mais fraca à mais forte). As repetições do mesmo golpe (round robins) viram takes da mesma região.
+ */
+async function sfzRegions(repo, branch, sfzPath, match, layers, cache) {
+  const src = await text(`https://raw.githubusercontent.com/sfzinstruments/${repo}/${branch}/${sfzPath}`, cache);
+  const dir = sfzPath.includes('/') ? sfzPath.slice(0, sfzPath.lastIndexOf('/') + 1) : '';
+  const out = layers.map(() => new Map());
+  for (const r of parseSfz(src)) {
+    if (!r.sample) continue;
+    const file = r.sample.replace(/\\/g, '/');
+    const m = file.match(match);
+    if (!m) continue;
+    const li = layers.indexOf(m[1]);
+    if (li < 0) continue;
+    // resolve "../" do caminho relativo ao .sfz
+    const parts = (dir + file).split('/');
+    const norm = [];
+    for (const x of parts) x === '..' ? norm.pop() : norm.push(x);
+    const url = `https://raw.githubusercontent.com/sfzinstruments/${repo}/${branch}/${norm.map(encodeURIComponent).join('/')}`;
+    const key = +r.pitch_keycenter;
+    const zone = out[li].get(key) ?? { lo: +(r.lokey ?? key), hi: +(r.hikey ?? key), key, takes: [] };
+    zone.lo = Math.min(zone.lo, +(r.lokey ?? key));
+    zone.hi = Math.max(zone.hi, +(r.hikey ?? key));
+    if (!zone.takes.includes(url) && zone.takes.length < 2) zone.takes.push(url);
+    out[li].set(key, zone);
+  }
+  return out.map((m) => [...m.values()]).filter((l) => l.length);
+}
+
 /** Notas-alvo: uma a cada `step` semitons entre `lo` e `hi`. */
 const targets = (lo, hi, step) => Array.from({ length: Math.floor((hi - lo) / step) + 1 }, (_, i) => lo + i * step);
 
@@ -123,6 +159,85 @@ const INSTRUMENTS = {
     keys: targets(36, 96, 3),
     async layers() {
       return vsco('OrganQuiet', this.cache);
+    },
+  },
+  trumpet: {
+    cache: 'vsco-2-ce',
+    comment: 'Amostras: trompete do VS Chamber Orchestra Community Edition, Versilian Studios (CC0 1.0) — https://github.com/sgossner/VSCO-2-CE',
+    quality: 4,
+    mono: false,
+    loop: true,
+    keys: targets(55, 85, 3),
+    async layers() {
+      return vsco('TrumpetSus', this.cache);
+    },
+  },
+  trombone: {
+    cache: 'vsco-2-ce',
+    comment: 'Amostras: trombone do VS Chamber Orchestra Community Edition, Versilian Studios (CC0 1.0) — https://github.com/sgossner/VSCO-2-CE',
+    quality: 4,
+    mono: false,
+    loop: true,
+    keys: targets(40, 73, 3),
+    async layers() {
+      return vsco('TromboneSus', this.cache);
+    },
+  },
+  flute: {
+    cache: 'vsco-2-ce',
+    comment: 'Amostras: flauta do VS Chamber Orchestra Community Edition, Versilian Studios (CC0 1.0) — https://github.com/sgossner/VSCO-2-CE',
+    quality: 4,
+    mono: false,
+    loop: true,
+    keys: targets(60, 96, 3),
+    async layers() {
+      return vsco('FluteSusVib', this.cache);
+    },
+  },
+  marimba: {
+    cache: 'vsco-2-ce',
+    comment: 'Amostras: marimba do VS Chamber Orchestra Community Edition, Versilian Studios (CC0 1.0) — https://github.com/sgossner/VSCO-2-CE',
+    quality: 4,
+    mono: false,
+    keys: targets(45, 96, 3),
+    maxSec: () => 2.5,
+    async layers() {
+      return vsco('Marimba', this.cache);
+    },
+  },
+  sax: {
+    cache: 'karoryfer-weresax',
+    comment: 'Amostras: Weresax (sax alto), Karoryfer Samples (CC0 1.0) — https://github.com/sfzinstruments/karoryfer.weresax',
+    quality: 4,
+    mono: true,
+    loop: true,
+    keys: targets(49, 82, 3),
+    async layers() {
+      const piano = await sfzRegions('karoryfer.weresax', 'master', 'Programs/alto_map_piano_condenser.sfz', /_(p)_rr\d_cnd\.wav$/, ['p'], this.cache);
+      const forte = await sfzRegions('karoryfer.weresax', 'master', 'Programs/alto_map_forte_condenser.sfz', /_(f)_rr\d_cnd\.wav$/, ['f'], this.cache);
+      return [piano[0], forte[0]];
+    },
+  },
+  guitar: {
+    cache: 'karoryfer-emilyguitar',
+    comment: 'Amostras: Emilyguitar (guitarra Epiphone, D. Smolken/Karoryfer, CC0 1.0) — https://github.com/sfzinstruments/karoryfer.emilyguitar',
+    quality: 4,
+    mono: true,
+    keys: targets(40, 88, 3),
+    maxSec: () => 4,
+    async layers() {
+      return sfzRegions('karoryfer.emilyguitar', 'master', 'emily_clean.sfz', /^notes\/\w+?_(p|mf|f)_rr\d\.wav$/, ['p', 'mf', 'f'], this.cache);
+    },
+  },
+  dbass: {
+    cache: 'dsmolken-double-bass',
+    comment: 'Amostras: contrabaixo Otto Rubner 1958 em pizzicato (D. Smolken, CC0 1.0) — https://github.com/sfzinstruments/dsmolken.double-bass',
+    quality: 4,
+    mono: true,
+    keys: targets(28, 58, 3),
+    maxSec: () => 3,
+    async layers() {
+      return sfzRegions('dsmolken.double-bass', 'master', 'd_smolken_rubner_bass_pizz.sfz', /^pizz\/pizz_\w+?_([pmf])[a-d]\.wav$/, ['p', 'm', 'f'], this.cache);
     },
   },
   bass: {

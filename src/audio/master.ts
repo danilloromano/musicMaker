@@ -220,6 +220,212 @@ export const MASTER_PRESETS: { id: string; name: string; desc: string; s: Preset
       stereo: stereo(1.1),
     },
   },
+  {
+    id: 'punk', name: 'Punk / Hardcore', desc: 'Cru e na cara: médios agressivos, compressão rápida, bem alto',
+    s: {
+      eq: { low: 1, lowMid: -1, highMid: 2, high: 1 },
+      comp: { on: true, threshold: -16, ratio: 3, attack: 15, release: 100, makeup: 1.5 },
+      saturation: 0.35,
+      limiter: { on: true, gain: 5, ceiling: -1, release: 50 },
+      stereo: stereo(1.1),
+    },
+  },
+  {
+    id: 'indie', name: 'Indie / Alternativo', desc: 'Aberto e natural: estéreo largo, médios limpos, alto sem esmagar',
+    s: {
+      eq: { low: 0.5, lowMid: -0.5, highMid: 1, high: 1.5 },
+      comp: { on: true, threshold: -20, ratio: 2, attack: 30, release: 200, makeup: 1 },
+      saturation: 0.2,
+      limiter: { on: true, gain: 2, ceiling: -1, release: 100 },
+      stereo: stereo(1.2),
+    },
+  },
+  {
+    id: 'rnb', name: 'R&B / Soul', desc: 'Suave e encorpado: grave redondo, agudo sedoso, voz na frente',
+    s: {
+      eq: { low: 2, lowMid: -1, highMid: 0, high: 1.5 },
+      comp: { on: true, threshold: -20, ratio: 2, attack: 40, release: 250, makeup: 1 },
+      saturation: 0.15,
+      limiter: { on: true, gain: 3, ceiling: -1, release: 100 },
+      stereo: stereo(1.1, 110),
+    },
+  },
+  {
+    id: 'vintage', name: 'Anos 60 / Motown', desc: 'Som de rádio antigo: médios na frente, agudo e grave contidos, estéreo estreito e saturação de fita',
+    s: {
+      eq: { low: -1, lowMid: 1.5, highMid: 1.5, high: -2 },
+      comp: { on: true, threshold: -20, ratio: 3, attack: 20, release: 300, makeup: 1.5 },
+      saturation: 0.4,
+      limiter: { on: true, gain: 5, ceiling: -1, release: 150 },
+      stereo: stereo(0.8),
+    },
+  },
+  {
+    id: 'samba', name: 'Samba / Pagode', desc: 'Percussão viva e brilhante, cavaco presente, grave do surdo firme',
+    s: {
+      eq: { low: 1.5, lowMid: -1, highMid: 1, high: 2 },
+      comp: { on: true, threshold: -18, ratio: 2, attack: 25, release: 150, makeup: 1 },
+      saturation: 0.15,
+      limiter: { on: true, gain: 2.5, ceiling: -1, release: 80 },
+      stereo: stereo(1.1, 120),
+    },
+  },
+  {
+    id: 'sertanejo', name: 'Sertanejo', desc: 'Moderno e alto: voz e violão na frente, grave cheio, brilho de rádio',
+    s: {
+      eq: { low: 1.5, lowMid: -1, highMid: 1.5, high: 1.5 },
+      comp: { on: true, threshold: -18, ratio: 2.5, attack: 30, release: 180, makeup: 1 },
+      saturation: 0.2,
+      limiter: { on: true, gain: 4, ceiling: -1, release: 70 },
+      stereo: stereo(1.1, 120),
+    },
+  },
+  {
+    id: 'funk-carioca', name: 'Funk Carioca', desc: 'Grave gigante segurado pelo multibanda (em mono), batida estalando, muito alto',
+    s: {
+      eq: { low: 4, lowMid: -2, highMid: 1, high: 1.5 },
+      comp: { on: true, threshold: -16, ratio: 3, attack: 10, release: 100, makeup: 1.5 },
+      saturation: 0.4,
+      limiter: { on: true, gain: 6, ceiling: -1, release: 40 },
+      multiband: tightLows(-20, 3, 130),
+      stereo: stereo(1.05, 120),
+    },
+  },
+  {
+    id: 'axe', name: 'Axé', desc: 'Festivo: percussão e metais brilhantes, estéreo aberto, alto',
+    s: {
+      eq: { low: 1.5, lowMid: -1, highMid: 1.5, high: 2.5 },
+      comp: { on: true, threshold: -17, ratio: 2.5, attack: 20, release: 120, makeup: 1 },
+      saturation: 0.2,
+      limiter: { on: true, gain: 4, ceiling: -1, release: 60 },
+      stereo: stereo(1.15, 120),
+    },
+  },
+  {
+    id: 'forro', name: 'Forró / Baião', desc: 'Sanfona e zabumba na frente: médios presentes, grave da zabumba firme',
+    s: {
+      eq: { low: 1, lowMid: 0, highMid: 2, high: 1 },
+      comp: { on: true, threshold: -19, ratio: 2, attack: 25, release: 180, makeup: 1 },
+      saturation: 0.15,
+      limiter: { on: true, gain: 2.5, ceiling: -1, release: 90 },
+      stereo: stereo(1.05, 120),
+    },
+  },
+  {
+    id: 'latin', name: 'Salsa / Cumbia', desc: 'Metais e percussão brilhantes, piano claro, compressão leve que deixa o swing respirar',
+    s: {
+      eq: { low: 1, lowMid: -1, highMid: 1.5, high: 2 },
+      comp: { on: true, threshold: -18, ratio: 2, attack: 20, release: 150, makeup: 1 },
+      saturation: 0.15,
+      limiter: { on: true, gain: 3, ceiling: -1, release: 80 },
+      stereo: stereo(1.15, 120),
+    },
+  },
+  {
+    id: 'reggaeton', name: 'Reggaeton', desc: 'Dembow pesado: grave forte e em mono (multibanda segurando), caixa na cara, muito alto',
+    s: {
+      eq: { low: 3.5, lowMid: -1.5, highMid: 1, high: 2 },
+      comp: { on: true, threshold: -16, ratio: 3, attack: 15, release: 100, makeup: 1.5 },
+      saturation: 0.3,
+      limiter: { on: true, gain: 5.5, ceiling: -1, release: 40 },
+      multiband: tightLows(-20, 2.5, 120),
+      stereo: stereo(1.1, 110),
+    },
+  },
+  {
+    id: 'bachata', name: 'Bachata / Bolero', desc: 'Romântico: quente, violões e voz em primeiro plano, dinâmica preservada',
+    s: {
+      eq: { low: 1, lowMid: 0, highMid: 0.5, high: 1.5 },
+      comp: { on: true, threshold: -20, ratio: 1.8, attack: 40, release: 250, makeup: 0.5 },
+      saturation: 0.1,
+      limiter: { on: true, gain: 2, ceiling: -1, release: 120 },
+      stereo: stereo(1.15),
+    },
+  },
+  {
+    id: 'afro', name: 'Afrobeats / Amapiano', desc: 'Log drum e bumbo encorpados (grave em mono), percussão aberta e larga',
+    s: {
+      eq: { low: 3, lowMid: -1.5, highMid: 0.5, high: 2 },
+      comp: { on: true, threshold: -18, ratio: 2.5, attack: 25, release: 150, makeup: 1 },
+      saturation: 0.25,
+      limiter: { on: true, gain: 4.5, ceiling: -1, release: 60 },
+      multiband: tightLows(-21, 2.5, 120),
+      stereo: stereo(1.2, 120),
+    },
+  },
+  {
+    id: 'house', name: 'House / Techno', desc: 'Bumbo 4x4 firme e em mono, médio-grave limpo, agudos abertos para a pista',
+    s: {
+      eq: { low: 2.5, lowMid: -1.5, highMid: 0, high: 2 },
+      comp: { on: true, threshold: -16, ratio: 3, attack: 10, release: 80, makeup: 1.5 },
+      saturation: 0.25,
+      limiter: { on: true, gain: 5, ceiling: -1, release: 40 },
+      multiband: tightLows(-20, 2.5, 140),
+      stereo: stereo(1.1, 130),
+    },
+  },
+  {
+    id: 'dnb', name: 'Drum and Bass / Dubstep', desc: 'Sub-grave enorme e controlado, caixa estalando, compressão rápida, o mais alto possível',
+    s: {
+      eq: { low: 3, lowMid: -2, highMid: 1, high: 2.5 },
+      comp: { on: true, threshold: -15, ratio: 3, attack: 5, release: 60, makeup: 2 },
+      saturation: 0.35,
+      limiter: { on: true, gain: 6, ceiling: -1, release: 30 },
+      multiband: tightLows(-22, 3, 120),
+      stereo: stereo(1.2, 120),
+    },
+  },
+  {
+    id: 'synthwave', name: 'Synthwave / Anos 80', desc: 'Largo e brilhante como nos anos 80: estéreo bem aberto, agudo cintilante, saturação leve',
+    s: {
+      eq: { low: 1.5, lowMid: -1, highMid: 0.5, high: 2.5 },
+      comp: { on: true, threshold: -18, ratio: 2.5, attack: 30, release: 200, makeup: 1 },
+      saturation: 0.25,
+      limiter: { on: true, gain: 3.5, ceiling: -1, release: 80 },
+      stereo: stereo(1.35, 120),
+    },
+  },
+  {
+    id: 'country', name: 'Country / Folk', desc: 'Violão e voz naturais: médios claros, compressão suave, pouca saturação',
+    s: {
+      eq: { low: 0.5, lowMid: -1, highMid: 1.5, high: 1.5 },
+      comp: { on: true, threshold: -20, ratio: 1.8, attack: 40, release: 250, makeup: 0.5 },
+      saturation: 0.1,
+      limiter: { on: true, gain: 1.5, ceiling: -1, release: 120 },
+      stereo: stereo(1.1),
+    },
+  },
+  {
+    id: 'ambient', name: 'Ambient', desc: 'Espaçoso: estéreo bem largo, sem compressão, só o limitador nos picos',
+    s: {
+      eq: { low: 0, lowMid: -1, highMid: -0.5, high: 1 },
+      comp: { ...DEFAULT_MASTER.comp, on: false },
+      saturation: 0,
+      limiter: { on: true, gain: 0, ceiling: -1, release: 300 },
+      stereo: stereo(1.4),
+    },
+  },
+  {
+    id: 'podcast', name: 'Voz / Podcast', desc: 'Fala clara e constante: corta o grave embolado, realça a inteligibilidade, compressão firme',
+    s: {
+      eq: { low: -2, lowMid: -1, highMid: 2.5, high: 1 },
+      comp: { on: true, threshold: -24, ratio: 3, attack: 10, release: 150, makeup: 3 },
+      saturation: 0,
+      limiter: { on: true, gain: 2, ceiling: -1, release: 100 },
+      stereo: stereo(1, 150),
+    },
+  },
+];
+
+/** Presets agrupados por gênero (para o seletor do painel do master). */
+export const MASTER_GROUPS: { group: string; ids: string[] }[] = [
+  { group: 'Básicos', ids: ['neutral', 'pop', 'acoustic', 'electronic', 'lofi'] },
+  { group: 'Rock e pesado', ids: ['rock', 'metal', 'punk', 'indie', 'psych'] },
+  { group: 'Groove e urbano', ids: ['hiphop', 'trap', 'funk', 'rnb', 'reggae', 'vintage'] },
+  { group: 'Brasileiros', ids: ['mpb', 'samba', 'sertanejo', 'funk-carioca', 'axe', 'forro'] },
+  { group: 'Latinos e africanos', ids: ['latin', 'reggaeton', 'bachata', 'afro'] },
+  { group: 'Eletrônicos', ids: ['house', 'dnb', 'synthwave'] },
+  { group: 'Acústicos e outros', ids: ['jazz', 'orchestral', 'country', 'ambient', 'podcast'] },
 ];
 
 const db = (v: number) => 10 ** (v / 20);

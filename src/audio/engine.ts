@@ -1,8 +1,7 @@
 import { useStore } from '../store';
 import { BEATS_PER_BAR, MasterSettings, Note, Project, Region, Track, freezeKey, projectEnd, regionGainAt, regionLen, uid } from '../types';
-import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments';
+import { PRESETS, Voice, loadInstruments, playDrum, startVoice, triggerNote } from './instruments';
 import { loadDrumSamples, warmDrumKit } from './drumKit';
-import { loadAllSampleSets } from './sampler';
 import { DEFAULT_MASTER, ensureWorklets, masterOf } from './master';
 import { Analysis, analyze } from './analysis';
 import { ExportReport, encodeExport, finishMaster } from './export';
@@ -61,7 +60,7 @@ class Engine {
       this.refTrim = this.ctx.createGain();
       this.refTrim.connect(this.refOut).connect(this.ctx.destination);
       warmDrumKit(this.ctx);
-      void loadAllSampleSets(this.ctx);
+      void loadInstruments(this.ctx, useStore.getState().project.tracks.map((t) => t.instrument));
       this.mixer = new Mixer(this.ctx, this.mixOut, (id) => this.buffers.get(id));
       const p = useStore.getState().project;
       this.bpm = p.bpm;
@@ -83,6 +82,8 @@ class Engine {
       useStore.subscribe((s, prev) => {
         const a = s.project, b = prev.project;
         if (a.bpm !== b.bpm) this.retime(a.bpm);
+        // instrumento novo numa trilha: carrega as gravações dele
+        if (a.tracks !== b.tracks) void loadInstruments(this.ctx, a.tracks.map((t) => t.instrument));
         if (a.tracks !== b.tracks || a.bpm !== b.bpm || a.sends !== b.sends || a.key !== b.key) {
           this.mixer.sync(a);
           // tocando: reagenda a automação (curva editada, trilha ligada/desligada, andamento)
@@ -310,7 +311,7 @@ class Engine {
       const track = tracks.get(r.trackId);
       const strip = this.mixer.strips.get(r.trackId);
       if (!track || !strip || this.mixer.frozenOf(project, track)) continue;
-      for (const n of playedNotes(r, track)) {
+      for (const n of playedNotes(r, track, this.bpm)) {
         const abs = r.start + n.start;
         if (abs < from || abs >= until || n.start >= r.length) continue;
         const pm = this.punchMute;
@@ -817,8 +818,11 @@ class Engine {
     this.preview = null;
   }
 
-  previewNotes(kind: string, instrument: string, notes: Omit<Note, 'id'>[]) {
+  async previewNotes(kind: string, instrument: string, notes: Omit<Note, 'id'>[]) {
     this.ensure();
+    this.stopPreview();
+    // a primeira prévia de um instrumento espera as gravações dele carregarem (não toca o sintetizado)
+    await loadInstruments(this.ctx, [instrument]);
     this.stopPreview();
     const g = this.ctx.createGain();
     g.gain.value = 0.8;
@@ -998,7 +1002,7 @@ function scheduleAll(off: BaseAudioContext, mixer: Mixer, project: Project, buff
     if (!track || !strip || frozen.has(r.trackId)) continue;
     const buf = r.bufferId && buffers.get(r.bufferId);
     if (buf) playAudioRegion(off, strip.input, r, buf, r.start * spb);
-    for (const n of playedNotes(r, track)) {
+    for (const n of playedNotes(r, track, project.bpm)) {
       if (n.start >= r.length) continue;
       const dur = Math.min(n.duration, r.length - n.start) * spb;
       triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, (r.start + n.start) * spb, dur, n.velocity);
@@ -1023,7 +1027,7 @@ export async function renderFrozen(project: Project, trackId: string, buffers: M
   const end = Math.max(...regions.map((r) => r.start + regionLen(r, project.bpm)));
   const length = Math.ceil((end * spb + FREEZE_TAIL) * sampleRate);
   const off = new OfflineAudioContext(2, length, sampleRate);
-  await Promise.all([loadDrumSamples(off), loadAllSampleSets(off), ensureWorklets(off).catch(() => {})]);
+  await Promise.all([loadDrumSamples(off), loadInstruments(off, project.tracks.map((t) => t.instrument)), ensureWorklets(off).catch(() => {})]);
   // só esta trilha, ao vivo (sem o congelamento antigo), audível e indo para o master
   const solo: Project = {
     ...project,
@@ -1062,7 +1066,7 @@ async function renderMix(project: Project, buffers: Map<string, AudioBuffer>, ma
   const spb = 60 / project.bpm;
   const seconds = projectEnd(project) * spb + 3;
   const off = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
-  await Promise.all([loadDrumSamples(off), loadAllSampleSets(off), ensureWorklets(off).catch(() => {})]);
+  await Promise.all([loadDrumSamples(off), loadInstruments(off, project.tracks.map((t) => t.instrument)), ensureWorklets(off).catch(() => {})]);
   const mixer = new Mixer(off, off.destination, (id) => buffers.get(id), false);
   mixer.sync(project);
   mixer.automate(project, 0, 0, (b) => b * spb);

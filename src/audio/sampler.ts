@@ -1,4 +1,5 @@
-// Instrumentos melódicos tocados a partir de gravações: as reais (piano, baixo, cordas, órgão de tubos —
+// Instrumentos melódicos tocados a partir de gravações: as reais (piano, baixo, cordas, órgão de tubos,
+// guitarra, contrabaixo, sax, trompete, trombone, flauta, marimba —
 // pacotes gerados por scripts/build-instruments.cjs, carregados sob demanda) e as calculadas por modelos
 // físicos (pianos elétricos, clavinete, sino — ver modeled.ts). Cada nota tocada usa a gravação mais
 // próxima, transposta, na intensidade que corresponde à força do toque.
@@ -6,7 +7,7 @@ import type { Voice } from './instruments';
 import { MODELED_SETS, ModeledSet, renderModel } from './modeled';
 import type { Zone } from './samples/piano.js';
 
-type RecordedSet = 'piano' | 'bass' | 'strings' | 'pipe';
+type RecordedSet = 'piano' | 'bass' | 'strings' | 'pipe' | 'guitar' | 'dbass' | 'sax' | 'trumpet' | 'trombone' | 'flute' | 'marimba';
 export type SampleSet = RecordedSet | ModeledSet;
 
 /** Como um timbre usa o conjunto gravado. */
@@ -31,6 +32,13 @@ const LOADERS: Record<RecordedSet, () => Promise<{ manifest: Zone[]; data: strin
   bass: () => import('./samples/bass.js'),
   strings: () => import('./samples/strings.js'),
   pipe: () => import('./samples/pipe.js'),
+  guitar: () => import('./samples/guitar.js'),
+  dbass: () => import('./samples/dbass.js'),
+  sax: () => import('./samples/sax.js'),
+  trumpet: () => import('./samples/trumpet.js'),
+  trombone: () => import('./samples/trombone.js'),
+  flute: () => import('./samples/flute.js'),
+  marimba: () => import('./samples/marimba.js'),
 };
 
 /** Uma gravação decodificada: o áudio, a nota em que foi gravada e o trecho que repete (se sustenta). */
@@ -104,8 +112,8 @@ export function loadSampleSet(ctx: BaseAudioContext, name: SampleSet): Promise<v
   return loading[name]!;
 }
 
-export const loadAllSampleSets = (ctx: BaseAudioContext) =>
-  Promise.all([...(Object.keys(LOADERS) as SampleSet[]), ...MODELED_SETS].map((n) => loadSampleSet(ctx, n)));
+/** Carrega (uma vez) os conjuntos pedidos; os que já carregaram voltam na hora. */
+export const loadSampleSets = (ctx: BaseAudioContext, names: SampleSet[]) => Promise.all([...new Set(names)].map((n) => loadSampleSet(ctx, n)));
 
 const lastTake = new Map<string, number>();
 

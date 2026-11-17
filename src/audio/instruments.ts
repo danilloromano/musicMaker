@@ -1,7 +1,7 @@
 // Instrumentos virtuais: sintetizadores subtrativos e bateria sintetizada.
 // Tudo recebe um BaseAudioContext para funcionar igual em tempo real e na exportação offline.
 import { playKitPiece } from './drumKit';
-import { SampleOpts, startSampleVoice } from './sampler';
+import { SampleOpts, SampleSet, loadSampleSets, startSampleVoice } from './sampler';
 import { TonewheelOpts, startTonewheelVoice } from './organ';
 import { driveCurve, modulate, syncedLfo } from './fxutil';
 
@@ -251,6 +251,48 @@ export const PRESETS: Record<string, SynthPreset> = {
     // naipe de cordas gravado (violoncelos, violas e violinos)
     sample: { set: 'strings', gain: 0.62, release: 0.6 },
   },
+  // ---------- Guitarras ----------
+  guitar: {
+    name: 'Guitarra Limpa', group: 'Guitarras',
+    oscs: [
+      { type: 'sawtooth', octave: 0, detune: 0, gain: 0.5 },
+      { type: 'triangle', octave: 0, detune: 4, gain: 0.4 },
+    ],
+    a: 0.002, d: 0.8, s: 0.2, r: 0.2, cutoff: 1800, q: 1, envAmt: 2500, fDecay: 0.2, gain: 0.3,
+    // guitarra Epiphone gravada em linha (fica ótima no rack de amp e pedais)
+    sample: { set: 'guitar', gain: 0.8, release: 0.18 },
+  },
+  // ---------- Metais e sopros ----------
+  trumpet: {
+    name: 'Trompete', group: 'Metais e sopros',
+    oscs: [{ type: 'sawtooth', octave: 0, detune: 0, gain: 0.6 }],
+    a: 0.03, d: 0.2, s: 0.8, r: 0.15, cutoff: 1500, q: 1, envAmt: 2500, fDecay: 0.1, gain: 0.25,
+    sample: { set: 'trumpet', gain: 0.9, release: 0.15 },
+  },
+  trombone: {
+    name: 'Trombone', group: 'Metais e sopros',
+    oscs: [{ type: 'sawtooth', octave: 0, detune: 0, gain: 0.6 }],
+    a: 0.04, d: 0.2, s: 0.8, r: 0.18, cutoff: 1000, q: 1, envAmt: 1800, fDecay: 0.12, gain: 0.25,
+    sample: { set: 'trombone', gain: 0.75, release: 0.18 },
+  },
+  sax: {
+    name: 'Sax Alto', group: 'Metais e sopros',
+    oscs: [
+      { type: 'sawtooth', octave: 0, detune: 0, gain: 0.4 },
+      { type: 'square', octave: 0, detune: 3, gain: 0.3 },
+    ],
+    a: 0.03, d: 0.2, s: 0.8, r: 0.12, cutoff: 1600, q: 2, envAmt: 1500, fDecay: 0.15, gain: 0.25,
+    sample: { set: 'sax', gain: 0.27, release: 0.12 },
+  },
+  flute: {
+    name: 'Flauta', group: 'Metais e sopros',
+    oscs: [
+      { type: 'sine', octave: 0, detune: 0, gain: 0.7 },
+      { type: 'triangle', octave: 1, detune: 0, gain: 0.1 },
+    ],
+    a: 0.05, d: 0.1, s: 0.9, r: 0.2, cutoff: 4000, q: 0.5, envAmt: 0, fDecay: 0.1, gain: 0.3,
+    sample: { set: 'flute', gain: 1.7, release: 0.2 },
+  },
   // ---------- Baixos ----------
   ebass: {
     name: 'Baixo Elétrico', group: 'Baixos',
@@ -260,6 +302,16 @@ export const PRESETS: Record<string, SynthPreset> = {
     ],
     a: 0.004, d: 0.6, s: 0.5, r: 0.08, cutoff: 700, q: 1, envAmt: 1500, fDecay: 0.15, gain: 0.55,
     sample: { set: 'bass', gain: 0.9, release: 0.08 },
+  },
+  dbass: {
+    name: 'Contrabaixo Acústico', group: 'Baixos',
+    oscs: [
+      { type: 'sine', octave: 0, detune: 0, gain: 0.7 },
+      { type: 'triangle', octave: 0, detune: 0, gain: 0.3 },
+    ],
+    a: 0.004, d: 0.8, s: 0.1, r: 0.12, cutoff: 600, q: 1, envAmt: 900, fDecay: 0.1, gain: 0.6,
+    // contrabaixo de 1958 tocado de dedo (pizzicato): o som do jazz, da bossa e do bolero
+    sample: { set: 'dbass', gain: 0.56, release: 0.15 },
   },
   bass: {
     name: 'Baixo Synth', group: 'Baixos',
@@ -290,17 +342,64 @@ export const PRESETS: Record<string, SynthPreset> = {
     // sino modelado (modos de vibração de um sino de verdade); continua soando um pouco depois de soltar
     sample: { set: 'bell', gain: 0.4, release: 1.5 },
   },
+  marimba: {
+    name: 'Marimba', group: 'Teclados e synths',
+    oscs: [
+      { type: 'sine', octave: 0, detune: 0, gain: 0.8 },
+      { type: 'sine', octave: 2, detune: 0, gain: 0.15 },
+    ],
+    a: 0.002, d: 0.6, s: 0, r: 0.5, cutoff: 5000, q: 0.5, envAmt: 0, fDecay: 0.1, gain: 0.45,
+    sample: { set: 'marimba', gain: 0.9, release: 0.8 },
+  },
 };
 
+/** Peças da bateria e da percussão (números do General MIDI), de cima para baixo como no Piano Roll. */
+/** Conjuntos de gravações que os instrumentos dados usam. */
+const setsOf = (instruments: string[]) =>
+  instruments.map((i) => PRESETS[i]?.sample?.set).filter((x): x is SampleSet => !!x);
+
+/**
+ * Carrega as gravações dos instrumentos dados (cada conjunto uma vez só, e só os que a música usa: decodificar
+ * todos de uma vez gastaria memória à toa). Até carregar, o instrumento toca o timbre sintetizado de reserva.
+ */
+export const loadInstruments = (ctx: BaseAudioContext, instruments: string[]) => loadSampleSets(ctx, setsOf(instruments));
+
 export const DRUM_MAP = [
+  // percussão
+  { pitch: 81, name: 'Triângulo aberto' },
+  { pitch: 80, name: 'Triângulo abafado' },
+  { pitch: 79, name: 'Cuíca aguda' },
+  { pitch: 78, name: 'Cuíca grave' },
+  { pitch: 77, name: 'Woodblock grave' },
+  { pitch: 76, name: 'Woodblock agudo' },
+  { pitch: 75, name: 'Claves' },
+  { pitch: 74, name: 'Guiro longo' },
+  { pitch: 73, name: 'Guiro curto' },
+  { pitch: 70, name: 'Shaker / Ganzá' },
+  { pitch: 69, name: 'Cabasa' },
+  { pitch: 54, name: 'Pandeirola' },
+  { pitch: 68, name: 'Agogô grave' },
+  { pitch: 67, name: 'Agogô agudo' },
+  { pitch: 66, name: 'Timbal grave' },
+  { pitch: 65, name: 'Timbal agudo' },
+  { pitch: 64, name: 'Tumba' },
+  { pitch: 63, name: 'Conga aberta' },
+  { pitch: 62, name: 'Conga abafada' },
+  { pitch: 61, name: 'Bongô grave' },
+  { pitch: 60, name: 'Bongô agudo' },
+  // bateria
   { pitch: 49, name: 'Prato' },
+  { pitch: 53, name: 'Cúpula do ride' },
+  { pitch: 51, name: 'Condução (ride)' },
   { pitch: 46, name: 'Chimbal aberto' },
   { pitch: 42, name: 'Chimbal fechado' },
+  { pitch: 44, name: 'Chimbal no pé' },
   { pitch: 56, name: 'Cowbell' },
   { pitch: 50, name: 'Tom agudo' },
   { pitch: 48, name: 'Tom médio' },
   { pitch: 45, name: 'Tom grave' },
   { pitch: 39, name: 'Palmas' },
+  { pitch: 37, name: 'Aro (cross-stick)' },
   { pitch: 38, name: 'Caixa' },
   { pitch: 36, name: 'Bumbo' },
 ];

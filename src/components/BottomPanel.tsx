@@ -6,7 +6,7 @@ import { BottomTab, pref, savePref, useStore } from '../store';
 import { Track } from '../types';
 import { AmpRack } from './AmpRack';
 import { AudioEditor } from './AudioEditor';
-import { ArpCard, CompEditor, EqEditor, SendsCard, SidechainCard } from './TrackFxPanels';
+import { ArpCard, CompEditor, EqEditor, FeelCard, SendsCard, SidechainCard } from './TrackFxPanels';
 import { MasterPanel } from './MasterPanel';
 import { MixerPanel } from './MixerPanel';
 import { PianoRoll } from './PianoRoll';
@@ -155,6 +155,7 @@ function Fx({ track: t }: { track: Track }) {
           ))}
         </div>
       )}
+      {(t.kind === 'instrument' || t.kind === 'drums') && <FeelCard track={t} />}
       {t.kind === 'instrument' && <ArpCard track={t} />}
       <EqEditor track={t} />
       <CompEditor track={t} />

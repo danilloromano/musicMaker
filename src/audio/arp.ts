@@ -1,6 +1,7 @@
 // Arpejador: transforma as notas seguradas (um acorde) numa sequência de notas no ritmo da música.
 // É um efeito da trilha: as notas gravadas continuam sendo o acorde, e o arpejo é gerado ao tocar.
 import { Arp, ArpMode, Note, Region, Track } from '../types';
+import { applyFeel, feelOf } from './feel';
 
 export const DEFAULT_ARP: Arp = { on: true, mode: 'up', rate: 0.25, octaves: 1, gate: 0.6 };
 
@@ -80,15 +81,21 @@ export function arpeggiate(notes: Note[], arp: Arp, length: number): Note[] {
 
 const cache = new WeakMap<Note[], { key: string; notes: Note[] }>();
 
-/** As notas que a região toca de fato: arpejadas se a trilha (de instrumento) tem o arpejador ligado. */
-export function playedNotes(r: Region, t: Track): Note[] {
+/**
+ * As notas que a região toca de fato: arpejadas se a trilha (de instrumento) tem o arpejador ligado, e com
+ * o toque humano da trilha (ver feel.ts) no andamento `bpm`.
+ */
+export function playedNotes(r: Region, t: Track, bpm: number): Note[] {
   const notes = r.notes ?? [];
-  const arp = t.arp;
-  if (!arp?.on || t.kind !== 'instrument' || !notes.length) return notes;
-  const key = `${arp.mode}|${arp.rate}|${arp.octaves}|${arp.gate}|${r.length}`;
+  if (!notes.length) return notes;
+  const arp = t.arp?.on && t.kind === 'instrument' ? t.arp : null;
+  const feel = feelOf(t);
+  if (!arp && !feel) return notes;
+  const key = `${arp ? `${arp.mode}|${arp.rate}|${arp.octaves}|${arp.gate}` : '-'}|${r.length}|${feel}|${bpm}|${t.kind}|${r.id}`;
   const hit = cache.get(notes);
   if (hit?.key === key) return hit.notes;
-  const out = arpeggiate(notes, arp, r.length);
+  const base = arp ? arpeggiate(notes, arp, r.length) : notes;
+  const out = applyFeel(base, { level: feel, drums: t.kind === 'drums', bpm, length: r.length, salt: r.id });
   cache.set(notes, { key, notes: out });
   return out;
 }
