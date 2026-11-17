@@ -1,6 +1,6 @@
 import { engine } from '../audio/engine';
 import { DRUM_MAP, presetGroups } from '../audio/instruments';
-import { LOOPS, Loop, addLoop } from '../audio/loops';
+import { LOOPS, Loop, STYLES, STYLE_GROUPS, STYLE_PARTS, addLoop, addStyleBand } from '../audio/loops';
 import { useEffect, useState } from 'react';
 import { BottomTab, pref, savePref, useStore } from '../store';
 import { Track } from '../types';
@@ -99,15 +99,53 @@ export function BottomPanel() {
 
 // ---------- Loops ----------
 
+/**
+ * Loops organizados por estilo: à esquerda os estilos (os mesmos para as quatro partes), à direita a
+ * bateria, o baixo, os acordes e a melodia do estilo escolhido — que combinam entre si.
+ */
 function Loops() {
-  const cats = [...new Set(LOOPS.map((l) => l.category))];
+  const [styleId, setStyleId] = useState(() => pref('mm.loopStyle') ?? STYLES[0].id);
+  const style = STYLES.find((x) => x.id === styleId) ?? STYLES[0];
+  const choose = (id: string) => {
+    setStyleId(id);
+    savePref('mm.loopStyle', id);
+  };
   const add = (l: Loop) => addLoop(l, engine.getBeat(), useStore.getState().selectedTrackId ?? undefined);
   return (
-    <div className="loops">
-      {cats.map((c) => (
-        <div key={c} className="loop-cat">
-          <h4>{c}</h4>
-          {LOOPS.filter((l) => l.category === c).map((l) => (
+    <div className="loops by-style">
+      <nav className="style-list">
+        {STYLE_GROUPS.map((g) => (
+          <div key={g} className="style-group">
+            <small>{g}</small>
+            {STYLES.filter((x) => x.group === g).map((x) => (
+              <button key={x.id} className={x.id === style.id ? 'on' : ''} onClick={() => choose(x.id)}>{x.name}</button>
+            ))}
+          </div>
+        ))}
+      </nav>
+      <div className="style-body">
+        <div className="style-head">
+          <h3>{style.name}</h3>
+          <button className="primary" title="Bateria, baixo, acordes e melodia deste estilo, cada um numa trilha nova, no compasso do cursor" onClick={() => addStyleBand(style, engine.getBeat())}>
+            ＋ Banda completa
+          </button>
+          <span className="hint">As quatro partes estão no mesmo tom e combinam entre si. Arraste um loop para a timeline ou use ＋.</span>
+        </div>
+        <div className="style-parts">
+          {STYLE_PARTS.map((part) => (
+            <LoopColumn key={part.key} title={part.category} loops={style[part.key].map((id) => LOOPS.find((l) => l.id === id)!)} add={add} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoopColumn({ title, loops, add }: { title: string; loops: Loop[]; add: (l: Loop) => void }) {
+  return (
+    <div className="loop-cat">
+      <h4>{title}</h4>
+      {loops.map((l, i) => (
             <div
               key={l.id}
               className="loop"
@@ -119,12 +157,10 @@ function Loops() {
               }}
             >
               <button title="Ouvir" onClick={() => engine.previewNotes(l.kind, l.instrument, l.notes)}>▶</button>
-              <span className="loop-name">{l.name}</span>
+              <span className="loop-name">{l.name}{i > 0 && <em> · variação</em>}</span>
               <small>{l.bars} comp.</small>
               <button title="Adicionar na posição do cursor" onClick={() => add(l)}>＋</button>
             </div>
-          ))}
-        </div>
       ))}
     </div>
   );

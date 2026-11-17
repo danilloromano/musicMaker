@@ -832,3 +832,17 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 @media (max-width: 1200px) { .ab-body { grid-template-columns: 1fr 1fr; } }
 .feel-card { min-width: 220px; max-width: 280px; }
 .feel-card .hint { white-space: normal; margin-left: 0; display: block; margin-top: 8px; line-height: 1.4; }
+/* Loops por estilo */
+.loops.by-style { padding: 0; gap: 0; align-items: stretch; overflow: hidden; }
+.style-list { flex: none; width: 196px; overflow-y: auto; padding: 10px 8px 12px 12px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.style-group { display: flex; flex-direction: column; gap: 2px; }
+.style-group small { color: var(--dim); font: 600 9px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; margin: 2px 0 2px 2px; }
+.style-group button { text-align: left; padding: 4px 8px; border-color: transparent; background: transparent; font-size: 12.5px; }
+.style-group button.on { border-color: var(--accent); color: var(--accent); }
+.style-body { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.style-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex: none; min-width: 0; }
+.style-head h3 { margin: 0; font-size: 15px; white-space: nowrap; }
+.style-head .hint { margin-left: 0; min-width: 0; }
+.style-parts { flex: 1; min-height: 0; display: flex; gap: 16px; padding: 10px 14px; overflow: auto; align-items: flex-start; }
+.style-parts .loop-cat { min-width: 180px; }
+.loop-name em { color: var(--dim); font-style: normal; font-size: 11px; }

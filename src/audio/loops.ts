@@ -558,6 +558,11 @@ export const LOOPS: Loop[] = [
   ])),
   mel('b-synthwave', 'Baixo Synthwave', 'Baixo', 'bass', 4, line([33, 29, 36, 31],
     Array.from({ length: 8 }, (_, k) => [k / 2, k === 7 ? 7 : 0, 0.4] as [number, number, number]))),
+  // Para completar os estilos (todo estilo tem bateria, baixo, acordes e melodia)
+  mel('b-ballad', 'Baixo Balada', 'Baixo', 'ebass', 4, line([36, 31, 33, 29], [[0, 0, 1.9], [2, 7, 0.9], [3, 0, 0.9]]), 16, 85),
+  mel('b-lofi', 'Contrabaixo Lo-fi', 'Baixo', 'dbass', 4, line([41, 40, 38, 36], [[0, 0, 1.4], [1.5, 7, 0.4], [2.5, 0, 1.4]]), 16, 85),
+  // Techno: baixo "rolante" em semicolcheias entre os bumbos, num pedal de Lá
+  mel('b-techno', 'Baixo Techno', 'Baixo', 'bass', 1, [0, 1, 2, 3].flatMap((b) => [[b + 0.25, 33, 0.18], [b + 0.5, 33, 0.18], [b + 0.75, 45, 0.15]] as [number, number, number][]), 4, 90),
 
   // Psicodélico anos 70 (em mi dórico: a sexta maior, Dó#, dá o colorido "viajante")
   mel('b-psych', 'Baixo Psicodélico', 'Baixo', 'ebass', 2, [
@@ -666,6 +671,18 @@ export const LOOPS: Loop[] = [
     [0, 0.2], [0.75, 0.2], [1.5, 0.2], [2.5, 0.2], [3, 0.2],
   ]), 16, 85),
   mel('c-synthwave', 'Pad Synthwave', 'Acordes', 'pad', 4, comp([[57, 60, 64, 69], [57, 60, 65, 69], [55, 60, 64, 67], [55, 59, 62, 67]], [[0, 3.9]]), 16, 75),
+  // Para completar os estilos
+  // Hip-hop (boom bap): Cm9 e Fm9 sobre o pedal de Dó do baixo
+  mel('c-hiphop', 'Piano Boom Bap', 'Acordes', 'felt', 4, comp([[58, 62, 63, 67], [58, 62, 63, 67], [56, 60, 63, 67], [56, 60, 63, 67]], [[0, 1.9], [2.5, 1.4]]), 16, 80),
+  mel('c-dembow', 'Synth Reggaeton', 'Acordes', 'pluck', 4, comp([[57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]], [
+    [0, 0.3], [0.75, 0.3], [1.5, 0.3], [2, 0.3], [2.75, 0.3], [3.5, 0.3],
+  ]), 16, 85),
+  // Metal: power chords em galope (E5 E5 G5 F#5)
+  mel('c-metal', 'Guitarra Metal', 'Acordes', 'guitar', 4, comp([[40, 47, 52], [40, 47, 52], [43, 50, 55], [42, 49, 54]], [
+    [0, 0.4], [0.5, 0.2], [0.75, 0.2], [1, 0.4], [1.5, 0.2], [1.75, 0.2], [2, 0.4], [2.5, 0.2], [2.75, 0.2], [3, 0.4], [3.5, 0.2], [3.75, 0.2],
+  ]), 16, 100),
+  mel('c-techno', 'Stabs Techno', 'Acordes', 'pluck', 4, comp([[57, 60, 64, 67], [57, 60, 64, 67], [57, 60, 64, 67], [57, 60, 64, 67]], [[0.5, 0.25], [1.75, 0.25], [3, 0.25]]), 16, 80),
+  mel('c-dnb', 'Pad Drum and Bass', 'Acordes', 'pad', 4, comp([[57, 60, 64, 67], [57, 60, 64, 67], [55, 60, 65, 67], [55, 59, 62, 64]], [[0, 3.9]]), 16, 75),
   mel('c-pad', 'Pad Atmosférico', 'Acordes', 'pad', 4, chords(MINOR.map((c) => c.map((p) => p - 12).concat(c[2]))), 16, 80),
   mel('c-strings', 'Cordas Longas', 'Acordes', 'strings', 4, chords(POP), 16, 80),
 
@@ -889,6 +906,36 @@ export const LOOPS: Loop[] = [
     [8, 79, 1.5], [9.5, 76, 0.5], [10, 72, 0.5], [10.5, 76, 1.5],
     [12, 74, 1.5], [13.5, 71, 0.5], [14, 74, 0.5], [14.5, 79, 1.5],
   ]),
+  // Para completar os estilos
+  mel('m-hiphop', 'Melodia Boom Bap', 'Melodia', 'tine', 4, [
+    [0.5, 75, 0.5], [1, 79, 1], [2.5, 77, 0.5], [3, 75, 1],
+    [4.5, 72, 0.5], [5, 75, 1.5], [7, 70, 1],
+    [8.5, 77, 0.5], [9, 80, 1], [10.5, 79, 0.5], [11, 77, 1],
+    [12.5, 75, 0.5], [13, 72, 1.5], [15, 70, 1],
+  ], 16, 90),
+  mel('m-dembow', 'Melodia Reggaeton', 'Melodia', 'lead', 4, [
+    [0, 76, 0.5], [0.75, 76, 0.25], [1, 74, 0.5], [1.5, 72, 0.5], [2, 69, 0.75], [3, 72, 0.5], [3.5, 74, 0.5],
+    [4, 77, 0.5], [4.75, 77, 0.25], [5, 76, 0.5], [5.5, 72, 0.5], [6, 69, 0.75], [7, 72, 0.5], [7.5, 74, 0.5],
+    [8, 79, 0.5], [8.75, 79, 0.25], [9, 76, 0.5], [9.5, 72, 0.5], [10, 67, 0.75], [11, 72, 0.5], [11.5, 74, 0.5],
+    [12, 74, 0.5], [12.75, 74, 0.25], [13, 71, 0.5], [13.5, 67, 0.5], [14, 71, 1], [15, 74, 1],
+  ]),
+  // Metal: riff em mi menor (E5 E5 G5 F#5)
+  mel('m-metal', 'Riff Metal', 'Melodia', 'guitar', 4, [
+    [0, 64, 0.5], [0.5, 67, 0.5], [1, 71, 0.5], [1.5, 69, 0.5], [2, 67, 0.5], [2.5, 66, 0.5], [3, 64, 1],
+    [4, 64, 0.5], [4.5, 67, 0.5], [5, 71, 0.5], [5.5, 72, 0.5], [6, 71, 1], [7, 69, 1],
+    [8, 67, 0.5], [8.5, 71, 0.5], [9, 74, 0.5], [9.5, 72, 0.5], [10, 71, 1], [11, 67, 1],
+    [12, 66, 0.5], [12.5, 69, 0.5], [13, 73, 0.5], [13.5, 71, 0.5], [14, 69, 1], [15, 66, 1],
+  ], 16, 100),
+  // Techno: sequência hipnótica de um compasso
+  mel('m-techno', 'Sequência Techno', 'Melodia', 'lead', 1, [
+    [0, 69, 0.2], [0.75, 72, 0.2], [1.5, 76, 0.2], [2.25, 69, 0.2], [3, 74, 0.2], [3.5, 72, 0.2],
+  ], 4, 85),
+  mel('m-dnb', 'Melodia Drum and Bass', 'Melodia', 'tine', 4, [
+    [0, 76, 1.5], [1.5, 79, 0.5], [2, 76, 1], [3, 72, 1],
+    [4, 74, 1.5], [5.5, 72, 0.5], [6, 69, 2],
+    [8, 77, 1.5], [9.5, 79, 0.5], [10, 72, 1], [11, 67, 1],
+    [12, 74, 1.5], [13.5, 71, 0.5], [14, 67, 2],
+  ], 16, 90),
   mel('m-arp', 'Arpejo Pluck', 'Melodia', 'pluck', 4, arp(MINOR), 16, 90),
   mel('m-arp-pop', 'Arpejo Brilhante', 'Melodia', 'bell', 4, arp(POP.map((c) => c.map((p) => p + 12))), 16, 75),
   mel('m-lead', 'Frase Lead', 'Melodia', 'lead', 4, [
@@ -916,22 +963,111 @@ export function addLoop(loop: Loop, beat: number, trackId?: string) {
   useStore.getState().set({ selectedRegionId: r.id, selectedTrackId: target.id });
 }
 
-/** Estilos de bateria agrupados por gênero (para o seletor no cabeçalho da trilha de bateria). */
-export const DRUM_STYLES: { group: string; ids: string[] }[] = [
-  { group: 'Rock', ids: ['d-rock', 'd-hardrock', 'd-hardrock-half', 'd-toms'] },
-  { group: 'Hardcore', ids: ['d-hc-skank', 'd-hc-dbeat'] },
-  { group: 'Funk', ids: ['d-funk', 'd-funk-us', 'd-funk-break'] },
-  { group: 'Reggae', ids: ['d-reggae-onedrop', 'd-reggae-rockers', 'd-reggae-steppers'] },
-  { group: 'Psicodélico anos 70', ids: ['d-psych-groove', 'd-psych-tribal', 'd-psych-heavy'] },
-  { group: 'Brasileiros', ids: ['d-samba', 'd-bossa', 'd-baiao', 'd-xote', 'd-funk-carioca', 'd-axe', 'd-pagode', 'd-sertanejo', 'd-maracatu', 'd-frevo', 'd-ijexa'] },
-  { group: 'Latinos', ids: ['d-salsa', 'd-cumbia', 'd-bachata', 'd-bolero'] },
-  { group: 'Punk e indie', ids: ['d-punk', 'd-poppunk', 'd-motorik', 'd-ska', 'd-country'] },
-  { group: 'Africanos', ids: ['d-afrobeat', 'd-afrobeats', 'd-amapiano'] },
-  { group: 'Pop e dança', ids: ['d-pop', 'd-ballad', 'd-disco', 'd-motown'] },
-  { group: 'Shuffle, blues e jazz', ids: ['d-shuffle', 'd-blues', 'd-jazz'] },
-  { group: 'Metal', ids: ['d-metal-double', 'd-metal-gallop', 'd-metal-blast'] },
-  { group: 'Hip-hop e eletrônico', ids: ['d-hiphop', 'd-trap', 'd-house', 'd-dembow', 'd-techno', 'd-dnb', 'd-lofi', 'd-ukg', 'd-dubstep', 'd-jersey', 'd-synthwave'] },
+/**
+ * Os estilos musicais, iguais para as quatro partes: cada estilo tem bateria, baixo, acordes e melodia que
+ * combinam entre si (mesmo tom, mesma progressão, mesmo balanço). Quando há mais de um loop numa parte,
+ * são variações do mesmo estilo (o primeiro é o principal).
+ */
+export interface Style {
+  id: string;
+  name: string;
+  group: string;
+  drums: string[];
+  bass: string[];
+  chords: string[];
+  melody: string[];
+}
+
+const st = (group: string, id: string, name: string, drums: string[], bass: string[], chords: string[], melody: string[]): Style =>
+  ({ id, name, group, drums, bass, chords, melody });
+/** Estilo cujas quatro partes têm o mesmo nome de id (d-x, b-x, c-x, m-x). */
+const same = (group: string, id: string, name: string) => st(group, id, name, [`d-${id}`], [`b-${id}`], [`c-${id}`], [`m-${id}`]);
+
+export const STYLES: Style[] = [
+  st('Rock e pesado', 'rock', 'Rock', ['d-rock', 'd-hardrock', 'd-hardrock-half', 'd-toms'], ['b-rock'], ['c-rock'], ['m-rock']),
+  st('Rock e pesado', 'metal', 'Metal', ['d-metal-double', 'd-metal-gallop', 'd-metal-blast'], ['b-metal'], ['c-metal'], ['m-metal']),
+  st('Rock e pesado', 'punk', 'Punk / Hardcore', ['d-punk', 'd-hc-skank', 'd-hc-dbeat'], ['b-punk'], ['c-punk'], ['m-punk']),
+  same('Rock e pesado', 'poppunk', 'Pop Punk'),
+  st('Rock e pesado', 'psych', 'Psicodélico anos 70', ['d-psych-groove', 'd-psych-tribal', 'd-psych-heavy'], ['b-psych'], ['c-psych-organ'], ['m-psych-lead']),
+  same('Rock e pesado', 'motorik', 'Motorik (Krautrock)'),
+  st('Pop', 'pop', 'Pop', ['d-pop'], ['b-pop'], ['c-pop', 'c-strings'], ['m-lead', 'm-arp-pop']),
+  same('Pop', 'ballad', 'Balada'),
+  same('Pop', 'country', 'Country'),
+  st('Groove e soul', 'funk', 'Funk', ['d-funk', 'd-funk-us', 'd-funk-break'], ['b-funk'], ['c-funk'], ['m-funk']),
+  same('Groove e soul', 'disco', 'Disco'),
+  same('Groove e soul', 'motown', 'Motown'),
+  st('Groove e soul', 'reggae', 'Reggae', ['d-reggae-onedrop', 'd-reggae-rockers', 'd-reggae-steppers'], ['b-reggae'], ['c-reggae'], ['m-reggae']),
+  same('Groove e soul', 'ska', 'Ska'),
+  st('Blues e jazz', 'blues', 'Blues / Shuffle', ['d-shuffle', 'd-blues'], ['b-blues'], ['c-blues'], ['m-blues']),
+  st('Blues e jazz', 'jazz', 'Jazz', ['d-jazz'], ['b-walking'], ['c-jazz'], ['m-jazz']),
+  same('Brasileiros', 'samba', 'Samba'),
+  same('Brasileiros', 'pagode', 'Pagode'),
+  same('Brasileiros', 'bossa', 'Bossa Nova'),
+  st('Brasileiros', 'baiao', 'Baião / Xote', ['d-baiao', 'd-xote'], ['b-baiao'], ['c-baiao'], ['m-baiao']),
+  same('Brasileiros', 'funk-carioca', 'Funk Carioca'),
+  same('Brasileiros', 'axe', 'Axé'),
+  same('Brasileiros', 'sertanejo', 'Sertanejo'),
+  same('Brasileiros', 'maracatu', 'Maracatu'),
+  same('Brasileiros', 'frevo', 'Frevo'),
+  same('Brasileiros', 'ijexa', 'Ijexá'),
+  same('Latinos', 'salsa', 'Salsa'),
+  same('Latinos', 'cumbia', 'Cumbia'),
+  same('Latinos', 'bachata', 'Bachata'),
+  same('Latinos', 'bolero', 'Bolero'),
+  same('Latinos', 'dembow', 'Reggaeton'),
+  same('Africanos', 'afrobeat', 'Afrobeat (anos 70)'),
+  st('Africanos', 'afrobeats', 'Afrobeats', ['d-afrobeats'], ['b-afrobeats', 'b-minor'], ['c-afrobeats', 'c-minor'], ['m-afrobeats']),
+  same('Africanos', 'amapiano', 'Amapiano'),
+  st('Hip-hop', 'hiphop', 'Boom Bap', ['d-hiphop'], ['b-groove'], ['c-hiphop'], ['m-hiphop']),
+  same('Hip-hop', 'trap', 'Trap'),
+  same('Hip-hop', 'lofi', 'Lo-fi Hip-hop'),
+  same('Eletrônicos', 'house', 'House'),
+  same('Eletrônicos', 'techno', 'Techno'),
+  same('Eletrônicos', 'dnb', 'Drum and Bass'),
+  same('Eletrônicos', 'ukg', 'UK Garage'),
+  same('Eletrônicos', 'dubstep', 'Dubstep'),
+  same('Eletrônicos', 'jersey', 'Jersey Club'),
+  st('Eletrônicos', 'synthwave', 'Synthwave', ['d-synthwave'], ['b-synthwave'], ['c-synthwave', 'c-pad'], ['m-synthwave', 'm-arp']),
 ];
+
+/** Grupos de estilos, na ordem em que aparecem. */
+export const STYLE_GROUPS = [...new Set(STYLES.map((x) => x.group))];
+
+/** As partes de um estilo, na ordem das colunas (bateria, baixo, acordes, melodia). */
+export const STYLE_PARTS: { key: 'drums' | 'bass' | 'chords' | 'melody'; category: Loop['category'] }[] = [
+  { key: 'drums', category: 'Bateria' },
+  { key: 'bass', category: 'Baixo' },
+  { key: 'chords', category: 'Acordes' },
+  { key: 'melody', category: 'Melodia' },
+];
+
+/** O estilo a que um loop pertence. */
+export const styleOfLoop = (id: string) => STYLES.find((x) => STYLE_PARTS.some((p) => x[p.key].includes(id)));
+
+/** Estilos de bateria agrupados por gênero (para o seletor no cabeçalho da trilha de bateria). */
+export const DRUM_STYLES: { group: string; ids: string[] }[] = STYLE_GROUPS.map((group) => ({
+  group,
+  ids: STYLES.filter((x) => x.group === group).flatMap((x) => x.drums),
+}));
+
+/** Estilos com viradas de bateria eletrônica (rufos e chimbal) em vez de tons e caixa. */
+const ELECTRO_DRUMS = new Set(['d-hiphop', 'd-trap', 'd-house', 'd-dembow', 'd-techno', 'd-dnb', 'd-lofi', 'd-ukg', 'd-dubstep', 'd-jersey', 'd-synthwave']);
+
+/**
+ * Banda completa: a parte principal de cada parte do estilo, cada uma numa trilha nova, a partir do compasso
+ * do cursor (a bateria com viradas, como no seletor de estilo).
+ */
+export function addStyleBand(style: Style, beat: number) {
+  const s = useStore.getState();
+  s.snapshot();
+  const drums = LOOPS.find((l) => l.id === style.drums[0])!;
+  const t = s.addTrack('drums', { name: `Bateria ${style.name}` });
+  applyDrumStyle(drums.id, t.id, beat);
+  for (const part of [style.bass[0], style.chords[0], style.melody[0]]) {
+    const l = LOOPS.find((x) => x.id === part);
+    if (l) addLoop(l, beat);
+  }
+}
 
 /** Repete o padrão do loop até preencher `beats` tempos. */
 function tile(loop: Loop, beats: number) {
@@ -1096,7 +1232,7 @@ export function withFills(r: Pick<Region, 'name' | 'length'>, every: number | un
   const loop = LOOPS.find((l) => l.kind === 'drums' && l.name === r.name);
   const base = stripFills(notes, loop);
   if (!every || every < 1) return base;
-  const electro = !!loop && DRUM_STYLES.some((g) => g.group.startsWith('Hip-hop') && g.ids.includes(loop.id));
+  const electro = !!loop && ELECTRO_DRUMS.has(loop.id);
   const has = (p: number) => base.some((n) => n.pitch === p);
   const snare = !has(38) && has(39) ? 39 : 38;
   const seed = [...r.name].reduce((a, c) => a + c.charCodeAt(0), 0);
