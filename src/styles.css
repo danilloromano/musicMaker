@@ -404,26 +404,43 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .stomp .jack.in { right: -6px; } .stomp .jack.out { left: -6px; }
 
 .stomp-knobs { display: flex; justify-content: center; gap: 4px; width: 100%; }
+/* janelas (modal) */
+.modal-back { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); }
+.modal { background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--accent); box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6); padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 12px; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; }
+.modal-head h3 { margin: 0; font: 700 12px var(--mono); text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); }
+.modal-x { width: 26px; height: 26px; padding: 0; }
+
 /* afinador: tela escura com a nota, o ponteiro de cents e as luzes ♭ ● ♯ */
+.tuner-modal { width: 420px; max-width: calc(100vw - 32px); }
 .tuner-screen {
-  width: 100%; padding: 6px 6px 5px; border-radius: 5px; background: #0b0f0d; color: #6a7570;
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.15);
-  display: flex; flex-direction: column; align-items: center; gap: 3px; font-family: var(--mono);
+  width: 100%; padding: 14px 18px 12px; border-radius: 6px; background: #0b0f0d; color: #6a7570;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.08);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; font-family: var(--mono);
 }
-.tuner-note { display: flex; align-items: baseline; gap: 4px; height: 30px; }
-.tuner-note b { font: 700 26px/30px var(--mono); color: #d8e2dc; }
-.tuner-note small { font-size: 10px; color: #8a9690; }
-.tuner-screen.ok .tuner-note b { color: #39e27a; text-shadow: 0 0 8px rgba(57, 226, 122, 0.6); }
-.tuner-scale { position: relative; width: 100%; height: 10px; border-radius: 2px;
+.tuner-note b { font: 700 64px/70px var(--mono); color: #d8e2dc; }
+.tuner-name { font-size: 12px; color: #8a9690; min-height: 16px; }
+.tuner-screen.ok .tuner-note b { color: #39e27a; text-shadow: 0 0 14px rgba(57, 226, 122, 0.6); }
+.tuner-scale { position: relative; width: 100%; height: 14px; margin-top: 16px; border-radius: 3px;
   background: linear-gradient(90deg, #3a1515, #3a2c12 35%, #123a22 46%, #123a22 54%, #3a2c12 65%, #3a1515); }
-.tuner-scale::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #8a9690; }
-.tuner-needle { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 3px; margin-left: -1.5px; border-radius: 2px; background: #f0f4f2; box-shadow: 0 0 5px rgba(255, 255, 255, 0.6); transition: left 60ms linear; }
+.tuner-scale::after { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: #8a9690; }
+.tuner-scale .tick { position: absolute; top: -15px; transform: translateX(-50%); font-size: 9px; color: #6a7570; }
+.tuner-needle { position: absolute; top: -5px; bottom: -5px; left: 50%; width: 4px; margin-left: -2px; border-radius: 2px; background: #f0f4f2; box-shadow: 0 0 6px rgba(255, 255, 255, 0.6); transition: left 60ms linear; }
 .tuner-screen.idle .tuner-needle { opacity: 0; }
-.tuner-lights { display: flex; justify-content: space-between; width: 100%; font-size: 10px; }
+.tuner-lights { display: flex; justify-content: space-between; width: 100%; font-size: 18px; }
 .tuner-lights i { font-style: normal; }
-.tuner-screen.flat .tuner-lights i:first-child, .tuner-screen.sharp .tuner-lights i:last-child { color: #ff5a3c; text-shadow: 0 0 6px rgba(255, 90, 60, 0.7); }
-.tuner-screen.ok .tuner-lights i:nth-child(2) { color: #39e27a; text-shadow: 0 0 6px rgba(57, 226, 122, 0.7); }
-.tuner-hint { font-size: 8.5px; text-align: center; line-height: 1.25; color: #8a9690; }
+.tuner-screen.flat .tuner-lights i:first-child, .tuner-screen.sharp .tuner-lights i:last-child { color: #ff5a3c; text-shadow: 0 0 8px rgba(255, 90, 60, 0.7); }
+.tuner-screen.ok .tuner-lights i:nth-child(2) { color: #39e27a; text-shadow: 0 0 8px rgba(57, 226, 122, 0.7); }
+.tuner-read { display: flex; justify-content: space-between; width: 100%; min-height: 15px; font-size: 11px; color: #8a9690; }
+.tuner-off { display: flex; align-items: center; gap: 10px; }
+.tuner-off p { margin: 0; font-size: 12px; color: var(--dim); flex: 1; }
+.tuner-level { display: flex; align-items: center; gap: 8px; }
+.tuner-level small { color: var(--dim); white-space: nowrap; }
+.tuner-level .meter { flex: 1; }
+.tuner-opts { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; color: var(--dim); }
+.tuner-opts label { display: flex; align-items: center; gap: 6px; }
+.tuner-opts button { width: 22px; height: 22px; padding: 0; }
+.tuner-opts b { color: var(--text); min-width: 52px; text-align: center; }
 /* equalizador gráfico: faders verticais com a frequência embaixo; o meio do fader é 0 dB */
 .stomp-faders {
   display: flex; justify-content: space-between; width: 100%; padding: 4px 2px 0;

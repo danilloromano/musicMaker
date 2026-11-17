@@ -74,6 +74,10 @@ class Engine {
       this.monitorGain = this.ctx.createGain();
       this.inputBus.connect(this.inputAnalyser);
       this.inputBus.connect(this.monitorGain);
+      // afinador: janela de ~170 ms (cobre alguns períodos até do Si grave do baixo de 5 cordas)
+      this.tunerAnalyser = this.ctx.createAnalyser();
+      this.tunerAnalyser.fftSize = 8192;
+      this.inputBus.connect(this.tunerAnalyser);
 
       useStore.subscribe((s, prev) => {
         const a = s.project, b = prev.project;
@@ -574,6 +578,7 @@ class Engine {
   private inputAnalyser!: AnalyserNode;
   private monitorGain!: GainNode;
   private monitorTarget: string | null = null;
+  private tunerAnalyser!: AnalyserNode;
   private inStream: MediaStream | null = null;
   private inNodes: AudioNode[] = [];
 
@@ -654,6 +659,17 @@ class Engine {
     this.inNodes = [];
     this.inStream = null;
     useStore.getState().set({ inputOpen: false, inputMuted: false });
+  }
+
+  /** O sinal da entrada (antes de qualquer efeito) para o afinador, ou undefined se a entrada está fechada. */
+  tunerInput(): AnalyserNode | undefined {
+    return this.ready && this.inStream ? this.tunerAnalyser : undefined;
+  }
+
+  /** Afinador aberto no modo mudo: a monitoração fica em silêncio (afina sem soltar som na caixa). */
+  muteMonitor(mute: boolean) {
+    if (!this.ready) return;
+    this.monitorGain.gain.setTargetAtTime(mute ? 0 : 1, this.ctx.currentTime, 0.01);
   }
 
   /** Monitoração: manda a entrada para o canal da trilha de áudio selecionada (passa pelos efeitos dela). */

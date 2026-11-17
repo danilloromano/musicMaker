@@ -2,7 +2,6 @@
 // Tudo roda no canal da trilha, então a gravação continua seca e o timbre pode ser trocado depois (re-amp).
 import { AmpRig, PedalState } from '../types';
 import { workletsReady } from './master';
-import { tunerRef } from './tuner';
 import { AMPS, AmpModel, ToneStackParts, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from './ampCircuits';
 
 // ---------- Definições ----------
@@ -25,8 +24,6 @@ export interface PedalDef {
   faders?: boolean;
   /** desenha as chaves como menus suspensos (pedais com muitas chaves, como o delay) */
   dropdowns?: boolean;
-  /** mostra a tela do afinador (nota e ponteiro de cents) */
-  tuner?: boolean;
 }
 
 export interface PedalModel {
@@ -101,10 +98,6 @@ export const paramsOf = (d: PedalDef, model?: string) => modelOf(d, model)?.para
 export const pedalDefaults = (d: PedalDef, model?: string) => [...paramsOf(d, model).map((x) => x.def), ...(d.toggles ?? []).map((t) => t.def)];
 
 export const PEDALS: PedalDef[] = [
-  { id: 'tuner', name: 'Afinador', color: '#3a3f47', post: false, tuner: true,
-    desc: 'Afinador cromático: ligue, toque uma corda solta e afine até o ponteiro ficar no meio (verde) · Mudo: corta o som enquanto afina · Referência: frequência do Lá (440 Hz é o padrão)',
-    params: [{ label: 'Referência', def: 0.5, fmt: (v) => `${tunerRef(v)} Hz` }],
-    toggles: [{ labels: ['Mudo', 'Passa'], titles: ['Mudo: o som é cortado enquanto o afinador está ligado (afina em silêncio)', 'Passa: o som continua passando enquanto afina'], def: 0 }] },
   { id: 'gate', name: 'Noise Gate', color: '#c8c8bd', post: false, params: [{ label: 'Limiar', def: 0.4 }, { label: 'Release', def: 0.3 }] },
   { id: 'comp', name: 'Compressor', color: '#38d9c0', post: false,
     desc: 'Ataque: devagar deixa passar a palhetada antes de comprimir · Blend: mistura o som limpo (compressão paralela) · Pedal: o "squash" clássico, mais escuro · Estúdio: transparente',
@@ -410,8 +403,6 @@ interface Fx {
   tempo?(bpm: number): void;
   /** recebe o modelo escolhido antes do set; só os pedais com modelos usam */
   model?(id: string | undefined): void;
-  /** o sinal que chega ao pedal, para análise (afinador) */
-  analyser?: AnalyserNode;
 }
 
 type Put = (param: AudioParam, v: number) => void;
@@ -1809,24 +1800,10 @@ function modelPedal(ctx: BaseAudioContext, put: Put, d: PedalDef): Fx {
   };
 }
 
-/**
- * Afinador: o sinal passa direto (ou é cortado, no modo Mudo) e é copiado para um analisador que a tela do
- * pedal lê. A janela de ~170 ms cobre alguns períodos até do Si grave do baixo de 5 cordas.
- */
-function tunerPedal(ctx: BaseAudioContext, put: Put): Fx {
-  const inp = ctx.createGain(), out = ctx.createGain();
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 8192;
-  inp.connect(out);
-  inp.connect(analyser);
-  return { in: inp, out, analyser, set: ([, mode]) => put(out.gain, (mode ?? 0) >= 0.5 ? 1 : 0) };
-}
-
 function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
   const def = PEDALS.find((x) => x.id === id);
   if (def?.models) return modelPedal(ctx, put, def);
   switch (id) {
-    case 'tuner': return tunerPedal(ctx, put);
     case 'pitch': return workletsReady(ctx) ? pitchPedalHQ(ctx, put) : pitchPedal(ctx, put);
     case 'octave': return octavePedal(ctx, put);
     case 'harmony': return harmonyPedal(ctx, put);
@@ -2122,8 +2099,6 @@ export class Rig {
   wah: WahFx;
   /** pedal de rotary (a troca lento/rápido pode ser automatizada) */
   rotary: RotaryFx;
-  /** o sinal na entrada do afinador (antes de todos os pedais) */
-  tuner: AnalyserNode;
   private put: Put = (p, v) => {
     if (this.first) p.value = v;
     else p.setTargetAtTime(v, this.ctx.currentTime, 0.015);
@@ -2135,7 +2110,6 @@ export class Rig {
     for (const p of PEDALS) this.slots.set(p.id, new Slot(ctx, makePedal(ctx, p.id, this.put)));
     this.wah = this.slots.get('wah')!.fx as WahFx;
     this.rotary = this.slots.get('rotary')!.fx as RotaryFx;
-    this.tuner = this.slots.get('tuner')!.fx.analyser!;
 
     let node: AudioNode = this.input;
     for (const p of PEDALS.filter((x) => !x.post)) {

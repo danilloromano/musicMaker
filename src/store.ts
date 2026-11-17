@@ -33,7 +33,7 @@ export function defaultProject(): Project {
   };
 }
 
-function pref(key: string): string | null {
+export function pref(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {

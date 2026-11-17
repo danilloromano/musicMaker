@@ -7,6 +7,7 @@ import { BEATS_PER_BAR } from '../types';
 import { importFiles } from '../audio/importFiles';
 import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
+import { TunerModal } from './TunerModal';
 import { redoShortcut, shortcut } from '../platform';
 
 export function saveProject() {
@@ -48,6 +49,7 @@ export function Transport() {
   const openRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [tuner, setTuner] = useState(false);
 
   const exportWav = async () => {
     setExporting(true);
@@ -135,6 +137,10 @@ export function Transport() {
       >
         <span className="ico">🔁</span><span className="lbl"> Loop</span>
       </button>
+      <button className={tuner ? 'toggle on' : 'toggle'} title="Afinador: afine a guitarra ou o baixo plugado na entrada" onClick={() => setTuner(true)}>
+        <span className="ico">♮</span><span className="lbl"> Afinador</span>
+      </button>
+      {tuner && <TunerModal onClose={() => setTuner(false)} />}
 
       <div className="spacer" />
 
