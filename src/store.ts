@@ -62,7 +62,8 @@ interface State {
   audioSel: { trackId: string; start: number; end: number } | null; // trecho selecionado no editor de áudio (tempos)
   selectedNoteId: string | null;
   playing: boolean;
-  recording: { trackId: string; startBeat: number } | null;
+  /** gravação em andamento; `punch` = só o trecho [start, end) é gravado e substitui o que havia */
+  recording: { trackId: string; startBeat: number; punch?: { start: number; end: number } } | null;
   ppb: number; // pixels por tempo na timeline
   bottomTab: BottomTab;
   countIn: boolean; // conta 1 compasso no metrônomo antes de gravar
@@ -109,6 +110,8 @@ interface State {
   deleteAudioRange: (trackId: string, start: number, end: number) => void;
   /** Liga/desliga o loop; se ainda não há trecho, usa a região selecionada ou 4 compassos a partir do cursor. */
   toggleLoop: (cursorBeat: number) => void;
+  /** Liga/desliga o punch-in; se ainda não há trecho, usa o do loop, a região selecionada ou 2 compassos do cursor. */
+  togglePunch: (cursorBeat: number) => void;
   setNotes: (regionId: string, notes: Note[], history?: boolean) => void;
 
   /** Cria um marcador de seção no compasso do tempo dado (com o nome da próxima seção provável). */
@@ -311,6 +314,21 @@ export const useStore = create<State>((set, get) => ({
     set({ audioSel: null });
   },
 
+  togglePunch: (cursorBeat) => {
+    const s = get();
+    const p = s.project;
+    let punch = p.punch;
+    if (!punch) {
+      const r = p.regions.find((x) => x.id === s.selectedRegionId);
+      const bar = Math.floor(cursorBeat / BEATS_PER_BAR) * BEATS_PER_BAR;
+      punch = p.loop
+        ? { start: p.loop.start, end: p.loop.end, on: false }
+        : r
+          ? { start: r.start, end: r.start + Math.max(1, regionLen(r, p.bpm)), on: false }
+          : { start: bar, end: bar + 2 * BEATS_PER_BAR, on: false };
+    }
+    s.update((pr) => ({ ...pr, punch: { ...punch, on: !punch.on } }), false);
+  },
   addMarker: (at) => {
     const beat = Math.max(0, Math.floor(at / BEATS_PER_BAR + 1e-6) * BEATS_PER_BAR);
     const list = get().project.markers ?? [];

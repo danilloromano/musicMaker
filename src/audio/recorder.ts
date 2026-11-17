@@ -41,8 +41,11 @@ export class Recorder {
     this.node.connect(this.sink).connect(this.ctx.destination);
   }
 
-  /** Encerra e devolve o áudio gravado a partir do instante `from` (relógio do AudioContext), ou null se curto demais. */
-  stop(from = 0): AudioBuffer | null {
+  /**
+   * Encerra e devolve o áudio gravado a partir do instante `from` (relógio do AudioContext) e, se dado, até
+   * `to` (punch-in: só o trecho marcado), ou null se curto demais.
+   */
+  stop(from = 0, to?: number): AudioBuffer | null {
     this.source.disconnect(this.node);
     this.node.disconnect();
     this.sink.disconnect();
@@ -55,7 +58,7 @@ export class Recorder {
     // o que o músico ouviu estava atrasado em relação ao relógio
     const latency = this.ctx.baseLatency + (this.ctx.outputLatency || 0);
     const skip = Math.min(total, Math.max(0, Math.round((from - this.t0 + latency) * sr)));
-    const len = total - skip;
+    const len = to === undefined ? total - skip : Math.min(total - skip, Math.round((to - from) * sr));
     if (len < sr * 0.05) return null;
     const all = new Float32Array(total);
     let o = 0;
@@ -64,7 +67,7 @@ export class Recorder {
       o += c.length;
     }
     const buf = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: sr });
-    buf.getChannelData(0).set(all.subarray(skip));
+    buf.getChannelData(0).set(all.subarray(skip, skip + len));
     return buf;
   }
 }

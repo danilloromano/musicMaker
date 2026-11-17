@@ -193,6 +193,8 @@ export interface Project {
   bpm: number;
   metronome: boolean;
   loop?: LoopRange;
+  /** trecho de punch-in: com ele ligado, a gravação só substitui o que está dentro dele */
+  punch?: LoopRange;
   /** marcadores de seção (Intro, Verso, Refrão…), em ordem de posição */
   markers?: Marker[];
   tracks: Track[];

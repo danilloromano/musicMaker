@@ -309,6 +309,17 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
   background: rgba(160, 168, 184, 0.35); border-radius: 0 0 3px 3px;
 }
 .loop-band.on { background: rgba(255, 176, 32, 0.85); }
+/* punch-in: faixa vermelha embaixo dos números da régua */
+.punch-band {
+  position: absolute; top: 19px; height: 9px; z-index: 1; cursor: grab;
+  background: rgba(255, 90, 80, 0.3); border-radius: 3px 3px 0 0;
+}
+.punch-band.on { background: rgba(255, 70, 60, 0.85); }
+.punch-shade {
+  position: absolute; top: 48px; bottom: 0; z-index: 3; pointer-events: none;
+  background: rgba(255, 70, 60, 0.06); border-left: 1px solid rgba(255, 70, 60, 0.55); border-right: 1px solid rgba(255, 70, 60, 0.55);
+}
+.toggle.on.punch { border-color: rgba(255, 70, 60, 0.8); color: #ff7a6e; }
 .loop-edge { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
 .loop-edge.l { left: -3px; }
 .loop-edge.r { right: -3px; }
@@ -339,7 +350,7 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 /* barra superior: em telas mais estreitas os botões de alternância ficam só com o ícone; no limite, quebra em 2 linhas */
 .transport { flex-wrap: wrap; row-gap: 6px; }
 .proj-name { flex: 0 1 150px; min-width: 80px; }
-@media (max-width: 1500px) { .transport .lbl { display: none; } }
+@media (max-width: 1500px) { .transport .lbl { display: none; } .transport { gap: 6px; } }
 
 /* ---------- Amp & Pedais ---------- */
 .rack { display: flex; flex-direction: column; flex: 1; min-width: 0; }

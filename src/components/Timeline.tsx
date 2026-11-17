@@ -19,6 +19,7 @@ export function Timeline() {
   const selectedRegionId = useStore((s) => s.selectedRegionId);
   const recording = useStore((s) => s.recording);
   const loop = project.loop;
+  const punch = project.punch;
   const st = useStore.getState();
 
   const bars = Math.max(32, Math.ceil(projectEnd(project) / BEATS_PER_BAR) + 8);
@@ -51,14 +52,14 @@ export function Timeline() {
   };
 
   /**
-   * Arrasta o trecho de loop: 'move' (a faixa inteira), 'start'/'end' (as bordas) ou 'new' (Shift + arrastar na régua).
-   * Encaixa nos tempos; com Alt, em 1/4 de tempo.
+   * Arrasta o trecho de loop (ou o de punch-in): 'move' (a faixa inteira), 'start'/'end' (as bordas) ou 'new'
+   * (Shift + arrastar na régua). Encaixa nos tempos; com Alt, em 1/4 de tempo.
    */
-  const dragLoop = (e: React.PointerEvent, mode: 'move' | 'start' | 'end' | 'new') => {
+  const dragLoop = (e: React.PointerEvent, mode: 'move' | 'start' | 'end' | 'new', which: 'loop' | 'punch' = 'loop') => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const l0 = useStore.getState().project.loop ?? { start: 0, end: 0, on: true };
+    const l0 = useStore.getState().project[which] ?? { start: 0, end: 0, on: true };
     const b0 = beatAt(e.clientX);
     const move = (ev: { clientX: number; altKey: boolean }) => {
       const snap = (b: number) => Math.max(0, Math.round(b / (ev.altKey ? 0.25 : 1)) * (ev.altKey ? 0.25 : 1));
@@ -75,7 +76,7 @@ export function Timeline() {
         if (Math.abs(z - a) < 1) return;
         [start, end] = a < z ? [a, z] : [z, a];
       }
-      st.update((p) => ({ ...p, loop: { start, end, on: mode === 'new' ? true : l0.on } }), false);
+      st.update((p) => ({ ...p, [which]: { start, end, on: mode === 'new' ? true : l0.on } }), false);
     };
     const pm = (ev: PointerEvent) => move(ev);
     window.addEventListener('pointermove', pm);
@@ -232,11 +233,24 @@ export function Timeline() {
                 <div className="loop-edge r" onPointerDown={(e) => dragLoop(e, 'end')} />
               </div>
             )}
+            {punch && (
+              <div
+                className={`punch-band ${punch.on ? 'on' : ''}`}
+                style={{ left: punch.start * ppb, width: (punch.end - punch.start) * ppb }}
+                title="Trecho de punch-in: a gravação só substitui o que está aqui. Arraste para mover, pelas bordas para ajustar. Duplo clique liga/desliga."
+                onPointerDown={(e) => dragLoop(e, 'move', 'punch')}
+                onDoubleClick={() => st.togglePunch(engine.getBeat())}
+              >
+                <div className="loop-edge l" onPointerDown={(e) => dragLoop(e, 'start', 'punch')} />
+                <div className="loop-edge r" onPointerDown={(e) => dragLoop(e, 'end', 'punch')} />
+              </div>
+            )}
             <MarkerLane ppb={ppb} beatAt={beatAt} />
             <div className="ruler-head" ref={rulerHead} />
           </div>
         </div>
         <MarkerLines ppb={ppb} left={HEADER_W} />
+        {punch?.on && <div className="punch-shade" style={{ left: HEADER_W + punch.start * ppb, width: (punch.end - punch.start) * ppb }} />}
         {loop?.on && <div className="loop-shade" style={{ left: HEADER_W + loop.start * ppb, width: (loop.end - loop.start) * ppb }} />}
 
         {project.tracks.map((t) => (

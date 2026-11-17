@@ -55,6 +55,7 @@ function useShortcuts() {
       if (k === 'enter') engine.seek(0);
       else if (k === 'c' && !e.repeat) s.toggleLoop(engine.getBeat());
       else if (k === 'm' && !e.repeat) s.addMarker(engine.getBeat());
+      else if (k === 'i' && !e.repeat) s.togglePunch(engine.getBeat());
       else if (k === ',') jumpMarker(-1);
       else if (k === '.') jumpMarker(1);
       else if (k === 'r' && !e.repeat) void engine.toggleRecord();

@@ -122,6 +122,13 @@ export function Transport() {
         <span className="ico">①</span><span className="lbl"> Contagem</span>
       </button>
       <button
+        className={project.punch?.on ? 'toggle on punch' : 'toggle'}
+        title="Punch-in (I): a gravação só substitui o trecho vermelho da régua, começando um compasso antes para você entrar no tempo. Arraste a faixa vermelha para ajustar o trecho."
+        onClick={() => st.togglePunch(engine.getBeat())}
+      >
+        <span className="ico">⤓</span><span className="lbl"> Punch</span>
+      </button>
+      <button
         className={loopOn ? 'toggle on' : 'toggle'}
         title="Tocar um trecho em repetição (C). Ajuste o trecho arrastando a faixa na régua; Shift + arrastar na régua marca um novo trecho."
         onClick={() => st.toggleLoop(engine.getBeat())}

@@ -40,6 +40,12 @@ class Engine {
   private recorder: Recorder | null = null;
   private recNotes: Note[] = [];
   private recHeld = new Map<number, { start: number; vel: number }>();
+  /**
+   * Punch-in: a trilha que está sendo regravada fica muda dentro do trecho (o take antigo some enquanto o
+   * novo é tocado). Áudio passa por `punchDuck` (ganho que fecha no trecho); notas no trecho não são tocadas.
+   */
+  private punchMute: { trackId: string; start: number; end: number } | null = null;
+  private punchDuck: GainNode | null = null;
 
   /** Cria o contexto de áudio na primeira interação do usuário. */
   ensure() {
@@ -141,6 +147,9 @@ class Engine {
       }
     }
     this.sources = [];
+    this.punchMute = null;
+    this.punchDuck?.disconnect();
+    this.punchDuck = null;
     useStore.getState().set({ playing: false });
   }
 
@@ -218,7 +227,8 @@ class Engine {
       if (!buf || !strip) continue;
       const at = this.timeAt(r.start);
       const late = Math.max(0, ref - at);
-      const src = playAudioRegion(this.ctx, strip.input, r, buf, Math.max(at, ref), late);
+      const dest = this.punchDuck && this.punchMute?.trackId === r.trackId ? this.punchDuck : strip.input;
+      const src = playAudioRegion(this.ctx, dest, r, buf, Math.max(at, ref), late);
       if (src) this.sources.push(src);
     }
   }
@@ -232,6 +242,11 @@ class Engine {
   }
 
   private tick() {
+    // fim do trecho de punch-in: encerra a gravação (a música continua tocando). Espera a latência da placa e
+    // um pouco mais passar do fim, para o áudio do finzinho do trecho já ter chegado ao gravador.
+    const punch = useStore.getState().recording?.punch;
+    const tail = ((this.ctx.baseLatency + (this.ctx.outputLatency || 0) + 0.15) * this.bpm) / 60;
+    if (punch && this.getBeat() >= punch.end + tail) this.finishRecording();
     let loop = this.activeLoop();
     let until = this.startBeat + ((this.ctx.currentTime + LOOKAHEAD - this.startTime) * this.bpm) / 60;
     // agenda até o fim do trecho e já emenda a próxima volta, sem buraco no som
@@ -273,6 +288,8 @@ class Engine {
       for (const n of r.notes) {
         const abs = r.start + n.start;
         if (abs < from || abs >= until || n.start >= r.length) continue;
+        const pm = this.punchMute;
+        if (pm && pm.trackId === r.trackId && abs >= pm.start && abs < pm.end) continue;
         const dur = Math.min(n.duration, r.length - n.start) * spb;
         triggerNote(this.ctx, strip.input, track.kind, track.instrument, n.pitch, this.timeAt(abs), dur, n.velocity);
       }
@@ -348,6 +365,16 @@ class Engine {
       return;
     }
     this.ensure();
+    // punch-in: grava só dentro do trecho (se já está tocando e passou do começo, a partir de agora)
+    const pr = s.project.punch;
+    let punch: { start: number; end: number } | undefined;
+    if (pr?.on && pr.end - pr.start >= 0.25) {
+      punch = { start: this.playing ? Math.max(pr.start, this.getBeat()) : pr.start, end: pr.end };
+      if (punch.start >= punch.end - 0.05) {
+        alert('O cursor já passou do trecho de punch-in: pare e grave de novo (a música volta um compasso antes do trecho).');
+        return;
+      }
+    }
     if (track.kind === 'audio') {
       if (!s.inputOpen && !(await this.openInput())) return;
       const rec = new Recorder(this.ctx, this.inputBus);
@@ -361,12 +388,22 @@ class Engine {
     }
     this.recNotes = [];
     this.recHeld.clear();
-    const startBeat = this.getBeat();
-    s.set({ recording: { trackId: track.id, startBeat } });
+    const startBeat = punch ? punch.start : this.getBeat();
+    s.set({ recording: { trackId: track.id, startBeat, punch } });
     if (this.playing) {
       // já tocando: grava a partir de agora
       this.recFrom = this.ctx.currentTime;
       return;
+    }
+    if (punch) {
+      // pré-roll: começa um compasso antes do trecho (ou do cursor, se ele está antes disso)
+      if (this.position > punch.start - BEATS_PER_BAR) this.position = Math.max(0, punch.start - BEATS_PER_BAR);
+      this.punchMute = { trackId: track.id, ...punch };
+      const strip = this.mixer.strips.get(track.id);
+      if (strip) {
+        this.punchDuck = this.ctx.createGain();
+        this.punchDuck.connect(strip.input);
+      }
     }
     if (s.countIn) {
       // um compasso de metrônomo antes de a música (e a gravação) começar
@@ -376,6 +413,15 @@ class Engine {
       this.play(0.1 + BEATS_PER_BAR * spb);
     } else this.play();
     this.recFrom = this.startTime;
+    if (punch && this.punchDuck) {
+      // o take antigo fecha (10 ms) na entrada do trecho e volta na saída
+      const g = this.punchDuck.gain;
+      const a = this.timeAt(punch.start), b = this.timeAt(punch.end);
+      g.setValueAtTime(1, Math.max(this.ctx.currentTime, a - 0.01));
+      g.linearRampToValueAtTime(0, a);
+      g.setValueAtTime(0, b);
+      g.linearRampToValueAtTime(1, b + 0.01);
+    }
   }
 
   /** Instante (relógio do AudioContext) em que a gravação começa de fato. */
@@ -385,9 +431,11 @@ class Engine {
     const s = useStore.getState();
     const rec = s.recording;
     if (!rec) return;
-    const end = this.getBeat();
+    const punch = rec.punch;
+    const end = punch ? Math.min(this.getBeat(), punch.end) : this.getBeat();
     for (const pitch of [...this.recHeld.keys()]) this.noteOff(pitch, rec.trackId);
     s.set({ recording: null });
+    if (punch) return this.finishPunch(rec.trackId, punch.start, end);
 
     if (this.recorder) {
       const buf = this.recorder.stop(this.recFrom);
@@ -409,6 +457,52 @@ class Engine {
       s.set({ selectedRegionId: r.id, editingRegionId: r.id });
     }
     this.recNotes = [];
+  }
+
+  /**
+   * Fim do punch-in: o que foi gravado entre `start` e `end` substitui o que havia nesse trecho da trilha
+   * (o resto do take antigo fica intacto). Tudo vira um único passo de desfazer. Sem nada gravado, nada muda.
+   */
+  private finishPunch(trackId: string, start: number, end: number) {
+    const s = useStore.getState();
+    const before = s.past.length;
+    const mergeHistory = () => useStore.setState((st) => ({ past: st.past.slice(0, before + 1) }));
+
+    if (this.recorder) {
+      const buf = this.recorder.stop(this.timeAt(start), this.timeAt(Math.max(start, end)));
+      this.recorder = null;
+      if (!buf) return;
+      const bufferId = uid();
+      this.buffers.set(bufferId, buf);
+      void saveBufferLocal(bufferId, buf);
+      s.deleteAudioRange(trackId, start, start + (buf.duration * this.bpm) / 60);
+      const r = s.addRegion({ trackId, name: 'Punch', start, length: 0, bufferId, offset: 0, duration: buf.duration });
+      mergeHistory();
+      useStore.getState().set({ selectedRegionId: r.id, audioEditId: r.id });
+      return;
+    }
+
+    const notes = this.recNotes.filter((n) => n.start >= start && n.start < end);
+    this.recNotes = [];
+    if (!notes.length) return;
+    // tira as notas antigas que começavam no trecho e põe as novas numa região do tamanho dele
+    s.update((p) => ({
+      ...p,
+      regions: p.regions.map((r) =>
+        r.trackId === trackId && r.notes
+          ? { ...r, notes: r.notes.filter((n) => r.start + n.start < start || r.start + n.start >= end) }
+          : r,
+      ),
+    }));
+    const r = s.addRegion({
+      trackId,
+      name: 'Punch',
+      start,
+      length: end - start,
+      notes: notes.map((n) => ({ ...n, start: n.start - start, duration: Math.min(n.duration, end - n.start) })),
+    });
+    mergeHistory();
+    useStore.getState().set({ selectedRegionId: r.id });
   }
 
   // ---------- Entrada de áudio (placa de áudio, guitarra, microfone) ----------
