@@ -6,7 +6,7 @@ import { download } from '../audio/persist';
 import { Analysis, BANDS, SPEC_MAX, SPEC_MIN, SPEC_POINTS } from '../audio/analysis';
 import { Suggestion, suggestMaster } from '../audio/autoMaster';
 import { withLoading } from '../loading';
-import { DEFAULT_MASTER, DEFAULT_MULTIBAND, DEFAULT_STEREO, EXPORT_TARGETS, MASTER_PRESETS, masterOf } from '../audio/master';
+import { DEFAULT_MASTER, DEFAULT_MULTIBAND, DEFAULT_STEREO, EXPORT_TARGETS, MASTER_PRESETS, activePreset, applyPreset, masterOf } from '../audio/master';
 import { MAX_AUTO_GAIN } from '../audio/export';
 import { useStore } from '../store';
 import { MasterSettings } from '../types';
@@ -40,9 +40,7 @@ export function MasterPanel() {
   const m = masterOf(raw);
   const last = useStore((s) => s.lastExport);
   const target = EXPORT_TARGETS.find((t) => t.id === m.exportTarget)!;
-  const active = MASTER_PRESETS.find(
-    (p) => JSON.stringify(p.s) === JSON.stringify({ eq: m.eq, comp: m.comp, saturation: m.saturation, limiter: m.limiter }),
-  );
+  const active = activePreset(m);
   const eq = (k: keyof MasterSettings['eq']) => (v: number) => setMaster((x) => ({ ...x, eq: { ...x.eq, [k]: v } }));
   const comp = (k: keyof MasterSettings['comp']) => (v: number | boolean) => setMaster((x) => ({ ...x, comp: { ...x.comp, [k]: v } }), typeof v === 'boolean');
   const lim = (k: keyof MasterSettings['limiter']) => (v: number | boolean) => setMaster((x) => ({ ...x, limiter: { ...x.limiter, [k]: v } }), typeof v === 'boolean');
@@ -53,7 +51,7 @@ export function MasterPanel() {
         <h4>Preset de master</h4>
         <div className="presets">
           {MASTER_PRESETS.map((p) => (
-            <button key={p.id} className={active?.id === p.id ? 'on' : ''} title={p.desc} onClick={() => setMaster((x) => ({ ...x, ...p.s }), true)}>
+            <button key={p.id} className={active?.id === p.id ? 'on' : ''} title={p.desc} onClick={() => setMaster((x) => applyPreset(x, p.s), true)}>
               {p.name}
             </button>
           ))}

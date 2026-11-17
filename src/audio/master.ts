@@ -49,7 +49,35 @@ export const EXPORT_TARGETS: { id: MasterSettings['exportTarget']; label: string
   { id: 'loud', label: 'Alto: CD, pista (-9 LUFS)', lufs: -9 },
 ];
 
-type Preset = Omit<MasterSettings, 'exportTarget' | 'exportBits'>;
+type Preset = Omit<MasterSettings, 'exportTarget' | 'exportBits' | 'exportFormat'>;
+
+/** Multibanda segurando só os graves (grave firme, sem embolar): `thr` dB, razão `ratio`, corte em `freq` Hz. */
+const tightLows = (thr: number, ratio: number, freq = 150): NonNullable<MasterSettings['multiband']> => ({
+  ...DEFAULT_MULTIBAND,
+  on: true,
+  lowFreq: freq,
+  bands: [{ threshold: thr, ratio, gain: 0 }, DEFAULT_MULTIBAND.bands[1], DEFAULT_MULTIBAND.bands[2]],
+});
+const stereo = (width: number, monoFreq?: number): NonNullable<MasterSettings['stereo']> => ({
+  width,
+  monoBass: monoFreq !== undefined,
+  monoFreq: monoFreq ?? DEFAULT_STEREO.monoFreq,
+});
+
+/**
+ * O que um preset muda no master: tudo menos a exportação. Multibanda e imagem estéreo que o preset não
+ * define voltam ao padrão (desligado / largura original), para o estilo anterior não ficar "grudado".
+ */
+export function applyPreset(m: MasterSettings, s: Preset): MasterSettings {
+  return { ...m, multiband: DEFAULT_MULTIBAND, stereo: DEFAULT_STEREO, ...s };
+}
+
+/** O preset que está valendo agora (todos os ajustes iguais), se houver. */
+export function activePreset(m: MasterSettings) {
+  const pick = (x: MasterSettings) => JSON.stringify([x.eq, x.comp, x.saturation, x.limiter, x.multiband ?? DEFAULT_MULTIBAND, x.stereo ?? DEFAULT_STEREO]);
+  const now = pick(m);
+  return MASTER_PRESETS.find((p) => pick(applyPreset(m, p.s)) === now);
+}
 export const MASTER_PRESETS: { id: string; name: string; desc: string; s: Preset }[] = [
   {
     id: 'neutral', name: 'Neutro', desc: 'Só o limitador protegendo os picos',
@@ -89,6 +117,107 @@ export const MASTER_PRESETS: { id: string; name: string; desc: string; s: Preset
       comp: { on: true, threshold: -22, ratio: 3, attack: 20, release: 250, makeup: 1.5 },
       saturation: 0.5,
       limiter: { on: true, gain: 1, ceiling: -1, release: 150 },
+    },
+  },
+  {
+    id: 'rock', name: 'Rock', desc: 'Guitarras na frente: médios presentes, bateria com punch (ataque lento deixa a pancada passar) e um pouco de calor',
+    s: {
+      eq: { low: 1, lowMid: -1.5, highMid: 1.5, high: 1 },
+      comp: { on: true, threshold: -18, ratio: 2, attack: 30, release: 150, makeup: 1 },
+      saturation: 0.25,
+      limiter: { on: true, gain: 3, ceiling: -1, release: 80 },
+      stereo: stereo(1.1),
+    },
+  },
+  {
+    id: 'metal', name: 'Metal', desc: 'Pesado e apertado: grave controlado pelo multibanda (o bumbo não some no meio das guitarras), médio-grave limpo, bem alto',
+    s: {
+      eq: { low: 1.5, lowMid: -2.5, highMid: 1, high: 1.5 },
+      comp: { on: true, threshold: -16, ratio: 3, attack: 10, release: 100, makeup: 1.5 },
+      saturation: 0.3,
+      limiter: { on: true, gain: 5, ceiling: -1, release: 50 },
+      multiband: tightLows(-22, 3, 140),
+      stereo: stereo(1.15, 120),
+    },
+  },
+  {
+    id: 'hiphop', name: 'Hip hop', desc: 'Boom bap: grave gordo, caixa estalando, agudo arredondado e saturação de sampler',
+    s: {
+      eq: { low: 2, lowMid: 0.5, highMid: 0.5, high: -1 },
+      comp: { on: true, threshold: -18, ratio: 3, attack: 25, release: 200, makeup: 1.5 },
+      saturation: 0.35,
+      limiter: { on: true, gain: 3.5, ceiling: -1, release: 80 },
+      stereo: stereo(1, 120),
+    },
+  },
+  {
+    id: 'trap', name: 'Trap', desc: '808 enorme e firme (graves em mono, multibanda segurando), chimbal brilhante, muito alto',
+    s: {
+      eq: { low: 3.5, lowMid: -2, highMid: 1, high: 3 },
+      comp: { on: true, threshold: -16, ratio: 2.5, attack: 30, release: 120, makeup: 1 },
+      saturation: 0.3,
+      limiter: { on: true, gain: 5.5, ceiling: -1, release: 40 },
+      multiband: tightLows(-20, 2.5, 120),
+      stereo: stereo(1.15, 110),
+    },
+  },
+  {
+    id: 'funk', name: 'Funk / Groove', desc: 'Baixo e bateria grudados: compressão rápida no groove, presença para a guitarra de base e os metais',
+    s: {
+      eq: { low: 2, lowMid: -1, highMid: 1.5, high: 1 },
+      comp: { on: true, threshold: -17, ratio: 2.5, attack: 15, release: 120, makeup: 1 },
+      saturation: 0.2,
+      limiter: { on: true, gain: 3.5, ceiling: -1, release: 70 },
+      stereo: stereo(1.05, 100),
+    },
+  },
+  {
+    id: 'reggae', name: 'Reggae', desc: 'O baixo manda: grave cheio e em mono, agudos suaves, compressão lenta que respira com o one drop',
+    s: {
+      eq: { low: 2.5, lowMid: 0.5, highMid: -0.5, high: -0.5 },
+      comp: { on: true, threshold: -20, ratio: 2, attack: 40, release: 250, makeup: 1 },
+      saturation: 0.2,
+      limiter: { on: true, gain: 2, ceiling: -1, release: 120 },
+      stereo: stereo(1.05, 120),
+    },
+  },
+  {
+    id: 'psych', name: 'Psicodélico 70', desc: 'Som de fita dos anos 70: quente, agudo arredondado, estéreo aberto e bastante saturação',
+    s: {
+      eq: { low: 1, lowMid: 1, highMid: 0.5, high: -2.5 },
+      comp: { on: true, threshold: -20, ratio: 2.5, attack: 30, release: 300, makeup: 1 },
+      saturation: 0.45,
+      limiter: { on: true, gain: 1.5, ceiling: -1, release: 150 },
+      stereo: stereo(1.25),
+    },
+  },
+  {
+    id: 'mpb', name: 'MPB / Bossa', desc: 'Voz e violão em primeiro plano: leve, aberto, dinâmica quase intacta',
+    s: {
+      eq: { low: 0.5, lowMid: -0.5, highMid: 0.5, high: 1.5 },
+      comp: { on: true, threshold: -22, ratio: 1.5, attack: 50, release: 300, makeup: 0.5 },
+      saturation: 0.1,
+      limiter: { on: true, gain: 1, ceiling: -1, release: 150 },
+    },
+  },
+  {
+    id: 'jazz', name: 'Jazz', desc: 'Natural e acústico: compressão bem suave, toda a dinâmica da banda preservada',
+    s: {
+      eq: { low: 0.5, lowMid: 0, highMid: 0, high: 0.5 },
+      comp: { on: true, threshold: -26, ratio: 1.3, attack: 60, release: 400, makeup: 0 },
+      saturation: 0.05,
+      limiter: { on: true, gain: 0, ceiling: -1, release: 200 },
+      stereo: stereo(1.05),
+    },
+  },
+  {
+    id: 'orchestral', name: 'Orquestral', desc: 'Trilha e música clássica: nada de compressão, só o limitador nos picos para não perder os crescendos',
+    s: {
+      eq: { low: 0, lowMid: -0.5, highMid: 0, high: 0.5 },
+      comp: { ...DEFAULT_MASTER.comp, on: false },
+      saturation: 0,
+      limiter: { on: true, gain: 0, ceiling: -1, release: 250 },
+      stereo: stereo(1.1),
     },
   },
 ];
