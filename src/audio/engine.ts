@@ -11,6 +11,7 @@ import { audibleSet } from './routing';
 import { makeZip } from './zip';
 import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
+import { Held, arpStep, playedNotes } from './arp';
 import { withLoading } from '../loading';
 import { micSettingsPath } from '../platform';
 
@@ -309,7 +310,7 @@ class Engine {
       const track = tracks.get(r.trackId);
       const strip = this.mixer.strips.get(r.trackId);
       if (!track || !strip || this.mixer.frozenOf(project, track)) continue;
-      for (const n of r.notes) {
+      for (const n of playedNotes(r, track)) {
         const abs = r.start + n.start;
         if (abs < from || abs >= until || n.start >= r.length) continue;
         const pm = this.punchMute;
@@ -355,12 +356,87 @@ class Engine {
       if (recHere) this.recNotes.push({ id: uid(), pitch, start: this.getBeat(), duration: 0.25, velocity: vel });
       return;
     }
-    this.live.set(key, startVoice(this.ctx, strip.input, PRESETS[track.instrument] ?? PRESETS.epiano, pitch, now, vel));
     if (recHere) this.recHeld.set(pitch, { start: this.getBeat(), vel });
+    // arpejador ligado: a nota entra no acorde segurado e quem toca é o relógio do arpejo
+    if (track.kind === 'instrument' && track.arp?.on) {
+      if (this.arpTrack !== track.id) this.stopArp();
+      this.arpTrack = track.id;
+      this.arpHeld.set(pitch, { pitch, vel, order: this.arpOrder++ });
+      if (!this.arpTimer) this.startArp();
+      return;
+    }
+    this.live.set(key, startVoice(this.ctx, strip.input, PRESETS[track.instrument] ?? PRESETS.epiano, pitch, now, vel));
+  }
+
+  // ---------- Arpejador ao vivo (teclado do PC, teclado na tela, MIDI) ----------
+
+  private arpHeld = new Map<number, Held>();
+  private arpTrack: string | null = null;
+  private arpOrder = 0;
+  private arpTimer = 0;
+  private arpCount = 0;
+  private arpStepN = 0;
+  /** próximo passo: instante (relógio do áudio) e, tocando, o tempo da música em que ele cai */
+  private arpNext = 0;
+  private arpBeat = 0;
+  private arpSynced = false;
+
+  /**
+   * Relógio do arpejo: parado, o primeiro passo sai na hora e os outros seguem o andamento; tocando, os
+   * passos caem na grade da música (o arpejo fica no tempo da bateria).
+   */
+  private startArp() {
+    this.arpCount = 0;
+    this.arpNext = this.ctx.currentTime + 0.005;
+    this.arpSynced = false;
+    this.arpTimer = window.setInterval(() => this.arpTick(), 15);
+    this.arpTick();
+  }
+
+  private stopArp() {
+    clearInterval(this.arpTimer);
+    this.arpTimer = 0;
+    this.arpHeld.clear();
+    this.arpCount = 0;
+  }
+
+  private arpTick() {
+    const s = useStore.getState();
+    const track = s.project.tracks.find((t) => t.id === this.arpTrack);
+    const strip = track && this.mixer.strips.get(track.id);
+    const arp = track?.arp;
+    if (!track || !strip || !arp?.on || !this.arpHeld.size) return this.stopArp();
+    const step = Math.max(1 / 16, arp.rate);
+    const spb = 60 / this.bpm;
+    const horizon = this.ctx.currentTime + 0.06;
+    // começou ou parou de tocar: reancora o relógio (tocando, no próximo passo da grade)
+    // (e também se o cursor pulou: seek, volta do loop — o passo previsto ficou longe de agora)
+    const now = this.ctx.currentTime;
+    const lost = this.arpSynced && this.playing && (this.arpNext < now - 0.03 || this.arpNext > now + step * spb + 0.1);
+    if (this.playing !== this.arpSynced || lost) {
+      this.arpSynced = this.playing;
+      if (this.playing) {
+        this.arpBeat = Math.ceil((this.getBeat() - 1e-3) / step) * step;
+        this.arpNext = this.timeAt(this.arpBeat);
+      }
+    }
+    for (let guard = 0; this.arpNext < horizon && guard < 16; guard++) {
+      const at = Math.max(this.arpNext, this.ctx.currentTime);
+      const dur = step * spb * Math.max(0.05, Math.min(1, arp.gate));
+      for (const n of arpStep([...this.arpHeld.values()], arp, this.arpCount, this.arpStepN++)) {
+        triggerNote(this.ctx, strip.input, 'instrument', track.instrument, n.pitch, at, dur, n.vel);
+      }
+      this.arpCount++;
+      if (this.arpSynced) {
+        this.arpBeat += step;
+        this.arpNext = this.timeAt(this.arpBeat);
+      } else this.arpNext += step * spb;
+    }
   }
 
   noteOff(pitch: number, trackId = useStore.getState().selectedTrackId) {
     if (!this.ready) return;
+    if (trackId === this.arpTrack && this.arpHeld.delete(pitch) && !this.arpHeld.size) this.stopArp();
     const key = `${trackId}:${pitch}`;
     this.live.get(key)?.release(this.ctx.currentTime);
     this.live.delete(key);
@@ -922,7 +998,7 @@ function scheduleAll(off: BaseAudioContext, mixer: Mixer, project: Project, buff
     if (!track || !strip || frozen.has(r.trackId)) continue;
     const buf = r.bufferId && buffers.get(r.bufferId);
     if (buf) playAudioRegion(off, strip.input, r, buf, r.start * spb);
-    for (const n of r.notes ?? []) {
+    for (const n of playedNotes(r, track)) {
       if (n.start >= r.length) continue;
       const dur = Math.min(n.duration, r.length - n.start) * spb;
       triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, (r.start + n.start) * spb, dur, n.velocity);

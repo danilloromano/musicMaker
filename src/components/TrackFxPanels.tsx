@@ -6,7 +6,8 @@ import {
   compOf, defaultEq, eqOf, eqResponse,
 } from '../audio/trackfx';
 import { useStore } from '../store';
-import { Sidechain, Track, TrackComp, TrackEq } from '../types';
+import { Arp, Sidechain, Track, TrackComp, TrackEq } from '../types';
+import { ARP_MODES, ARP_RATES, DEFAULT_ARP } from '../audio/arp';
 import { outputOf, sendAmount, sendsOf, sidechainOf } from '../audio/routing';
 import { KIND_ICON, Reduction, Slider, Spectrum } from './ui';
 
@@ -374,6 +375,43 @@ export function SidechainCard({ track: t }: { track: Track }) {
         </>
       )}
       <small className="hint">O "bombeado" do pop e do eletrônico: o bumbo abaixa o baixo ou o pad para cada batida aparecer.</small>
+    </div>
+  );
+}
+
+// ---------- Arpejador ----------
+
+/** Arpejador da trilha de instrumento: segure um acorde e ele vira arpejo no ritmo da música. */
+export function ArpCard({ track: t }: { track: Track }) {
+  const arp = t.arp ?? { ...DEFAULT_ARP, on: false };
+  const set = (patch: Partial<Arp>, history = true) => {
+    const tr = fresh(t.id);
+    if (tr) useStore.getState().updateTrack(t.id, { arp: { ...(tr.arp ?? { ...DEFAULT_ARP, on: false }), ...patch } }, history);
+  };
+  return (
+    <div className="fx-card arp-card">
+      <div className="arp-head">
+        <h4>Arpejador</h4>
+        <button className={arp.on ? 'toggle on' : 'toggle'} onClick={() => set({ on: !arp.on })}>{arp.on ? 'Ligado' : 'Desligado'}</button>
+      </div>
+      <span className="m-label">Modo</span>
+      <select value={arp.mode} disabled={!arp.on} onChange={(e) => { set({ mode: e.target.value as Arp['mode'] }); e.currentTarget.blur(); }}>
+        {ARP_MODES.map((m) => <option key={m.id} value={m.id} title={m.title}>{m.name}</option>)}
+      </select>
+      <span className="m-label">Velocidade</span>
+      <select value={arp.rate} disabled={!arp.on} onChange={(e) => { set({ rate: +e.target.value }); e.currentTarget.blur(); }}>
+        {ARP_RATES.map((r) => <option key={r.name} value={r.beats}>{r.name}</option>)}
+      </select>
+      <span className="m-label">Oitavas</span>
+      <div className="presets">
+        {[1, 2, 3, 4].map((o) => (
+          <button key={o} disabled={!arp.on || arp.mode === 'chord'} className={arp.octaves === o ? 'on' : ''} onClick={() => set({ octaves: o })}>{o}</button>
+        ))}
+      </div>
+      <CRow label="Duração" v={`${Math.round(arp.gate * 100)}%`}>
+        <Slider min={0.1} max={1} step={0.01} value={arp.gate} reset={DEFAULT_ARP.gate} onChange={(v) => set({ gate: v }, false)} />
+      </CRow>
+      <small className="hint">Segure um acorde (teclado, MIDI ou notas longas no Piano Roll) e ele vira arpejo no tempo da música. A gravação guarda o acorde: dá para trocar o arpejo depois.</small>
     </div>
   );
 }

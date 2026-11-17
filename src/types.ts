@@ -146,6 +146,20 @@ export interface AmpRig {
   irName?: string;
 }
 
+export type ArpMode = 'up' | 'down' | 'updown' | 'random' | 'order' | 'chord';
+
+/** Arpejador da trilha (ver audio/arp.ts). */
+export interface Arp {
+  on: boolean;
+  mode: ArpMode;
+  /** duração de cada passo, em tempos (0,25 = semicolcheia) */
+  rate: number;
+  /** quantas oitavas o arpejo percorre (1 a 4) */
+  octaves: number;
+  /** quanto do passo cada nota soa (0,1 = bem curtinho, 1 = ligado) */
+  gate: number;
+}
+
 export interface Track {
   id: string;
   name: string;
@@ -171,6 +185,8 @@ export interface Track {
    * tocar ao vivo até ser congelada de novo.
    */
   frozen?: { bufferId: string; key: string };
+  /** arpejador (só trilhas de instrumento): as notas seguradas viram arpejo ao tocar */
+  arp?: Arp;
 }
 
 /** Master: EQ, compressor de "cola", saturação, limitador e como exportar. */
@@ -277,7 +293,7 @@ const keyCache = new WeakMap<Track, { regions: Region[]; bpm: number; key: strin
 function computeFreezeKey(p: Project, t: Track): string {
   const regions = p.regions.filter((r) => r.trackId === t.id).sort((a, b) => (a.id < b.id ? -1 : 1));
   const lanes = (t.automation ?? []).filter((l) => l.param === 'wah' || l.param === 'rotary');
-  const text = JSON.stringify([p.bpm, t.kind, t.instrument, t.amp ?? null, lanes, regions.map((r) => ({ ...r, name: '' }))]);
+  const text = JSON.stringify([p.bpm, t.kind, t.instrument, t.amp ?? null, t.arp?.on ? t.arp : null, lanes, regions.map((r) => ({ ...r, name: '' }))]);
   // FNV-1a de 32 bits (duas passadas com sementes diferentes para não colidir por acaso)
   let a = 0x811c9dc5, b = 0x01000193 ^ text.length;
   for (let i = 0; i < text.length; i++) {
