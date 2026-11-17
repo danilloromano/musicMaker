@@ -473,6 +473,80 @@ export const LOOPS: Loop[] = [
   mel('b-dembow', 'Baixo Reggaeton', 'Baixo', 'bass', 4, line([33, 29, 36, 31], [
     [0, 0, 0.6], [0.75, 0, 0.6], [1.5, 0, 0.4], [2, 0, 0.6], [2.75, 0, 0.6], [3.5, 0, 0.4],
   ])),
+  // Mais baixos por estilo (combinam com os estilos de bateria novos de mesmo nome)
+  mel('b-funk-carioca', 'Baixo Funk Carioca', 'Baixo', 'bass', 4, line([33, 33, 31, 29], [
+    [0, 0, 0.5], [0.75, 0, 0.4], [1.5, 0, 0.4], [2, 0, 0.5], [3, 7, 0.3], [3.5, 12, 0.3],
+  ])),
+  mel('b-axe', 'Baixo Axé', 'Baixo', 'ebass', 4, line([36, 29, 31, 36], [
+    [0, 0, 0.45], [0.75, 7, 0.2], [1, 12, 0.45], [2, 0, 0.45], [2.5, 7, 0.45], [3, 12, 0.3], [3.5, 7, 0.4],
+  ])),
+  mel('b-pagode', 'Baixo Pagode', 'Baixo', 'ebass', 4, line([36, 33, 38, 31], [
+    [0, 0, 0.45], [0.75, 0, 0.22], [1, 7, 0.45], [1.75, 7, 0.22], [2, 0, 0.45], [2.5, 4, 0.22], [2.75, 5, 0.22], [3, 7, 0.45], [3.5, 9, 0.45],
+  ])),
+  mel('b-sertanejo', 'Baixo Sertanejo', 'Baixo', 'ebass', 4, line([31, 38, 40, 36], [
+    [0, 0, 0.7], [1, 7, 0.45], [1.5, 0, 0.45], [2, 0, 0.7], [3, 7, 0.45], [3.5, 0, 0.45],
+  ])),
+  // Maracatu: ré eólio, pesado como as alfaias
+  mel('b-maracatu', 'Baixo Maracatu', 'Baixo', 'ebass', 4, line([38, 38, 36, 34], [
+    [0, 0, 0.7], [1.5, 0, 0.4], [2, 7, 0.45], [2.75, 0, 0.6], [3.5, 10, 0.4],
+  ])),
+  mel('b-frevo', 'Baixo Frevo', 'Baixo', 'ebass', 4, line([31, 36, 38, 31], [
+    [0, 0, 0.4], [0.5, 7, 0.4], [1, 12, 0.4], [1.5, 7, 0.4], [2, 0, 0.4], [2.5, 4, 0.4], [3, 7, 0.4], [3.5, 4, 0.4],
+  ])),
+  mel('b-ijexa', 'Baixo Ijexá', 'Baixo', 'ebass', 4, line([33, 38, 33, 40], [
+    [0, 0, 0.6], [0.75, 7, 0.6], [1.5, 10, 0.4], [2, 12, 0.4], [2.75, 7, 0.6], [3.5, 3, 0.4],
+  ])),
+  // Salsa: tumbao (no "e" do 2 a fundamental do acorde; no 4 já antecipa a do próximo, ligada até o "e" do 2)
+  mel('b-salsa', 'Baixo Salsa (Tumbao)', 'Baixo', 'ebass', 4, [33, 38, 31, 36].flatMap((r, i, a) => [
+    [i * 4 + 1.5, r, 1.4], [i * 4 + 3, a[(i + 1) % a.length], 1.0],
+  ] as [number, number, number][])),
+  mel('b-cumbia', 'Baixo Cumbia', 'Baixo', 'ebass', 4, line([33, 38, 40, 33], [
+    [0, 0, 0.9], [1, 7, 0.45], [2, -5, 0.9], [3, 7, 0.45],
+  ])),
+  mel('b-bachata', 'Baixo Bachata', 'Baixo', 'ebass', 4, line([33, 38, 40, 33], [
+    [0, 0, 0.4], [0.5, 7, 0.4], [1, 12, 0.4], [2, 0, 0.4], [2.5, 7, 0.4], [3, 12, 0.3], [3.5, 10, 0.3],
+  ])),
+  mel('b-bolero', 'Baixo Bolero', 'Baixo', 'ebass', 4, line([36, 33, 38, 31], [
+    [0, 0, 1.4], [1.5, 7, 0.45], [2, 7, 1.4], [3.5, 0, 0.45],
+  ])),
+  mel('b-punk', 'Baixo Punk', 'Baixo', 'ebass', 4, line([28, 28, 33, 35],
+    Array.from({ length: 8 }, (_, k) => [k / 2, 0, 0.42] as [number, number, number]))),
+  mel('b-poppunk', 'Baixo Pop Punk', 'Baixo', 'ebass', 4, line([38, 33, 35, 31],
+    Array.from({ length: 8 }, (_, k) => [k / 2, k === 7 ? 12 : 0, 0.42] as [number, number, number]))),
+  mel('b-motorik', 'Baixo Motorik', 'Baixo', 'ebass', 4, line([33, 33, 33, 31], [
+    [0, 0, 0.4], [0.5, 0, 0.4], [1, 0, 0.4], [1.5, 12, 0.3], [2, 0, 0.4], [2.5, 0, 0.4], [3, 7, 0.4], [3.5, 0, 0.4],
+  ])),
+  // Ska: walking em semínimas subindo pelo acorde
+  mel('b-ska', 'Baixo Ska', 'Baixo', 'ebass', 4, line([36, 33, 29, 31], [
+    [0, 0, 0.9], [1, 4, 0.9], [2, 7, 0.9], [3, 9, 0.9],
+  ])),
+  // Country: fundamental no 1, quinta no 3
+  mel('b-country', 'Baixo Country', 'Baixo', 'ebass', 4, line([31, 36, 38, 31], [
+    [0, 0, 1.4], [2, 7, 1.4],
+  ])),
+  // Afrobeat: riff de ré dórico repetido (o baixo do Fela não muda de acorde)
+  mel('b-afrobeat', 'Baixo Afrobeat', 'Baixo', 'ebass', 2, [
+    [0, 38, 0.4], [0.75, 38, 0.2], [1, 41, 0.4], [1.5, 43, 0.4], [2.5, 45, 0.2], [2.75, 43, 0.4], [3.5, 41, 0.4],
+    [4, 38, 0.4], [4.75, 38, 0.2], [5, 41, 0.4], [5.5, 43, 0.4], [6, 47, 0.4], [6.5, 45, 0.4], [7, 43, 0.4], [7.5, 40, 0.4],
+  ]),
+  mel('b-afrobeats', 'Baixo Afrobeats', 'Baixo', 'bass', 4, line([33, 29, 36, 31], [
+    [0, 0, 0.6], [0.75, 0, 0.4], [1.5, 0, 0.4], [2.5, 7, 0.5], [3.5, 5, 0.4],
+  ])),
+  // Amapiano: o "log drum" (notas curtas e sincopadas, pulando oitava)
+  mel('b-amapiano', 'Log Drum Amapiano', 'Baixo', 'bass', 4, line([33, 33, 29, 31], [
+    [0, 0, 0.3], [0.75, 0, 0.3], [1.5, 7, 0.3], [2.25, 12, 0.3], [2.75, 10, 0.3], [3.5, 7, 0.3],
+  ])),
+  mel('b-ukg', 'Baixo UK Garage', 'Baixo', 'bass', 4, line([33, 36, 29, 31], [
+    [0, 0, 0.5], [0.75, 0, 0.25], [1.5, 12, 0.3], [2.5, 0, 0.4], [3, 10, 0.3], [3.5, 7, 0.4],
+  ])),
+  mel('b-dubstep', 'Baixo Dubstep', 'Baixo', 'bass', 4, line([28, 28, 31, 26], [
+    [0, 0, 1.9], [2.5, 0, 0.4], [3, 3, 0.4], [3.5, -2, 0.45],
+  ])),
+  mel('b-jersey', 'Baixo Jersey Club', 'Baixo', 'bass', 4, line([33, 33, 29, 31], [
+    [0, 0, 0.3], [1, 0, 0.3], [2, 0, 0.3], [2.75, 0, 0.3], [3.5, 12, 0.3],
+  ])),
+  mel('b-synthwave', 'Baixo Synthwave', 'Baixo', 'bass', 4, line([33, 29, 36, 31],
+    Array.from({ length: 8 }, (_, k) => [k / 2, k === 7 ? 7 : 0, 0.4] as [number, number, number]))),
 
   // Psicodélico anos 70 (em mi dórico: a sexta maior, Dó#, dá o colorido "viajante")
   mel('b-psych', 'Baixo Psicodélico', 'Baixo', 'ebass', 2, [
