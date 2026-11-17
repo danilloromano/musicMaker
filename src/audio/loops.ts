@@ -272,6 +272,148 @@ export const LOOPS: Loop[] = [
     38: '....x.......x...',
     42: 'x.o.x.oox.o.x.o.',
   }),
+  // Mais brasileiros (tons = surdos/alfaias/atabaques, cowbell = agogô/gonguê, chimbal = pandeiro/ganzá)
+  drums('d-funk-carioca', 'Funk Carioca (Tamborzão)', 2, {
+    36: 'x..x..x.x.....x.',
+    39: '....x.......x...',
+    48: '..x...x...x.x...',
+    45: '.............x.x',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  drums('d-axe', 'Axé / Samba-reggae', 2, {
+    36: 'x.......x.......',
+    45: '....x.......x.xx',
+    48: '..x...x...x...x.',
+    38: 'x.ox.oxox.ox.ox.',
+  }),
+  drums('d-pagode', 'Pagode', 2, {
+    36: 'x......xx......x',
+    45: '....x.......x...',
+    42: 'xooxxooxxooxxoox',
+    38: '..o..o....o..o..',
+  }),
+  drums('d-sertanejo', 'Sertanejo', 2, {
+    36: 'x.....x.x.....x.',
+    38: '....x.......x...',
+    42: 'x.xxx.xxx.xxx.xx',
+    49: 'x...............................',
+  }),
+  drums('d-maracatu', 'Maracatu', 2, {
+    36: 'x.......x..x....',
+    45: '..x.x..x..x.x..x',
+    38: 'xoxoxooxxoxoxoox',
+    56: 'x.x..x.x..x.x...',
+  }),
+  drums('d-frevo', 'Frevo', 2, {
+    36: 'x...x...x...x...',
+    38: 'x.oxx.o.x.oxx.o.',
+    45: '..............xx',
+    49: 'x...............................',
+  }),
+  drums('d-ijexa', 'Ijexá', 2, {
+    36: 'x.....x.x.....x.',
+    45: '...x.......x....',
+    56: 'x.x.x.x.x..x.x..',
+    42: 'o.o.o.o.o.o.o.o.',
+  }),
+  // Latinos (palmas = clave, tons = congas/bongôs, cowbell = campana)
+  drums('d-salsa', 'Salsa', 2, {
+    39: 'x..x..x.............x...x.......',
+    56: 'x...x...x...x...',
+    50: '....x.......x...',
+    45: '............x.x.',
+    36: '......x.....x...',
+  }),
+  drums('d-cumbia', 'Cumbia', 2, {
+    36: 'x.......x.......',
+    42: 'x.xxx.xxx.xxx.xx',
+    48: '..x...x...x...x.',
+    38: '....o.......o...',
+  }),
+  drums('d-bachata', 'Bachata', 2, {
+    36: 'x.......x.......',
+    42: 'x.xxx.xxx.xxx.xx',
+    50: 'x.o.x.o.x.o.x.oo',
+    45: '..............x.',
+  }),
+  drums('d-bolero', 'Bolero', 2, {
+    36: 'x.......x.......',
+    50: 'x..x.x..x..x.x..',
+    45: '......x.......x.',
+    42: 'o.o.o.o.o.o.o.o.',
+  }),
+  // Punk e indie
+  drums('d-punk', 'Punk', 2, {
+    36: 'x.x.x.x.x.x.x.x.',
+    38: '....x.......x...',
+    46: 'x.x.x.x.x.x.x.x.',
+    49: 'x...............................',
+  }),
+  drums('d-poppunk', 'Pop Punk', 2, {
+    36: 'x.x...x.x.x...x.',
+    38: '....x.......x...',
+    46: 'x...x...x...x...',
+    49: 'x...............................',
+  }),
+  drums('d-motorik', 'Motorik (Krautrock)', 2, {
+    36: 'x...x.x.x...x.x.',
+    38: '....x.......x...',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  drums('d-ska', 'Ska', 2, {
+    36: 'x.......x.......',
+    38: '....x.......x...',
+    46: '..x...x...x...x.',
+    42: 'x...x...x...x...',
+  }),
+  drums('d-country', 'Country (Train Beat)', 2, {
+    36: 'x.......x.......',
+    38: 'ooooxoooooooxooo',
+  }),
+  // Africanos
+  drums('d-afrobeat', 'Afrobeat (anos 70)', 2, {
+    36: 'x.....x...x.....x..x..x...x.....',
+    38: '....x..o.o..x..o',
+    42: 'xoxoxoxoxoxoxo.o',
+    46: '..............x.',
+    56: 'x.x.xx.x.x.xx.x.',
+  }),
+  drums('d-afrobeats', 'Afrobeats', 2, {
+    36: 'x.....x.x.......',
+    39: '....x.......x...',
+    50: '..x..x.x..x..x.x',
+    42: 'x.xxx.x.x.xxx.x.',
+  }),
+  drums('d-amapiano', 'Amapiano', 2, {
+    36: 'x...x...x...x...',
+    39: '....x.......x...',
+    42: 'xoxoxoxoxoxoxoxo',
+    50: '...o..o.....o..o',
+    48: '..........x.....',
+  }),
+  // Mais eletrônicos
+  drums('d-ukg', 'UK Garage 2-Step', 2, {
+    36: 'x.........x.....x.......x.x.....',
+    38: '....x.......x...',
+    42: '..x...x...x...xo',
+    46: '......x.........',
+  }),
+  drums('d-dubstep', 'Dubstep (meio tempo)', 2, {
+    36: 'x.........x.....x.....x...x.....',
+    38: '........x...............x.......',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  drums('d-jersey', 'Jersey Club', 2, {
+    36: 'x...x...x..x..x.',
+    39: '....x.......x...',
+    42: 'x.x.x.x.x.x.x.x.',
+  }),
+  drums('d-synthwave', 'Synthwave', 2, {
+    36: 'x.......x.x.....',
+    38: '....x.......x...',
+    42: 'xoxoxoxoxoxoxoxo',
+    49: 'x...............................',
+  }),
   drums('d-toms', 'Virada de Tons', 1, { 36: 'x...x...x...x...', 50: 'xx.x............', 48: '....xx.x........', 45: '........xx.xx.x.', 49: '...............x' }),
 
   mel('b-pop', 'Baixo Pop', 'Baixo', 'ebass', 4, eighths([36, 31, 33, 29])),
@@ -498,11 +640,14 @@ export const DRUM_STYLES: { group: string; ids: string[] }[] = [
   { group: 'Funk', ids: ['d-funk', 'd-funk-us', 'd-funk-break'] },
   { group: 'Reggae', ids: ['d-reggae-onedrop', 'd-reggae-rockers', 'd-reggae-steppers'] },
   { group: 'Psicodélico anos 70', ids: ['d-psych-groove', 'd-psych-tribal', 'd-psych-heavy'] },
-  { group: 'Brasileiros', ids: ['d-samba', 'd-bossa', 'd-baiao', 'd-xote'] },
+  { group: 'Brasileiros', ids: ['d-samba', 'd-bossa', 'd-baiao', 'd-xote', 'd-funk-carioca', 'd-axe', 'd-pagode', 'd-sertanejo', 'd-maracatu', 'd-frevo', 'd-ijexa'] },
+  { group: 'Latinos', ids: ['d-salsa', 'd-cumbia', 'd-bachata', 'd-bolero'] },
+  { group: 'Punk e indie', ids: ['d-punk', 'd-poppunk', 'd-motorik', 'd-ska', 'd-country'] },
+  { group: 'Africanos', ids: ['d-afrobeat', 'd-afrobeats', 'd-amapiano'] },
   { group: 'Pop e dança', ids: ['d-pop', 'd-ballad', 'd-disco', 'd-motown'] },
   { group: 'Shuffle, blues e jazz', ids: ['d-shuffle', 'd-blues', 'd-jazz'] },
   { group: 'Metal', ids: ['d-metal-double', 'd-metal-gallop', 'd-metal-blast'] },
-  { group: 'Hip-hop e eletrônico', ids: ['d-hiphop', 'd-trap', 'd-house', 'd-dembow', 'd-techno', 'd-dnb', 'd-lofi'] },
+  { group: 'Hip-hop e eletrônico', ids: ['d-hiphop', 'd-trap', 'd-house', 'd-dembow', 'd-techno', 'd-dnb', 'd-lofi', 'd-ukg', 'd-dubstep', 'd-jersey', 'd-synthwave'] },
 ];
 
 /** Repete o padrão do loop até preencher `beats` tempos. */
