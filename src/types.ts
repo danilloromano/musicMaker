@@ -31,6 +31,14 @@ export interface Region {
 }
 
 /** Trecho tocado em repetição (em tempos). */
+/** Marcador de seção na timeline: a seção vai dele até o próximo marcador. */
+export interface Marker {
+  id: string;
+  /** posição em tempos */
+  beat: number;
+  name: string;
+}
+
 export interface LoopRange {
   start: number;
   end: number;
@@ -185,6 +193,8 @@ export interface Project {
   bpm: number;
   metronome: boolean;
   loop?: LoopRange;
+  /** marcadores de seção (Intro, Verso, Refrão…), em ordem de posição */
+  markers?: Marker[];
   tracks: Track[];
   regions: Region[];
   /** ajustes do master (projetos antigos não têm: usam o padrão) */
@@ -226,4 +236,17 @@ export function regionGainAt(r: Region, x: number): number {
 
 export function projectEnd(p: Project): number {
   return p.regions.reduce((m, r) => Math.max(m, r.start + regionLen(r, p.bpm)), 0);
+}
+
+/** Nomes sugeridos para os marcadores, na ordem em que costumam aparecer numa música. */
+export const SECTION_NAMES = ['Intro', 'Verso', 'Pré-refrão', 'Refrão', 'Ponte', 'Solo', 'Final'];
+
+/** Cor de uma seção: sempre a mesma para o mesmo nome (todos os "Refrão" iguais). */
+export function sectionColor(name: string): string {
+  const palette = ['#5fb4ff', '#ff7a45', '#b98cff', '#38d9c0', '#ffcf3f', '#ff5fa2', '#9be15d', '#e0b48a'];
+  const k = SECTION_NAMES.findIndex((n) => n.toLowerCase() === name.trim().toLowerCase());
+  if (k >= 0) return palette[k];
+  let h = 0;
+  for (const c of name.trim().toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return palette[h % palette.length];
 }

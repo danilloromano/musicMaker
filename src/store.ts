@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { ExportReport } from './audio/export';
 import type { Analysis } from './audio/analysis';
-import { BEATS_PER_BAR, Note, Project, Region, Track, TrackKind, fitFades, regionLen, uid } from './types';
+import { BEATS_PER_BAR, Marker, Note, Project, Region, SECTION_NAMES, Track, TrackKind, fitFades, regionLen, uid } from './types';
 
 const COLORS = ['#ff7a45', '#38d9c0', '#b98cff', '#ffcf3f', '#ff5fa2', '#5fb4ff', '#9be15d', '#e0b48a'];
 
@@ -110,7 +110,14 @@ interface State {
   /** Liga/desliga o loop; se ainda não há trecho, usa a região selecionada ou 4 compassos a partir do cursor. */
   toggleLoop: (cursorBeat: number) => void;
   setNotes: (regionId: string, notes: Note[], history?: boolean) => void;
+
+  /** Cria um marcador de seção no compasso do tempo dado (com o nome da próxima seção provável). */
+  addMarker: (beat: number) => Marker | null;
+  updateMarker: (id: string, patch: Partial<Marker>, history?: boolean) => void;
+  removeMarker: (id: string) => void;
 }
+
+const sortMarkers = (m: Marker[]) => [...m].sort((a, b) => a.beat - b.beat);
 
 export const useStore = create<State>((set, get) => ({
   project: defaultProject(),
@@ -303,6 +310,22 @@ export const useStore = create<State>((set, get) => ({
     }
     set({ audioSel: null });
   },
+
+  addMarker: (at) => {
+    const beat = Math.max(0, Math.floor(at / BEATS_PER_BAR + 1e-6) * BEATS_PER_BAR);
+    const list = get().project.markers ?? [];
+    if (list.some((m) => Math.abs(m.beat - beat) < 1e-6)) return null;
+    // o nome segue o da seção anterior (Intro → Verso → Pré-refrão → Refrão…)
+    const prev = list.filter((m) => m.beat < beat).pop();
+    const k = prev ? SECTION_NAMES.indexOf(prev.name) : -1;
+    const name = !prev ? SECTION_NAMES[0] : k >= 0 && k < SECTION_NAMES.length - 1 ? SECTION_NAMES[k + 1] : `Seção ${list.length + 1}`;
+    const marker = { id: uid(), beat, name };
+    get().update((p) => ({ ...p, markers: sortMarkers([...(p.markers ?? []), marker]) }));
+    return marker;
+  },
+  updateMarker: (id, patch, history = true) =>
+    get().update((p) => ({ ...p, markers: sortMarkers((p.markers ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m))) }), history),
+  removeMarker: (id) => get().update((p) => ({ ...p, markers: (p.markers ?? []).filter((m) => m.id !== id) })),
 
   toggleLoop: (cursorBeat) => {
     const s = get();

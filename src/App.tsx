@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { engine } from './audio/engine';
 import { BottomPanel, KEY_ROW } from './components/BottomPanel';
 import { LoadingOverlay } from './components/ShipProgress';
+import { jumpMarker } from './components/Markers';
 import { Timeline } from './components/Timeline';
 import { Transport, saveProject } from './components/Transport';
 import { useStore } from './store';
@@ -53,6 +54,9 @@ function useShortcuts() {
 
       if (k === 'enter') engine.seek(0);
       else if (k === 'c' && !e.repeat) s.toggleLoop(engine.getBeat());
+      else if (k === 'm' && !e.repeat) s.addMarker(engine.getBeat());
+      else if (k === ',') jumpMarker(-1);
+      else if (k === '.') jumpMarker(1);
       else if (k === 'r' && !e.repeat) void engine.toggleRecord();
       else if (k === 'escape') s.set({ audioSel: null });
       else if ((k === 'delete' || k === 'backspace') && s.audioSel && s.bottomTab === 'audio') {

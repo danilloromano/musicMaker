@@ -7,6 +7,7 @@ import { useStore } from '../store';
 import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, fitFades, projectEnd, regionLen, uid } from '../types';
 import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
+import { MarkerLane, MarkerLines, jumpMarker } from './Markers';
 
 const HEADER_W = 264;
 export const LOOP_MIME = 'application/x-mm-loop';
@@ -201,11 +202,19 @@ export function Timeline() {
       <div className="arr-inner" style={{ width: HEADER_W + width, ['--ppb' as string]: `${ppb}px` }}>
         <div className="ruler-row">
           <div className="corner" style={{ width: HEADER_W }}>
-            <span>Nova trilha:</span>
-            <button title="Trilha de instrumento virtual" onClick={() => add('instrument')}>🎹</button>
-            <button title="Trilha de bateria" onClick={() => add('drums')}>🥁</button>
-            <button title="Trilha de áudio (microfone / arquivo)" onClick={() => add('audio')}>🎤</button>
-            <button title="Trilha de grupo: soma outras trilhas (ex.: toda a bateria) para ajustar juntas" onClick={() => add('bus')}>🎚️</button>
+            <div className="corner-line">
+              <span>Nova trilha:</span>
+              <button title="Trilha de instrumento virtual" onClick={() => add('instrument')}>🎹</button>
+              <button title="Trilha de bateria" onClick={() => add('drums')}>🥁</button>
+              <button title="Trilha de áudio (microfone / arquivo)" onClick={() => add('audio')}>🎤</button>
+              <button title="Trilha de grupo: soma outras trilhas (ex.: toda a bateria) para ajustar juntas" onClick={() => add('bus')}>🎚️</button>
+            </div>
+            <div className="corner-line">
+              <span>Seções:</span>
+              <button title="Novo marcador de seção no compasso do cursor (M)" onClick={() => st.addMarker(engine.getBeat())}>+ Marcador</button>
+              <button title="Seção anterior (,)" onClick={() => jumpMarker(-1)}>◀</button>
+              <button title="Próxima seção (.)" onClick={() => jumpMarker(1)}>▶</button>
+            </div>
           </div>
           <div className="ruler" style={{ width }} onPointerDown={scrub}>
             {Array.from({ length: Math.ceil(bars / barStep) }, (_, i) => (
@@ -223,9 +232,11 @@ export function Timeline() {
                 <div className="loop-edge r" onPointerDown={(e) => dragLoop(e, 'end')} />
               </div>
             )}
+            <MarkerLane ppb={ppb} beatAt={beatAt} />
             <div className="ruler-head" ref={rulerHead} />
           </div>
         </div>
+        <MarkerLines ppb={ppb} left={HEADER_W} />
         {loop?.on && <div className="loop-shade" style={{ left: HEADER_W + loop.start * ppb, width: (loop.end - loop.start) * ppb }} />}
 
         {project.tracks.map((t) => (
