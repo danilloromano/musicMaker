@@ -165,6 +165,12 @@ export interface Track {
   automation?: AutoLane[];
   /** parâmetro mostrado na faixa de automação da timeline (ausente = faixa fechada) */
   autoView?: string;
+  /**
+   * Trilha congelada: o instrumento e o rack de amp/pedais renderizados em áudio (`bufferId`, do tempo 0).
+   * `key` é a impressão digital do que foi renderizado (ver freezeKey): se a trilha mudar, ela volta a
+   * tocar ao vivo até ser congelada de novo.
+   */
+  frozen?: { bufferId: string; key: string };
 }
 
 /** Master: EQ, compressor de "cola", saturação, limitador e como exportar. */
@@ -251,4 +257,38 @@ export function sectionColor(name: string): string {
   let h = 0;
   for (const c of name.trim().toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return palette[h % palette.length];
+}
+
+/**
+ * Impressão digital do que o congelamento de uma trilha renderiza: regiões e notas dela, instrumento, rack de
+ * amp, automação de wah/rotary (que ficam dentro do rack) e o andamento. Mudou qualquer coisa = desatualizado.
+ */
+export function freezeKey(p: Project, t: Track): string {
+  // cache: a mesma trilha com as mesmas regiões e o mesmo andamento dá a mesma impressão (é consultado a cada
+  // agendamento de notas, então não pode refazer o JSON toda vez)
+  const hit = keyCache.get(t);
+  if (hit && hit.regions === p.regions && hit.bpm === p.bpm) return hit.key;
+  const key = computeFreezeKey(p, t);
+  keyCache.set(t, { regions: p.regions, bpm: p.bpm, key });
+  return key;
+}
+const keyCache = new WeakMap<Track, { regions: Region[]; bpm: number; key: string }>();
+
+function computeFreezeKey(p: Project, t: Track): string {
+  const regions = p.regions.filter((r) => r.trackId === t.id).sort((a, b) => (a.id < b.id ? -1 : 1));
+  const lanes = (t.automation ?? []).filter((l) => l.param === 'wah' || l.param === 'rotary');
+  const text = JSON.stringify([p.bpm, t.kind, t.instrument, t.amp ?? null, lanes, regions.map((r) => ({ ...r, name: '' }))]);
+  // FNV-1a de 32 bits (duas passadas com sementes diferentes para não colidir por acaso)
+  let a = 0x811c9dc5, b = 0x01000193 ^ text.length;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x5bd1e995);
+  }
+  return (a >>> 0).toString(36) + (b >>> 0).toString(36);
+}
+
+/** Áudio congelado que vale agora para a trilha (atualizado e carregado), ou undefined (toca ao vivo). */
+export function activeFreeze(p: Project, t: Track, has: (bufferId: string) => boolean): string | undefined {
+  return t.frozen && t.kind !== 'bus' && has(t.frozen.bufferId) && t.frozen.key === freezeKey(p, t) ? t.frozen.bufferId : undefined;
 }

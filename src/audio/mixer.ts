@@ -1,4 +1,4 @@
-import { Project, Track } from '../types';
+import { Project, Track, activeFreeze } from '../types';
 import { Rig, rigKey } from './amp';
 import { MasterChain, ensureWorklets, workletsReady } from './master';
 import { activeLanes, audibleSet, outputOf, sendAmount, sendsOf, sidechainOf, speedChanges, valueAt } from './routing';
@@ -91,6 +91,12 @@ export class Mixer {
 
   private lastProject: Project | null = null;
 
+  /** Áudio congelado que vale para a trilha agora (ver types.ts: activeFreeze). */
+  frozenOf(p: Project, t: Track): AudioBuffer | undefined {
+    const id = activeFreeze(p, t, (x) => !!this.getBuffer(x));
+    return id ? this.getBuffer(id) : undefined;
+  }
+
   private createStrip(): Strip {
     const c = this.ctx;
     const input = c.createGain();
@@ -111,9 +117,12 @@ export class Mixer {
     return { input, eq, comp, makeup, duck, gain, pan, out, dest: '', sends: new Map(), analyser };
   }
 
-  /** Rack de amp/pedais entre a entrada do canal e o EQ: remonta só quando muda amp, caixa ou IR. */
-  private syncRig(s: Strip, t: Track, bpm: number) {
-    const want = t.amp?.on ? t.amp : null;
+  /**
+   * Rack de amp/pedais entre a entrada do canal e o EQ: remonta só quando muda amp, caixa ou IR. Trilha
+   * congelada não tem rack (o som dele já está no áudio congelado, que entra direto no EQ).
+   */
+  private syncRig(s: Strip, t: Track, bpm: number, frozen: boolean) {
+    const want = t.amp?.on && !frozen ? t.amp : null;
     const ir = want?.cab === 'user' && want.irId ? this.getBuffer(want.irId) : undefined;
     // o octaver usa AudioWorklet: quando os worklets carregam, o rack é remontado para ganhá-lo
     const key = want && `${rigKey(want, !!ir)}|${workletsReady(this.ctx) ? 'w' : ''}`;
@@ -266,7 +275,7 @@ export class Mixer {
       }
       applyEq(s.eq, eqOf(t.fx), true);
       applyComp(s.comp, s.makeup, compOf(t.fx), true);
-      this.syncRig(s, t, bpm);
+      this.syncRig(s, t, bpm, !!this.frozenOf(project, t));
       // wah automatizado: tocando, a curva agendada manda; parado, vale o ponto da curva no cursor
       const wah = activeLanes(t).find((l) => l.param === 'wah');
       s.rig?.wah.override(wah ? (this.automating ? 'scheduled' : valueAt(wah.points, this.cursor)) : undefined);

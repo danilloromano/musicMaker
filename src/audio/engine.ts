@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { BEATS_PER_BAR, MasterSettings, Note, Project, Region, projectEnd, regionGainAt, uid } from '../types';
+import { BEATS_PER_BAR, MasterSettings, Note, Project, Region, Track, freezeKey, projectEnd, regionGainAt, regionLen, uid } from '../types';
 import { PRESETS, Voice, playDrum, startVoice, triggerNote } from './instruments';
 import { loadDrumSamples, warmDrumKit } from './drumKit';
 import { loadAllSampleSets } from './sampler';
@@ -80,6 +80,14 @@ class Engine {
           this.mixer.sync(a);
           // tocando: reagenda a automação (curva editada, trilha ligada/desligada, andamento)
           if (this.playing) this.mixer.automate(a, this.getBeat(), this.ctx.currentTime, (beat) => this.timeAt(beat));
+        }
+        // trilha que passou a tocar congelada ou ao vivo (congelou, descongelou, mudou depois de congelar):
+        // remonta o rack e, tocando, recomeça no mesmo ponto para trocar o que está agendado
+        const frozen = this.frozenSig(a);
+        if (frozen !== this.lastFrozen) {
+          this.lastFrozen = frozen;
+          this.mixer.sync(a);
+          queueMicrotask(() => this.restartPlayback());
         }
         if (a.master !== b.master) this.mixer.chain.update(masterOf(a.master));
         if (s.abRef !== prev.abRef || s.abMatch !== prev.abMatch || s.refAnalysis !== prev.refAnalysis || s.mixAnalysis !== prev.mixAnalysis) this.applyAB();
@@ -221,10 +229,20 @@ class Engine {
       if (src) this.sources.push(src);
       this.applyAB();
     }
+    const frozen = new Set<string>();
+    for (const t of project.tracks) {
+      const buf = this.mixer.frozenOf(project, t);
+      const strip = this.mixer.strips.get(t.id);
+      if (!buf || !strip) continue;
+      frozen.add(t.id);
+      const at = this.timeAt(0);
+      const src = playAudioRegion(this.ctx, strip.input, frozenRegion(t, buf), buf, Math.max(at, ref), Math.max(0, ref - at));
+      if (src) this.sources.push(src);
+    }
     for (const r of project.regions) {
       const buf = r.bufferId && this.buffers.get(r.bufferId);
       const strip = this.mixer.strips.get(r.trackId);
-      if (!buf || !strip) continue;
+      if (!buf || !strip || frozen.has(r.trackId)) continue;
       const at = this.timeAt(r.start);
       const late = Math.max(0, ref - at);
       const dest = this.punchDuck && this.punchMute?.trackId === r.trackId ? this.punchDuck : strip.input;
@@ -284,7 +302,7 @@ class Engine {
       if (!r.notes || r.start >= until || r.start + r.length <= from) continue;
       const track = tracks.get(r.trackId);
       const strip = this.mixer.strips.get(r.trackId);
-      if (!track || !strip) continue;
+      if (!track || !strip || this.mixer.frozenOf(project, track)) continue;
       for (const n of r.notes) {
         const abs = r.start + n.start;
         if (abs < from || abs >= until || n.start >= r.length) continue;
@@ -353,6 +371,45 @@ class Engine {
     }
   }
 
+  // ---------- Congelar trilha ----------
+
+  private lastFrozen = '';
+  /** Quais trilhas estão tocando congeladas agora (para perceber quando isso muda). */
+  private frozenSig(p: Project) {
+    return p.tracks.filter((t) => this.mixer.frozenOf(p, t)).map((t) => t.id).join();
+  }
+
+  /** Congela a trilha (ou recongela, se ela mudou): renderiza instrumento + rack em áudio. */
+  async freezeTrack(trackId: string) {
+    this.ensure();
+    const s = useStore.getState();
+    const t = s.project.tracks.find((x) => x.id === trackId);
+    if (!t || t.kind === 'bus') return;
+    if (s.recording?.trackId === trackId) return;
+    const project = s.project;
+    const buf = await withLoading(`Congelando "${t.name}"…`, () => renderFrozen(project, trackId, this.buffers, this.ctx.sampleRate));
+    if (!buf) {
+      alert('Não há nada para congelar nesta trilha ainda.');
+      return;
+    }
+    const bufferId = uid();
+    this.buffers.set(bufferId, buf);
+    void saveBufferLocal(bufferId, buf);
+    // a impressão digital é do projeto como estava ao começar a renderizar: se algo mudou no meio, fica desatualizado
+    const cur = useStore.getState().project.tracks.find((x) => x.id === trackId);
+    if (cur) useStore.getState().updateTrack(trackId, { frozen: { bufferId, key: freezeKey(project, t) } }, false);
+  }
+
+  unfreezeTrack(trackId: string) {
+    useStore.getState().updateTrack(trackId, { frozen: undefined }, false);
+  }
+
+  /** Recomeça a reprodução no mesmo ponto (a trilha passou a tocar congelada ou ao vivo). */
+  restartPlayback() {
+    if (!this.playing || useStore.getState().recording) return;
+    this.seek(this.getBeat());
+  }
+
   // ---------- Gravação ----------
 
   async toggleRecord() {
@@ -365,6 +422,10 @@ class Engine {
       return;
     }
     this.ensure();
+    if (this.mixer.frozenOf(s.project, track)) {
+      alert('Esta trilha está congelada: descongele (botão ❄ no cabeçalho dela) para gravar.');
+      return;
+    }
     // punch-in: grava só dentro do trecho (se já está tocando e passou do começo, a partir de agora)
     const pr = s.project.punch;
     let punch: { start: number; end: number } | undefined;
@@ -787,6 +848,86 @@ export async function analyzeProject(
   return analyze(l, r, rendered.sampleRate, (p) => onProgress?.(0.8 + p * 0.2));
 }
 
+/** Região "de mentira" que toca o áudio congelado de uma trilha inteiro, a partir do tempo 0. */
+function frozenRegion(t: Track, buf: AudioBuffer): Region {
+  return { id: `frozen:${t.id}`, trackId: t.id, name: '', start: 0, length: 0, offset: 0, duration: buf.duration };
+}
+
+/** Agenda tudo (offline, do tempo 0): o áudio congelado das trilhas congeladas, regiões e notas das outras. */
+function scheduleAll(off: BaseAudioContext, mixer: Mixer, project: Project, buffers: Map<string, AudioBuffer>, spb: number) {
+  const tracks = new Map(project.tracks.map((t) => [t.id, t]));
+  const frozen = new Set<string>();
+  for (const t of project.tracks) {
+    const buf = mixer.frozenOf(project, t);
+    const strip = mixer.strips.get(t.id);
+    if (!buf || !strip) continue;
+    frozen.add(t.id);
+    playAudioRegion(off, strip.input, frozenRegion(t, buf), buf, 0);
+  }
+  for (const r of project.regions) {
+    const track = tracks.get(r.trackId);
+    const strip = mixer.strips.get(r.trackId);
+    if (!track || !strip || frozen.has(r.trackId)) continue;
+    const buf = r.bufferId && buffers.get(r.bufferId);
+    if (buf) playAudioRegion(off, strip.input, r, buf, r.start * spb);
+    for (const n of r.notes ?? []) {
+      if (n.start >= r.length) continue;
+      const dur = Math.min(n.duration, r.length - n.start) * spb;
+      triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, (r.start + n.start) * spb, dur, n.velocity);
+    }
+  }
+}
+
+/** Segundos de "rabo" depois da última nota no congelamento (reverb e delay dos pedais terminarem). */
+const FREEZE_TAIL = 6;
+
+/**
+ * Congela uma trilha: renderiza offline o instrumento (ou o áudio) dela passando pelo rack de amp e pedais,
+ * do tempo 0 até o fim da última região mais o rabo, e corta o silêncio do fim. O que vem depois do rack
+ * (EQ, compressor, volume, pan, envios, automação de volume) continua ao vivo.
+ */
+export async function renderFrozen(project: Project, trackId: string, buffers: Map<string, AudioBuffer>, sampleRate: number): Promise<AudioBuffer | null> {
+  const t = project.tracks.find((x) => x.id === trackId);
+  if (!t || t.kind === 'bus') return null;
+  const regions = project.regions.filter((r) => r.trackId === trackId);
+  if (!regions.length) return null;
+  const spb = 60 / project.bpm;
+  const end = Math.max(...regions.map((r) => r.start + regionLen(r, project.bpm)));
+  const length = Math.ceil((end * spb + FREEZE_TAIL) * sampleRate);
+  const off = new OfflineAudioContext(2, length, sampleRate);
+  await Promise.all([loadDrumSamples(off), loadAllSampleSets(off), ensureWorklets(off).catch(() => {})]);
+  // só esta trilha, ao vivo (sem o congelamento antigo), audível e indo para o master
+  const solo: Project = {
+    ...project,
+    tracks: [{ ...t, frozen: undefined, mute: false, solo: false, output: undefined }],
+    regions,
+  };
+  const mixer = new Mixer(off, off.destination, (id) => buffers.get(id), false);
+  mixer.sync(solo);
+  mixer.automate(solo, 0, 0, (b) => b * spb);
+  const strip = mixer.strips.get(t.id)!;
+  // a saída do rack (ou a entrada do canal, sem rack) vai direto para o resultado
+  const tap: AudioNode = strip.rig?.output ?? strip.input;
+  tap.disconnect();
+  tap.connect(off.destination);
+  scheduleAll(off, mixer, solo, buffers, spb);
+  const out = await off.startRendering();
+  // corta o silêncio depois do fim (mantém pelo menos o fim da última região)
+  const L = out.getChannelData(0), R = out.getChannelData(1);
+  let last = Math.ceil(end * spb * sampleRate);
+  for (let i = length - 1; i > last; i--) {
+    if (Math.abs(L[i]) > 1e-4 || Math.abs(R[i]) > 1e-4) {
+      last = i;
+      break;
+    }
+  }
+  const n = Math.min(length, last + Math.round(0.05 * sampleRate));
+  const buf = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate });
+  buf.copyToChannel(L.subarray(0, n), 0);
+  buf.copyToChannel(R.subarray(0, n), 1);
+  return buf;
+}
+
 /** Renderiza o projeto inteiro offline com o master dado, até a entrada do limitador. */
 async function renderMix(project: Project, buffers: Map<string, AudioBuffer>, master: MasterSettings, onProgress?: (p: number) => void): Promise<AudioBuffer> {
   const sr = 44100;
@@ -798,20 +939,7 @@ async function renderMix(project: Project, buffers: Map<string, AudioBuffer>, ma
   mixer.sync(project);
   mixer.automate(project, 0, 0, (b) => b * spb);
   mixer.chain.update(master);
-  const tracks = new Map(project.tracks.map((t) => [t.id, t]));
-
-  for (const r of project.regions) {
-    const track = tracks.get(r.trackId);
-    const strip = mixer.strips.get(r.trackId);
-    if (!track || !strip) continue;
-    const buf = r.bufferId && buffers.get(r.bufferId);
-    if (buf) playAudioRegion(off, strip.input, r, buf, r.start * spb);
-    for (const n of r.notes ?? []) {
-      if (n.start >= r.length) continue;
-      const dur = Math.min(n.duration, r.length - n.start) * spb;
-      triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, (r.start + n.start) * spb, dur, n.velocity);
-    }
-  }
+  scheduleAll(off, mixer, project, buffers, spb);
   if (onProgress) {
     const steps = 40;
     for (let k = 1; k < steps; k++) {

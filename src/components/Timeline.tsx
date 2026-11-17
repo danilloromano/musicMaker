@@ -4,7 +4,7 @@ import { importFiles } from '../audio/importFiles';
 import { DRUM_STYLES, FILL_CHOICES, LOOPS, addLoop, applyDrumStyle, extendPattern, setTrackFills } from '../audio/loops';
 import { presetGroups } from '../audio/instruments';
 import { useStore } from '../store';
-import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, fitFades, projectEnd, regionLen, uid } from '../types';
+import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, activeFreeze, fitFades, projectEnd, regionLen, uid } from '../types';
 import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
 import { MarkerLane, MarkerLines, jumpMarker } from './Markers';
@@ -258,7 +258,7 @@ export function Timeline() {
           <div className={`row ${t.id === selectedTrackId ? 'sel' : ''}`}>
             <TrackHeader track={t} />
             <div
-              className="lane"
+              className={`lane ${freezeState(t) === 'on' ? 'frozen' : ''}`}
               style={{ width }}
               onPointerDown={() => st.set({ selectedTrackId: t.id, selectedRegionId: null })}
               onDoubleClick={(e) => createRegion(e, t)}
@@ -374,9 +374,18 @@ function FillPicker({ track: t }: { track: Track }) {
   );
 }
 
+/** Estado do congelamento: 'on' (tocando o áudio congelado), 'stale' (mudou depois de congelar) ou 'off'. */
+function freezeState(t: Track): 'on' | 'stale' | 'off' {
+  const p = useStore.getState().project;
+  if (!t.frozen || !engine.buffers.has(t.frozen.bufferId)) return 'off';
+  return activeFreeze(p, t, (id) => engine.buffers.has(id)) ? 'on' : 'stale';
+}
+
 function TrackHeader({ track: t }: { track: Track }) {
   const st = useStore.getState();
+  useStore((s) => s.project.regions); // o estado do congelamento depende das regiões da trilha
   const up = (patch: Partial<Track>, history = false) => st.updateTrack(t.id, patch, history);
+  const frozen = freezeState(t);
   return (
     <div
       className="th"
@@ -395,6 +404,21 @@ function TrackHeader({ track: t }: { track: Track }) {
         >
           A
         </button>
+        {t.kind !== 'bus' && (
+          <button
+            className={`ms freeze ${frozen}`}
+            title={
+              frozen === 'on'
+                ? 'Trilha congelada: o instrumento e os pedais/amp já estão renderizados em áudio (alivia o processador). Clique para descongelar.'
+                : frozen === 'stale'
+                  ? 'A trilha mudou depois de congelar e está tocando ao vivo. Clique para congelar de novo.'
+                  : 'Congelar: renderiza o instrumento e os pedais/amp em áudio para aliviar o processador. Volume, pan, EQ, compressor e envios continuam ajustáveis; mudar notas ou pedais volta a tocar ao vivo.'
+            }
+            onClick={() => (frozen === 'on' ? engine.unfreezeTrack(t.id) : void engine.freezeTrack(t.id))}
+          >
+            ❄
+          </button>
+        )}
         <button className="ms x" title="Excluir trilha" onClick={() => st.removeTrack(t.id)}>✕</button>
       </div>
       <div className="th-bot">

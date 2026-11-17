@@ -17,11 +17,15 @@ function fromRaw(r: RawBuffer): AudioBuffer {
   return b;
 }
 
-/** Áudios que o projeto usa: das regiões e dos IRs carregados nos racks de amp. */
-function bufferIds(p: Project): string[] {
+/**
+ * Áudios que o projeto usa: das regiões e dos IRs carregados nos racks de amp. `frozen`: também os das
+ * trilhas congeladas (ficam no salvamento automático; no arquivo, não: são grandes e dá para recongelar).
+ */
+function bufferIds(p: Project, frozen = true): string[] {
   const ids = new Set<string>();
   for (const r of p.regions) if (r.bufferId) ids.add(r.bufferId);
   for (const t of p.tracks) if (t.amp?.irId) ids.add(t.amp.irId);
+  if (frozen) for (const t of p.tracks) if (t.frozen) ids.add(t.frozen.bufferId);
   if (p.reference) ids.add(p.reference.bufferId);
   return [...ids];
 }
@@ -60,6 +64,7 @@ export async function loadLocal(buffers: Map<string, AudioBuffer>): Promise<Proj
     if (raw) buffers.set(id, fromRaw(raw));
   }
   p.regions = p.regions.filter((r) => !r.bufferId || buffers.has(r.bufferId));
+  p.tracks = p.tracks.map((t) => (t.frozen && !buffers.has(t.frozen.bufferId) ? { ...t, frozen: undefined } : t));
   // limpa áudios que nenhuma região usa mais
   const keys = (await idb('readonly', (s) => s.getAllKeys())) as string[];
   for (const k of keys) {
@@ -94,13 +99,14 @@ export function download(blob: Blob, filename: string) {
 
 export function saveProjectFile(p: Project, buffers: Map<string, AudioBuffer>) {
   const out: Record<string, { sampleRate: number; channels: string[] }> = {};
-  for (const id of bufferIds(p)) {
+  for (const id of bufferIds(p, false)) {
     const b = buffers.get(id);
     if (!b) continue;
     const raw = toRaw(b);
     out[id] = { sampleRate: raw.sampleRate, channels: raw.channels.map(f32ToB64) };
   }
-  const json = JSON.stringify({ version: 1, project: p, buffers: out });
+  const project = { ...p, tracks: p.tracks.map((t) => ({ ...t, frozen: undefined })) };
+  const json = JSON.stringify({ version: 1, project, buffers: out });
   download(new Blob([json], { type: 'application/json' }), `${p.name || 'projeto'}.mmproj`);
 }
 
