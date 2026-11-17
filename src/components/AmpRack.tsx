@@ -1,10 +1,12 @@
 import { useRef } from 'react';
 import { PEDALS, PedalDef, RIG_PRESETS, defaultRig, modelOf, paramsOf, pedalDefaults, pedalOf } from '../audio/amp';
 import { engine } from '../audio/engine';
+import { tunerRef } from '../audio/tuner';
 import { useStore } from '../store';
 import { AmpRig, Track } from '../types';
 import { AmpHead, CabView } from './AmpVisuals';
 import { RotaryKnob } from './RotaryKnob';
+import { TunerScreen } from './TunerScreen';
 
 /** Pedaleira + amplificador + caixa (impulse response) da trilha selecionada. */
 export function AmpRack({ track: t }: { track: Track }) {
@@ -52,6 +54,7 @@ export function AmpRack({ track: t }: { track: Track }) {
       <div key={d.id} className={`stomp ${ps.on ? 'on' : ''}`} style={{ ['--c' as string]: model?.color ?? d.color }} title={model?.desc ?? d.desc}>
         <i className="screw tl" /><i className="screw tr" /><i className="screw bl" /><i className="screw br" />
         <i className="jack in" title="Entrada" /><i className="jack out" title="Saída" />
+        {d.tuner && <TunerScreen trackId={t.id} on={ps.on && rig.on} refHz={tunerRef(ps.p[0] ?? d.params[0].def)} />}
         {d.faders ? (
           <div className="stomp-faders">
             {params.map((x, i) => {

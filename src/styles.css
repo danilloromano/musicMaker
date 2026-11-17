@@ -360,6 +360,26 @@ body.scrubbing, body.scrubbing * { cursor: ew-resize !important; }
 .stomp .jack.in { right: -6px; } .stomp .jack.out { left: -6px; }
 
 .stomp-knobs { display: flex; justify-content: center; gap: 4px; width: 100%; }
+/* afinador: tela escura com a nota, o ponteiro de cents e as luzes ♭ ● ♯ */
+.tuner-screen {
+  width: 100%; padding: 6px 6px 5px; border-radius: 5px; background: #0b0f0d; color: #6a7570;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8), 0 1px 0 rgba(255, 255, 255, 0.15);
+  display: flex; flex-direction: column; align-items: center; gap: 3px; font-family: var(--mono);
+}
+.tuner-note { display: flex; align-items: baseline; gap: 4px; height: 30px; }
+.tuner-note b { font: 700 26px/30px var(--mono); color: #d8e2dc; }
+.tuner-note small { font-size: 10px; color: #8a9690; }
+.tuner-screen.ok .tuner-note b { color: #39e27a; text-shadow: 0 0 8px rgba(57, 226, 122, 0.6); }
+.tuner-scale { position: relative; width: 100%; height: 10px; border-radius: 2px;
+  background: linear-gradient(90deg, #3a1515, #3a2c12 35%, #123a22 46%, #123a22 54%, #3a2c12 65%, #3a1515); }
+.tuner-scale::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: #8a9690; }
+.tuner-needle { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 3px; margin-left: -1.5px; border-radius: 2px; background: #f0f4f2; box-shadow: 0 0 5px rgba(255, 255, 255, 0.6); transition: left 60ms linear; }
+.tuner-screen.idle .tuner-needle { opacity: 0; }
+.tuner-lights { display: flex; justify-content: space-between; width: 100%; font-size: 10px; }
+.tuner-lights i { font-style: normal; }
+.tuner-screen.flat .tuner-lights i:first-child, .tuner-screen.sharp .tuner-lights i:last-child { color: #ff5a3c; text-shadow: 0 0 6px rgba(255, 90, 60, 0.7); }
+.tuner-screen.ok .tuner-lights i:nth-child(2) { color: #39e27a; text-shadow: 0 0 6px rgba(57, 226, 122, 0.7); }
+.tuner-hint { font-size: 8.5px; text-align: center; line-height: 1.25; color: #8a9690; }
 /* equalizador gráfico: faders verticais com a frequência embaixo; o meio do fader é 0 dB */
 .stomp-faders {
   display: flex; justify-content: space-between; width: 100%; padding: 4px 2px 0;
