@@ -75,6 +75,17 @@ const line = (roots: number[], pat: [number, number, number][]): [number, number
 /** Tercina: posição do passo `k` (0, 1, 2) dentro do tempo `beat`. */
 const trip = (beat: number, k: number) => beat + k / 3;
 
+/**
+ * Acordes com ritmo: um acorde por compasso (`prog`), tocado nos pontos de `pat` ([início no compasso,
+ * duração]) — o "jeito de tocar" de cada estilo (skank do reggae, clave da bossa, charleston do jazz…).
+ */
+const comp = (prog: number[][], pat: [number, number][]): [number, number, number][] =>
+  prog.flatMap((ch, i) => pat.flatMap(([st, d]) => ch.map((p) => [i * 4 + st, p, d] as [number, number, number])));
+/** Arpejo em colcheias (balada): fundamental, quinta, oitava, terça… de cada acorde. */
+const ballad = (prog: number[][]): [number, number, number][] =>
+  prog.flatMap((ch, i) => [ch[0] - 12, ch[2] - 12, ch[0], ch[1], ch[2], ch[1], ch[0], ch[2] - 12].map(
+    (p, k) => [i * 4 + k / 2, p, k === 0 ? 3.9 : Math.min(0.9, 3.95 - k / 2)] as [number, number, number]));
+
 const POP = [[60, 64, 67], [59, 62, 67], [57, 60, 64], [57, 60, 65]]; // C G Am F
 const MINOR = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]; // Am F C G
 const PSYCH = [[52, 55, 59, 62], [57, 61, 64], [52, 55, 59, 62], [50, 54, 57]]; // Em7 A Em7 D (mi dórico)
@@ -335,6 +346,33 @@ export const LOOPS: Loop[] = [
   ]),
   mel('c-pop', 'Acordes Pop', 'Acordes', 'epiano', 4, chords(POP), 16, 85),
   mel('c-minor', 'Acordes Menores', 'Acordes', 'epiano', 4, chords(MINOR), 16, 85),
+  // Acordes por estilo (mesmos tons e progressões dos baixos de mesmo nome: dá para usar juntos)
+  mel('c-rock', 'Órgão Rock', 'Acordes', 'organ', 4, comp([[57, 61, 64], [57, 61, 64], [57, 62, 66], [56, 59, 64]], [[0, 1.9], [2, 1.4], [3.5, 0.45]]), 16, 80),
+  mel('c-funk', 'Clavinete Funk', 'Acordes', 'clav', 2, comp([[56, 62, 66], [56, 62, 66]], [
+    [0, 0.15], [0.75, 0.12], [1.25, 0.12], [1.5, 0.2], [2.25, 0.12], [2.75, 0.12], [3, 0.15], [3.5, 0.12],
+  ]), 8, 90),
+  mel('c-reggae', 'Skank Reggae', 'Acordes', 'organ', 4, comp([[57, 60, 64], [57, 60, 64], [57, 62, 65], [57, 62, 65]], [[1, 0.25], [3, 0.25]]), 16, 85),
+  mel('c-samba', 'Cavaco Samba', 'Acordes', 'pluck', 4, comp([[55, 60, 64], [55, 61, 64], [57, 60, 65], [55, 59, 65]], [
+    [0, 0.2], [0.5, 0.2], [0.75, 0.2], [1.25, 0.2], [1.75, 0.2], [2, 0.2], [2.5, 0.2], [3, 0.2], [3.25, 0.2], [3.75, 0.2],
+  ]), 16, 80),
+  mel('c-bossa', 'Bossa Nova', 'Acordes', 'epiano', 4, comp([[59, 64, 67], [60, 65, 69], [59, 62, 65], [59, 64, 67]], [
+    [0, 0.6], [0.75, 0.6], [1.5, 0.45], [2.5, 0.6], [3.25, 0.6],
+  ]), 16, 75),
+  mel('c-baiao', 'Órgão Baião', 'Acordes', 'organ', 4, comp([[59, 62, 67], [59, 62, 67], [57, 60, 65], [59, 62, 67]], [
+    [0, 0.5], [0.75, 0.5], [1.5, 0.4], [2, 0.5], [2.75, 0.5], [3.5, 0.4],
+  ]), 16, 80),
+  // ii-V-I-VI em Dó com acordes sem a fundamental (o baixo walking faz a fundamental), no ritmo charleston
+  mel('c-jazz', 'Jazz Comping', 'Acordes', 'grand', 4, comp([[53, 57, 60, 64], [53, 57, 59, 64], [52, 55, 59, 62], [55, 61, 65]], [[0, 0.6], [1.5, 0.45]]), 16, 75),
+  mel('c-blues', 'Piano Blues Shuffle', 'Acordes', 'honky', 4, comp([[55, 61, 64], [55, 61, 64], [54, 60, 64], [55, 61, 64]],
+    [0, 1, 2, 3].flatMap((b) => [[b, 0.55], [trip(b, 2), 0.28]] as [number, number][])), 16, 80),
+  mel('c-disco', 'Cordas Disco', 'Acordes', 'strings', 4, comp([[57, 60, 64], [57, 62, 65], [55, 59, 62], [55, 60, 64]], [[0.5, 0.35], [1.5, 0.35], [2.5, 0.35], [3.5, 0.35]]), 16, 85),
+  mel('c-motown', 'Piano Motown', 'Acordes', 'grand', 4, comp([[55, 60, 64], [57, 60, 64], [57, 60, 65], [55, 59, 62]], [[0, 0.4], [1, 0.4], [2, 0.4], [3, 0.4]]), 16, 85),
+  mel('c-ballad', 'Piano Balada', 'Acordes', 'grand', 4, ballad(POP), 16, 75),
+  mel('c-house', 'Piano House', 'Acordes', 'grand', 4, comp([[57, 60, 64, 67], [57, 60, 64, 67], [57, 60, 64, 65], [55, 59, 62, 64]], [
+    [0.5, 0.25], [1.25, 0.25], [2, 0.25], [2.75, 0.25], [3.5, 0.25],
+  ]), 16, 90),
+  mel('c-trap', 'Sino Trap', 'Acordes', 'bell', 4, comp([[69, 72, 76], [69, 72, 76], [65, 69, 72], [67, 71, 74]], [[0, 1.9], [2, 1.9]]), 16, 70),
+  mel('c-lofi', 'Piano Lo-fi', 'Acordes', 'felt', 4, comp([[53, 57, 60, 64], [52, 55, 59, 62], [50, 53, 57, 60], [48, 52, 55, 59]], [[0, 1.4], [1.5, 0.4], [2.5, 1.4]]), 16, 70),
   mel('c-pad', 'Pad Atmosférico', 'Acordes', 'pad', 4, chords(MINOR.map((c) => c.map((p) => p - 12).concat(c[2]))), 16, 80),
   mel('c-strings', 'Cordas Longas', 'Acordes', 'strings', 4, chords(POP), 16, 80),
 
