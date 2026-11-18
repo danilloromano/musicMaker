@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
-import { BEATS_PER_BAR, Marker, Project, SECTION_NAMES, projectEnd, sectionColor } from '../types';
+import { Marker, barBeatLabel, barBeats, Project, SECTION_NAMES, projectEnd, sectionColor } from '../types';
 
 /** Fim da seção que começa no marcador `i`: o próximo marcador, ou o fim da música (mín. 4 compassos). */
 export function sectionEnd(p: Project, i: number): number {
   const list = p.markers ?? [];
   const next = list[i + 1];
   if (next) return next.beat;
-  const end = Math.ceil(projectEnd(p) / BEATS_PER_BAR) * BEATS_PER_BAR;
-  return Math.max(end, list[i].beat + 4 * BEATS_PER_BAR);
+  const bb = barBeats(p);
+  const end = Math.ceil(projectEnd(p) / bb - 1e-6) * bb;
+  return Math.max(end, list[i].beat + 4 * bb);
 }
 
 /** Pula o cursor para o próximo (dir = 1) ou o anterior (dir = -1) marcador. */
@@ -56,7 +57,7 @@ export function MarkerLane({ ppb, beatAt }: { ppb: number; beatAt: (clientX: num
         st.snapshot();
         moved = true;
       }
-      const step = ev.altKey ? 1 : BEATS_PER_BAR;
+      const step = ev.altKey ? 1 : barBeats(useStore.getState().project);
       const beat = Math.max(0, Math.round((beatAt(ev.clientX) - off) / step) * step);
       const others = (useStore.getState().project.markers ?? []).filter((x) => x.id !== m.id);
       if (!others.some((x) => Math.abs(x.beat - beat) < 1e-6)) st.updateMarker(m.id, { beat }, false);
@@ -90,7 +91,7 @@ export function MarkerLane({ ppb, beatAt }: { ppb: number; beatAt: (clientX: num
               e.stopPropagation();
               setEditing(m.id);
             }}
-            title={`${m.name} · compasso ${m.beat / BEATS_PER_BAR + 1}\nClique: ir para a seção · arrastar: mover (Alt: no tempo) · duplo clique: renomear`}
+            title={`${m.name} · compasso ${barBeatLabel(useStore.getState().project, m.beat).split('.')[0]}\nClique: ir para a seção · arrastar: mover (Alt: no tempo) · duplo clique: renomear`}
           >
             {editing === m.id ? (
               <input

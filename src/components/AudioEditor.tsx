@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { engine } from '../audio/engine';
 import { pref, savePref, useStore } from '../store';
 import { AUDIO_GRIDS, detectOnsets, quantizeAudioRegion } from '../audio/quantizeAudio';
-import { Region, regionGainAt } from '../types';
+import { Region, barBeats, regionGainAt } from '../types';
 import { gainDb } from './Timeline';
 import { Slider, useRaf } from './ui';
 import { shortcut } from '../platform';
@@ -164,7 +164,8 @@ export function AudioEditor() {
       const b0 = Math.floor(view0 / spb);
       const b1 = Math.ceil((view0 + W / dpps) / spb);
       for (let b = b0; b <= b1; b++) {
-        g.fillStyle = b % 4 === 0 ? '#4b4f56' : '#34373c';
+        const bb = barBeats(useStore.getState().project);
+        g.fillStyle = Math.abs(b / bb - Math.round(b / bb)) < 1e-6 ? '#4b4f56' : '#34373c';
         g.fillRect(Math.round(xOf(b * spb)), top, 1, H - top);
       }
     }

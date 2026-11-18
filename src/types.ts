@@ -255,6 +255,8 @@ export interface MasterSettings {
 export interface Project {
   name: string;
   bpm: number;
+  /** compasso (ausente = 4/4); o BPM sempre conta semínimas */
+  meter?: Meter;
   metronome: boolean;
   loop?: LoopRange;
   /** trecho de punch-in: com ele ligado, a gravação só substitui o que está dentro dele */
@@ -275,7 +277,82 @@ export interface Project {
   reference?: { bufferId: string; name: string };
 }
 
+/** Tempos (semínimas) por compasso dos loops prontos, que são em 4/4. Para o projeto, use barBeats(p). */
 export const BEATS_PER_BAR = 4;
+
+// ---------- Compasso ----------
+
+/** Compasso: `num` notas de valor `den` (4 = semínima, 8 = colcheia) por compasso. */
+export interface Meter {
+  num: number;
+  den: 4 | 8;
+}
+
+/** Compassos oferecidos, com o agrupamento dos tempos fortes (em notas do denominador). */
+export const METERS: { id: string; meter: Meter; groups: number[]; name: string }[] = [
+  { id: '4/4', meter: { num: 4, den: 4 }, groups: [1, 1, 1, 1], name: '4/4' },
+  { id: '3/4', meter: { num: 3, den: 4 }, groups: [1, 1, 1], name: '3/4 (valsa)' },
+  { id: '2/4', meter: { num: 2, den: 4 }, groups: [1, 1], name: '2/4 (marcha, samba)' },
+  { id: '5/4', meter: { num: 5, den: 4 }, groups: [1, 1, 1, 1, 1], name: '5/4' },
+  { id: '6/8', meter: { num: 6, den: 8 }, groups: [3, 3], name: '6/8 (3 + 3)' },
+  { id: '9/8', meter: { num: 9, den: 8 }, groups: [3, 3, 3], name: '9/8 (3 + 3 + 3)' },
+  { id: '12/8', meter: { num: 12, den: 8 }, groups: [3, 3, 3, 3], name: '12/8 (blues lento)' },
+  { id: '5/8', meter: { num: 5, den: 8 }, groups: [3, 2], name: '5/8 (3 + 2)' },
+  { id: '7/8', meter: { num: 7, den: 8 }, groups: [2, 2, 3], name: '7/8 (2 + 2 + 3)' },
+];
+
+export const meterOf = (p: Pick<Project, 'meter'>): Meter => p.meter ?? { num: 4, den: 4 };
+export const meterId = (m: Meter) => `${m.num}/${m.den}`;
+/** Tempos (semínimas) num compasso: 3/4 = 3, 6/8 = 3, 7/8 = 3,5. */
+export const barBeats = (p: Pick<Project, 'meter'>) => (meterOf(p).num * 4) / meterOf(p).den;
+
+/** Grupos de tempos fortes de um compasso (em notas do denominador). */
+export function meterGroups(m: Meter): number[] {
+  const known = METERS.find((x) => x.meter.num === m.num && x.meter.den === m.den);
+  if (known) return known.groups;
+  if (m.den === 4) return Array(m.num).fill(1);
+  const g: number[] = [];
+  let left = m.num;
+  while (left > 0) {
+    const n = left === 4 ? 2 : Math.min(3, left);
+    g.push(n);
+    left -= n;
+  }
+  return g;
+}
+
+/**
+ * Cliques do metrônomo num compasso: posição (em tempos, desde o começo do compasso) e nível — 0 = o "um"
+ * do compasso, 1 = tempo forte (começo de cada grupo), 2 = subdivisão. `sub` (compassos /4): em quantas
+ * partes cada tempo se divide (1 = nenhuma, 2 = colcheias, 3 = tercinas, 4 = semicolcheias); nos
+ * compassos /8, qualquer subdivisão faz soar todas as colcheias.
+ */
+export function barClicks(m: Meter, sub = 1): { at: number; level: 0 | 1 | 2 }[] {
+  const unit = 4 / m.den;
+  const out: { at: number; level: 0 | 1 | 2 }[] = [];
+  let pos = 0;
+  meterGroups(m).forEach((n, gi) => {
+    for (let k = 0; k < n; k++) {
+      const at = pos + k * unit;
+      if (k === 0) out.push({ at, level: gi === 0 ? 0 : 1 });
+      else if (m.den === 8) {
+        if (sub > 1) out.push({ at, level: 2 });
+      }
+      if (m.den === 4) for (let s = 1; s < sub; s++) out.push({ at: at + (s / sub) * unit, level: 2 });
+    }
+    pos += n * unit;
+  });
+  return out;
+}
+
+/** "Compasso.tempo" de uma posição (o tempo conta na unidade do compasso: colcheias em 6/8). */
+export function barBeatLabel(p: Pick<Project, 'meter'>, beat: number): string {
+  const m = meterOf(p);
+  const bb = barBeats(p);
+  const bar = Math.floor(beat / bb + 1e-9);
+  const within = beat - bar * bb;
+  return `${bar + 1}.${Math.floor((within * m.den) / 4 + 1e-9) + 1}`;
+}
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 

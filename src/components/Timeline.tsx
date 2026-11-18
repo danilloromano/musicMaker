@@ -4,7 +4,7 @@ import { importFiles } from '../audio/importFiles';
 import { DRUM_STYLES, FILL_CHOICES, LOOPS, addLoop, applyDrumStyle, extendPattern, setTrackFills } from '../audio/loops';
 import { presetGroups } from '../audio/instruments';
 import { useStore } from '../store';
-import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, activeFreeze, fitFades, projectEnd, regionLen, uid } from '../types';
+import { AutoPoint, Region, barBeatLabel, barBeats, Track, TrackKind, activeFreeze, fitFades, projectEnd, regionLen, uid } from '../types';
 import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
 import { MarkerLane, MarkerLines, jumpMarker } from './Markers';
@@ -23,8 +23,11 @@ export function Timeline() {
   const punch = project.punch;
   const st = useStore.getState();
 
-  const bars = Math.max(32, Math.ceil(projectEnd(project) / BEATS_PER_BAR) + 8);
-  const width = bars * BEATS_PER_BAR * ppb;
+  const bb = barBeats(project);
+  // a grade do piano roll (fora da timeline) também desenha os compassos com este tamanho
+  useEffect(() => document.documentElement.style.setProperty('--bpb', String(bb)), [bb]);
+  const bars = Math.max(32, Math.ceil(projectEnd(project) / bb) + 8);
+  const width = bars * bb * ppb;
   const barStep = ppb >= 14 ? 1 : ppb >= 9 ? 2 : 4;
 
   const scroll = useRef<HTMLDivElement>(null);
@@ -177,7 +180,7 @@ export function Timeline() {
   const drop = (e: React.DragEvent, trackId?: string) => {
     e.preventDefault();
     e.stopPropagation();
-    const beat = Math.floor(beatAt(e.clientX) / BEATS_PER_BAR) * BEATS_PER_BAR;
+    const beat = Math.floor(beatAt(e.clientX) / bb) * bb;
     const loop = LOOPS.find((l) => l.id === e.dataTransfer.getData(LOOP_MIME));
     if (loop) return addLoop(loop, beat, trackId);
     void (async () => {
@@ -188,8 +191,8 @@ export function Timeline() {
 
   const createRegion = (e: React.MouseEvent, t: Track) => {
     if (t.kind === 'audio' || t.kind === 'bus') return;
-    const start = Math.floor(beatAt(e.clientX) / BEATS_PER_BAR) * BEATS_PER_BAR;
-    const r = st.addRegion({ trackId: t.id, name: t.name, start, length: 4 * BEATS_PER_BAR, notes: [] });
+    const start = Math.floor(beatAt(e.clientX) / bb) * bb;
+    const r = st.addRegion({ trackId: t.id, name: t.name, start, length: 4 * bb, notes: [] });
     st.set({ selectedRegionId: r.id, selectedTrackId: t.id, editingRegionId: r.id, bottomTab: 'editor' });
   };
 
@@ -201,7 +204,7 @@ export function Timeline() {
 
   return (
     <div className="arrange" ref={scroll} onDragOver={allowDrop} onDrop={(e) => drop(e)}>
-      <div className="arr-inner" style={{ width: HEADER_W + width, ['--ppb' as string]: `${ppb}px` }}>
+      <div className="arr-inner" style={{ width: HEADER_W + width, ['--ppb' as string]: `${ppb}px`, ['--bpb' as string]: bb }}>
         <div className="ruler-row">
           <div className="corner" style={{ width: HEADER_W }}>
             <div className="corner-line">
@@ -220,7 +223,7 @@ export function Timeline() {
           </div>
           <div className="ruler" style={{ width }} onPointerDown={scrub}>
             {Array.from({ length: Math.ceil(bars / barStep) }, (_, i) => (
-              <span key={i} style={{ left: i * barStep * BEATS_PER_BAR * ppb }}>{i * barStep + 1}</span>
+              <span key={i} style={{ left: i * barStep * bb * ppb }}>{i * barStep + 1}</span>
             ))}
             {loop && (
               <div
@@ -768,7 +771,7 @@ function AutomationRow({ track: t, width, ppb }: { track: Track; width: number; 
           {line && <path d={line} className="auto-line" style={{ stroke: t.color }} />}
           {points.map((p, i) => (
             <circle key={i} data-i={i} cx={p.beat * ppb} cy={y(p.value)} r={5} className="auto-pt" style={{ fill: t.color }}>
-              <title>{`${info.format(p.value)} · compasso ${Math.floor(p.beat / BEATS_PER_BAR) + 1}.${Math.floor(p.beat % BEATS_PER_BAR) + 1} (duplo clique apaga)`}</title>
+              <title>{`${info.format(p.value)} · compasso ${barBeatLabel(project, p.beat)} (duplo clique apaga)`}</title>
             </circle>
           ))}
         </svg>

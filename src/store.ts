@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { ExportReport } from './audio/export';
 import type { Analysis } from './audio/analysis';
-import { BEATS_PER_BAR, Marker, Note, Project, Region, SECTION_NAMES, Track, TrackKind, fitFades, regionLen, uid } from './types';
+import { Marker, barBeats, Note, Project, Region, SECTION_NAMES, Track, TrackKind, fitFades, regionLen, uid } from './types';
 
 const COLORS = ['#ff7a45', '#38d9c0', '#b98cff', '#ffcf3f', '#ff5fa2', '#5fb4ff', '#9be15d', '#e0b48a'];
 
@@ -67,6 +67,9 @@ interface State {
   ppb: number; // pixels por tempo na timeline
   bottomTab: BottomTab;
   countIn: boolean; // conta 1 compasso no metrônomo antes de gravar
+  /** metrônomo: subdivisão, volume e o treino de velocidade (preferências, não vão no projeto) */
+  metro: MetroSettings;
+  setMetro: (patch: Partial<MetroSettings>) => void;
   octave: number;
   /** carregamento em andamento (mostra a nave): progresso 0..1, ou null quando não dá para medir */
   loading: { label: string; progress: number | null } | null;
@@ -122,6 +125,23 @@ interface State {
 
 const sortMarkers = (m: Marker[]) => [...m].sort((a, b) => a.beat - b.beat);
 
+/** Metrônomo: subdivisão (1 = nenhuma, 2, 3, 4), volume (0..1) e o treino de velocidade. */
+export interface MetroSettings {
+  sub: number;
+  vol: number;
+  /** treino: sobe `step` BPM a cada `every` compassos, até `max`; ao parar, volta ao andamento original */
+  trainer: { on: boolean; step: number; every: number; max: number };
+}
+const METRO_DEFAULT: MetroSettings = { sub: 1, vol: 0.8, trainer: { on: false, step: 2, every: 4, max: 160 } };
+function loadMetro(): MetroSettings {
+  try {
+    const v = JSON.parse(pref('mm.metro') ?? 'null');
+    return v ? { ...METRO_DEFAULT, ...v, trainer: { ...METRO_DEFAULT.trainer, ...v.trainer } } : METRO_DEFAULT;
+  } catch {
+    return METRO_DEFAULT;
+  }
+}
+
 export const useStore = create<State>((set, get) => ({
   project: defaultProject(),
   past: [],
@@ -137,6 +157,12 @@ export const useStore = create<State>((set, get) => ({
   ppb: 24,
   bottomTab: 'loops',
   countIn: pref('mm.countIn') === '1',
+  metro: loadMetro(),
+  setMetro: (patch) => {
+    const metro = { ...get().metro, ...patch };
+    set({ metro });
+    savePref('mm.metro', JSON.stringify(metro));
+  },
   octave: 4,
   loading: null,
   lastExport: null,
@@ -321,17 +347,19 @@ export const useStore = create<State>((set, get) => ({
     let punch = p.punch;
     if (!punch) {
       const r = p.regions.find((x) => x.id === s.selectedRegionId);
-      const bar = Math.floor(cursorBeat / BEATS_PER_BAR) * BEATS_PER_BAR;
+      const bb = barBeats(p);
+      const bar = Math.floor(cursorBeat / bb) * bb;
       punch = p.loop
         ? { start: p.loop.start, end: p.loop.end, on: false }
         : r
           ? { start: r.start, end: r.start + Math.max(1, regionLen(r, p.bpm)), on: false }
-          : { start: bar, end: bar + 2 * BEATS_PER_BAR, on: false };
+          : { start: bar, end: bar + 2 * bb, on: false };
     }
     s.update((pr) => ({ ...pr, punch: { ...punch, on: !punch.on } }), false);
   },
   addMarker: (at) => {
-    const beat = Math.max(0, Math.floor(at / BEATS_PER_BAR + 1e-6) * BEATS_PER_BAR);
+    const bb = barBeats(get().project);
+    const beat = Math.max(0, Math.floor(at / bb + 1e-6) * bb);
     const list = get().project.markers ?? [];
     if (list.some((m) => Math.abs(m.beat - beat) < 1e-6)) return null;
     // o nome segue o da seção anterior (Intro → Verso → Pré-refrão → Refrão…)
@@ -352,9 +380,10 @@ export const useStore = create<State>((set, get) => ({
     let loop = p.loop;
     if (!loop) {
       const r = p.regions.find((x) => x.id === s.selectedRegionId);
-      const bar = (b: number, up: boolean) => (up ? Math.ceil(b / BEATS_PER_BAR) : Math.floor(b / BEATS_PER_BAR)) * BEATS_PER_BAR;
+      const bb = barBeats(p);
+      const bar = (b: number, up: boolean) => (up ? Math.ceil(b / bb - 1e-6) : Math.floor(b / bb + 1e-6)) * bb;
       const start = r ? bar(r.start, false) : bar(cursorBeat, false);
-      const end = r ? Math.max(start + BEATS_PER_BAR, bar(r.start + regionLen(r, p.bpm), true)) : start + 4 * BEATS_PER_BAR;
+      const end = r ? Math.max(start + bb, bar(r.start + regionLen(r, p.bpm), true)) : start + 4 * bb;
       loop = { start, end, on: false };
     }
     s.update((pr) => ({ ...pr, loop: { ...loop, on: !loop.on } }), false);

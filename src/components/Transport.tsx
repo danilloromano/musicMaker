@@ -3,11 +3,12 @@ import { engine, renderWav } from '../audio/engine';
 import { masterOf } from '../audio/master';
 import { download, openProjectFile, saveProjectFile } from '../audio/persist';
 import { defaultProject, savePref, useStore } from '../store';
-import { BEATS_PER_BAR, KEY_LETTERS, keyLabel, keyNamePt } from '../types';
+import { KEY_LETTERS, barBeatLabel, barBeats, keyLabel, keyNamePt } from '../types';
 import { importFiles } from '../audio/importFiles';
 import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
 import { TunerModal } from './TunerModal';
+import { MetronomeMenu } from './MetronomeMenu';
 import { redoShortcut, shortcut } from '../platform';
 import { retimeAudio } from '../audio/tempo';
 
@@ -30,10 +31,8 @@ export function Transport() {
   const clock = useRef<HTMLSpanElement>(null);
   useRaf(() => {
     const b = engine.getBeat();
-    const bar = Math.floor(b / BEATS_PER_BAR) + 1;
-    const beat = Math.floor(b % BEATS_PER_BAR) + 1;
     const sec = (b * 60) / project.bpm;
-    if (lcd.current) lcd.current.textContent = `${bar}.${beat}`;
+    if (lcd.current) lcd.current.textContent = barBeatLabel(project, b);
     if (clock.current) {
       clock.current.textContent = `${Math.floor(sec / 60)}:${(sec % 60).toFixed(1).padStart(4, '0')}`;
     }
@@ -112,11 +111,12 @@ export function Transport() {
       </div>
       <button
         className={project.metronome ? 'toggle on' : 'toggle'}
-        title="Metrônomo (clique em cada tempo)"
+        title="Metrônomo (opções de compasso, subdivisão e treino no ▾ ao lado)"
         onClick={() => st.update((p) => ({ ...p, metronome: !p.metronome }), false)}
       >
         <span className="ico">♩</span><span className="lbl"> Metrônomo</span>
       </button>
+      <MetronomeMenu />
       <button
         className={countIn ? 'toggle on' : 'toggle'}
         title="Contar 1 compasso no metrônomo antes de começar a gravar"
@@ -217,7 +217,8 @@ export function Transport() {
         onChange={async (e) => {
           const files = [...(e.target.files ?? [])];
           e.target.value = '';
-          const at = Math.floor(engine.getBeat() / BEATS_PER_BAR) * BEATS_PER_BAR;
+          const bb = barBeats(useStore.getState().project);
+          const at = Math.floor(engine.getBeat() / bb) * bb;
           await importFiles(files, at);
         }}
       />

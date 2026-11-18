@@ -1,5 +1,5 @@
 import { useStore } from '../store';
-import { BEATS_PER_BAR, MasterSettings, Note, Project, Region, Track, freezeKey, projectEnd, regionGainAt, regionLen, uid } from '../types';
+import { MasterSettings, barBeats, barClicks, meterOf, Note, Project, Region, Track, freezeKey, projectEnd, regionGainAt, regionLen, uid } from '../types';
 import { PRESETS, Voice, loadInstruments, playDrum, startVoice, triggerNote } from './instruments';
 import { loadDrumSamples, warmDrumKit } from './drumKit';
 import { DEFAULT_MASTER, ensureWorklets, masterOf } from './master';
@@ -14,7 +14,7 @@ import { Held, arpStep, playedNotes } from './arp';
 import { withLoading } from '../loading';
 import { addRecordedTakes, trackTakes } from './takes';
 import { IrEntry, addIrFiles, loadIrBuffer } from './irLibrary';
-import { applyStretched, needsStretch, stretchBuffer, stretchedId } from './tempo';
+import { applyStretched, needsStretch, retimeAudio, stretchBuffer, stretchedId } from './tempo';
 import { micSettingsPath } from '../platform';
 
 const LOOKAHEAD = 0.2; // s de antecedência com que as notas são agendadas (folga para a interface ocupada)
@@ -240,9 +240,44 @@ class Engine {
     this.mixer.chain.reset(); // o LUFS integrado mede a partir daqui
     this.mixer.automate(useStore.getState().project, this.startBeat, this.startTime, (b) => this.timeAt(b));
     this.startAudioRegions(this.startTime);
+    // treino de velocidade: começa do andamento atual (mover o cursor no meio do treino não o reinicia)
+    if (!this.seeking) this.trainBase = useStore.getState().metro.trainer.on ? useStore.getState().project.bpm : null;
+    if (!this.seeking) this.trainAcc = 0;
+    this.trainLast = this.startTime;
     this.timer = window.setInterval(() => this.tick(), TICK_MS);
     this.tick();
     useStore.getState().set({ playing: true });
+  }
+
+  // ---------- Treino de velocidade ----------
+
+  /** andamento em que o treino começou (null = sem treino) */
+  private trainBase: number | null = null;
+  private trainAcc = 0; // tempos tocados desde o último aumento
+  private trainLast = 0;
+  private seeking = false;
+
+  /** A cada N compassos tocados, sobe o andamento (até o limite). */
+  private trainTick() {
+    const s = useStore.getState();
+    if (this.trainBase === null || s.recording) return;
+    const tr = s.metro.trainer;
+    const now = this.ctx.currentTime;
+    if (now <= this.trainLast) return;
+    this.trainAcc += ((now - this.trainLast) * this.bpm) / 60;
+    this.trainLast = now;
+    const need = Math.max(1, tr.every) * barBeats(s.project);
+    if (this.trainAcc < need) return;
+    this.trainAcc -= need;
+    const next = Math.min(Math.max(tr.max, this.trainBase), s.project.bpm + tr.step);
+    if (next > s.project.bpm) s.update((p) => retimeAudio(p, next), false);
+  }
+
+  /** Fim do treino: volta ao andamento em que começou. */
+  private endTraining() {
+    const base = this.trainBase;
+    this.trainBase = null;
+    if (base !== null && useStore.getState().project.bpm !== base) useStore.getState().update((p) => retimeAudio(p, base), false);
   }
 
   stop() {
@@ -264,6 +299,7 @@ class Engine {
     this.punchMute = null;
     this.punchDuck?.disconnect();
     this.punchDuck = null;
+    if (!this.seeking) this.endTraining();
     useStore.getState().set({ playing: false });
   }
 
@@ -275,10 +311,12 @@ class Engine {
   seek(beat: number) {
     if (useStore.getState().recording) return;
     const was = this.playing;
+    this.seeking = true;
     if (was) this.stop();
     this.position = Math.max(0, beat);
     if (was) this.play();
-    else if (this.ready) {
+    this.seeking = false;
+    if (!was && this.ready) {
       // parado: os parâmetros automatizados assumem o valor da curva no cursor
       this.mixer.cursor = this.position;
       this.mixer.sync(useStore.getState().project);
@@ -367,6 +405,7 @@ class Engine {
   }
 
   private tick() {
+    this.trainTick();
     // fim do trecho de punch-in: encerra a gravação (a música continua tocando). Espera a latência da placa e
     // um pouco mais passar do fim, para o áudio do finzinho do trecho já ter chegado ao gravador.
     const punch = useStore.getState().recording?.punch;
@@ -422,16 +461,26 @@ class Engine {
     }
 
     if (project.metronome) {
-      for (let b = Math.ceil(from - 1e-9); b < until; b++) this.click(this.timeAt(b), b % BEATS_PER_BAR === 0);
+      // cliques do compasso (acento no "um", tempos fortes de cada grupo e subdivisões)
+      const bb = barBeats(project);
+      const clicks = barClicks(meterOf(project), useStore.getState().metro.sub);
+      for (let bar = Math.floor(from / bb); bar * bb < until; bar++) {
+        for (const c of clicks) {
+          const b = bar * bb + c.at;
+          if (b >= from - 1e-9 && b < until - 1e-9) this.click(this.timeAt(b), c.level);
+        }
+      }
     }
     this.scheduledUntil = until;
   }
 
-  private click(t: number, accent: boolean) {
+  /** Um clique do metrônomo: 0 = o "um" do compasso, 1 = tempo, 2 = subdivisão (mais baixo). */
+  private click(t: number, level: 0 | 1 | 2) {
     const osc = this.ctx.createOscillator();
-    osc.frequency.value = accent ? 1600 : 1000;
+    osc.frequency.value = [1600, 1000, 760][level];
     const g = this.ctx.createGain();
-    g.gain.setValueAtTime(0.25, t);
+    const vol = useStore.getState().metro.vol * 1.25;
+    g.gain.setValueAtTime([0.25, 0.2, 0.09][level] * vol + 1e-4, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
     osc.connect(g).connect(this.ctx.destination);
     osc.start(t);
@@ -646,7 +695,8 @@ class Engine {
     }
     if (punch) {
       // pré-roll: começa um compasso antes do trecho (ou do cursor, se ele está antes disso)
-      if (this.position > punch.start - BEATS_PER_BAR) this.position = Math.max(0, punch.start - BEATS_PER_BAR);
+      const bb = barBeats(s.project);
+      if (this.position > punch.start - bb) this.position = Math.max(0, punch.start - bb);
       this.punchMute = { trackId: track.id, ...punch };
       const strip = this.mixer.strips.get(track.id);
       if (strip) {
@@ -658,8 +708,8 @@ class Engine {
       // um compasso de metrônomo antes de a música (e a gravação) começar
       const spb = 60 / this.bpm;
       const t0 = this.ctx.currentTime + 0.1;
-      for (let i = 0; i < BEATS_PER_BAR; i++) this.click(t0 + i * spb, i === 0);
-      this.play(0.1 + BEATS_PER_BAR * spb);
+      for (const c of barClicks(meterOf(s.project), s.metro.sub)) this.click(t0 + c.at * spb, c.level);
+      this.play(0.1 + barBeats(s.project) * spb);
     } else this.play();
     this.recFrom = this.startTime;
     if (punch && this.punchDuck) {
@@ -712,8 +762,9 @@ class Engine {
       return;
     }
     if (this.recNotes.length) {
-      const start = Math.floor(rec.startBeat / BEATS_PER_BAR) * BEATS_PER_BAR;
-      const length = Math.max(BEATS_PER_BAR, Math.ceil((end - start) / BEATS_PER_BAR) * BEATS_PER_BAR);
+      const bb = barBeats(s.project);
+      const start = Math.floor(rec.startBeat / bb + 1e-6) * bb;
+      const length = Math.max(bb, Math.ceil((end - start) / bb - 1e-6) * bb);
       const notes = this.recNotes.map((n) => ({ ...n, start: Math.max(0, n.start - start) }));
       const r = s.addRegion({ trackId: rec.trackId, name: 'Gravação', start, length, notes });
       s.set({ selectedRegionId: r.id, editingRegionId: r.id });
