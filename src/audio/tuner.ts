@@ -92,3 +92,71 @@ export function readNote(hz: number, ref = 440): TunerReading {
   const n = Math.round(midi);
   return { note: ((n % 12) + 12) % 12, octave: Math.floor(n / 12) - 1, cents: (midi - n) * 100, hz };
 }
+
+// ---------- Afinações ----------
+
+/** Nomes com bemol: nas afinações rebaixadas as cordas se chamam Mi♭, Lá♭… (e não Ré#, Sol#…). */
+export const NOTE_NAMES_FLAT = ['Dó', 'Ré♭', 'Ré', 'Mi♭', 'Mi', 'Fá', 'Sol♭', 'Sol', 'Lá♭', 'Lá', 'Si♭', 'Si'];
+export const NOTE_LETTERS_FLAT = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+
+export interface Tuning {
+  id: string;
+  name: string;
+  group: string;
+  /** cordas da mais grave para a mais aguda (notas MIDI) */
+  strings: number[];
+  flats?: boolean;
+}
+
+const GTR = [40, 45, 50, 55, 59, 64]; // Mi Lá Ré Sol Si Mi
+const BASS = [28, 33, 38, 43]; // Mi Lá Ré Sol
+const down = (s: number[], n: number) => s.map((x) => x - n);
+
+/** Afinações prontas. A primeira ("Cromático") não tem cordas: mostra qualquer nota. */
+export const TUNINGS: Tuning[] = [
+  { id: 'chromatic', name: 'Cromático (qualquer nota)', group: 'Livre', strings: [] },
+  { id: 'gtr', name: 'Padrão (E A D G B E)', group: 'Guitarra / violão', strings: GTR },
+  { id: 'gtr-1', name: 'Meio tom abaixo (E♭)', group: 'Guitarra / violão', strings: down(GTR, 1), flats: true },
+  { id: 'gtr-2', name: '1 tom abaixo (D)', group: 'Guitarra / violão', strings: down(GTR, 2) },
+  { id: 'gtr-3', name: '1 tom e meio abaixo (C#)', group: 'Guitarra / violão', strings: down(GTR, 3), flats: true },
+  { id: 'gtr-4', name: '2 tons abaixo (C)', group: 'Guitarra / violão', strings: down(GTR, 4) },
+  { id: 'gtr-5', name: '2 tons e meio abaixo (B)', group: 'Guitarra / violão', strings: down(GTR, 5) },
+  { id: 'dropd', name: 'Drop D (D A D G B E)', group: 'Guitarra / violão', strings: [38, 45, 50, 55, 59, 64] },
+  { id: 'dropcs', name: 'Drop C# (meio tom abaixo + drop)', group: 'Guitarra / violão', strings: [37, 44, 49, 54, 58, 63], flats: true },
+  { id: 'dropc', name: 'Drop C (1 tom abaixo + drop)', group: 'Guitarra / violão', strings: [36, 43, 48, 53, 57, 62] },
+  { id: 'dropb', name: 'Drop B', group: 'Guitarra / violão', strings: [35, 42, 47, 52, 56, 61], flats: true },
+  { id: 'openg', name: 'Open G (D G D G B D)', group: 'Guitarra / violão', strings: [38, 43, 50, 55, 59, 62] },
+  { id: 'opend', name: 'Open D (D A D F# A D)', group: 'Guitarra / violão', strings: [38, 45, 50, 54, 57, 62] },
+  { id: 'opene', name: 'Open E (E B E G# B E)', group: 'Guitarra / violão', strings: [40, 47, 52, 56, 59, 64] },
+  { id: 'dadgad', name: 'DADGAD', group: 'Guitarra / violão', strings: [38, 45, 50, 55, 57, 62] },
+  { id: 'gtr7', name: '7 cordas (B E A D G B E)', group: 'Guitarra / violão', strings: [35, ...GTR] },
+  { id: 'vl7', name: 'Violão 7 cordas (C E A D G B E)', group: 'Guitarra / violão', strings: [36, ...GTR] },
+  { id: 'bass', name: 'Padrão (E A D G)', group: 'Baixo', strings: BASS },
+  { id: 'bass-1', name: 'Meio tom abaixo (E♭)', group: 'Baixo', strings: down(BASS, 1), flats: true },
+  { id: 'bass-2', name: '1 tom abaixo (D)', group: 'Baixo', strings: down(BASS, 2) },
+  { id: 'bass-dropd', name: 'Drop D (D A D G)', group: 'Baixo', strings: [26, 33, 38, 43] },
+  { id: 'bass-dropc', name: 'Drop C (C G C F)', group: 'Baixo', strings: [24, 31, 36, 41] },
+  { id: 'bass5', name: '5 cordas (B E A D G)', group: 'Baixo', strings: [23, ...BASS] },
+  { id: 'bass5-1', name: '5 cordas meio tom abaixo', group: 'Baixo', strings: down([23, ...BASS], 1), flats: true },
+  { id: 'cavaco', name: 'Cavaquinho (D G B D)', group: 'Outros', strings: [62, 67, 71, 74] },
+  { id: 'ukulele', name: 'Ukulele (G C E A)', group: 'Outros', strings: [67, 60, 64, 69] },
+];
+
+export const tuningOf = (id: string | null | undefined) => TUNINGS.find((t) => t.id === id) ?? TUNINGS[0];
+
+/** Nome (letra e por extenso) de uma nota MIDI na grafia da afinação. */
+export function stringName(midi: number, flats = false) {
+  const pc = ((midi % 12) + 12) % 12;
+  return { letter: (flats ? NOTE_LETTERS_FLAT : NOTE_LETTERS)[pc], name: (flats ? NOTE_NAMES_FLAT : NOTE_NAMES)[pc] };
+}
+
+/**
+ * Qual corda da afinação está sendo tocada (a mais próxima da nota lida) e quantos cents falta para ela.
+ * `index` segue a ordem de `strings`; cents positivos = acima (afrouxar), negativos = abaixo (apertar).
+ */
+export function readString(hz: number, t: Tuning, ref = 440): { index: number; cents: number } {
+  const m = 69 + 12 * Math.log2(hz / ref);
+  let index = 0;
+  for (let i = 1; i < t.strings.length; i++) if (Math.abs(m - t.strings[i]) < Math.abs(m - t.strings[index])) index = i;
+  return { index, cents: (m - t.strings[index]) * 100 };
+}
