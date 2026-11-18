@@ -1028,3 +1028,17 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .sep-val { width: 36px; text-align: right; color: var(--dim); font: 11px var(--mono); }
 .sep-row button { padding: 1px 8px; font-size: 11px; }
 .sep-actions { display: flex; gap: 8px; }
+
+/* ---------- Nas plataformas ---------- */
+.platforms .eq-tip b { color: var(--text); }
+.plat-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+.plat-table th { text-align: left; color: var(--dim); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.plat-table td { padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.plat-table td:nth-child(-n+4) { white-space: nowrap; font-family: var(--mono); }
+.plat-table td:first-child { font-family: inherit; color: var(--text); font-weight: 600; }
+.plat-icon { display: inline-block; width: 14px; font-weight: 700; }
+.plat-table tr.ok .plat-icon { color: var(--accent); }
+.plat-table tr.quieter .plat-icon, .plat-table tr.quieter td:last-child { color: var(--solo); }
+.plat-table tr.peak .plat-icon, .plat-table tr.peak td:last-child { color: var(--rec); }
+.plat-table tr.turned-down .plat-icon { color: #7fb8ff; }
+.plat-tip { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--solo); border-radius: 6px; font-size: 12px; color: var(--text); }

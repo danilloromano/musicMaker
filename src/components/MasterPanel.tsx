@@ -8,6 +8,7 @@ import { Suggestion, suggestMaster } from '../audio/autoMaster';
 import { withLoading } from '../loading';
 import { DEFAULT_MASTER, DEFAULT_MULTIBAND, DEFAULT_STEREO, EXPORT_TARGETS, MASTER_GROUPS, MASTER_PRESETS, activePreset, applyPreset, masterOf } from '../audio/master';
 import { MAX_AUTO_GAIN } from '../audio/export';
+import { PLATFORMS, Verdict, onPlatform } from '../audio/platforms';
 import { useStore } from '../store';
 import { MasterSettings } from '../types';
 import { Reduction, Slider, Spectrum, useRaf } from './ui';
@@ -174,6 +175,73 @@ export function MasterPanel() {
           </div>
         )}
       </div>
+      <PlatformCard />
+    </div>
+  );
+}
+
+/**
+ * Nas plataformas: com a música medida como sai na exportação, mostra como ela vai tocar em cada serviço
+ * (quanto ele abaixa ou aumenta, se o pico está seguro, se vai ficar mais baixa que as outras).
+ */
+function PlatformCard() {
+  const mixA = useStore((s) => s.mixAnalysis);
+  const last = useStore((s) => s.lastExport);
+  const exportTarget = useStore((s) => masterOf(s.project.master).exportTarget);
+  // a medição mais recente: a análise da mix ou, sem ela, a última exportação
+  const m = mixA ? { lufs: mixA.lufs, truePeak: mixA.truePeak, from: 'medição' } : last ? { lufs: last.lufs, truePeak: last.truePeak, from: 'última exportação' } : null;
+  const measure = async () => {
+    const p = useStore.getState().project;
+    const a = await withLoading('Medindo a música como sai na exportação…', (progress) => analyzeProject(p, engine.buffers, 'mastered', progress));
+    useStore.getState().set({ mixAnalysis: a });
+  };
+  const results = m ? PLATFORMS.map((p) => ({ p, r: onPlatform(m.lufs, m.truePeak, p) })) : [];
+  const quietOnStreaming = results.some(({ p, r }) => p.id === 'youtube' && r.verdict === 'quieter');
+  const ICON: Record<Verdict, string> = { ok: '✓', quieter: '↓', 'turned-down': 'ℹ', peak: '⚠' };
+  return (
+    <div className="fx-card wide platforms">
+      <div className="eq-head">
+        <h4>Nas plataformas</h4>
+        <button onClick={() => void measure()} title="Renderiza a música como sai na exportação (com o master e o alvo de loudness) e mede">
+          {m ? 'Medir de novo' : 'Medir a música'}
+        </button>
+        {m && (
+          <small className="eq-tip">
+            Sua música ({m.from}): <b>{fmt(m.lufs)} LUFS</b> · pico real <b>{fmt(m.truePeak)} dBTP</b>. Mudou a mix ou o master? Meça de novo.
+          </small>
+        )}
+      </div>
+      {!m ? (
+        <small className="hint">Meça a música para ver como ela vai tocar no Spotify, YouTube, Apple Music, Deezer, rádio e outras (leva alguns segundos).</small>
+      ) : (
+        <>
+          <table className="plat-table">
+            <thead>
+              <tr><th>Plataforma</th><th>Referência</th><th>Ajuste</th><th>Vai tocar em</th><th>Situação</th></tr>
+            </thead>
+            <tbody>
+              {results.map(({ p, r }) => (
+                <tr key={p.id} className={r.verdict} title={p.note}>
+                  <td>{p.name}</td>
+                  <td>{p.target === null ? 'não normaliza' : `${p.target} LUFS`}</td>
+                  <td>{Math.abs(r.gain) < 0.05 ? '—' : signed(r.gain, 'dB')}</td>
+                  <td>{fmt(r.playedLufs)} LUFS</td>
+                  <td><span className="plat-icon">{ICON[r.verdict]}</span> {r.text}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {quietOnStreaming && exportTarget !== 'streaming' && (
+            <div className="plat-tip">
+              A música está abaixo de −14 LUFS: no YouTube, Amazon, Deezer e Tidal ela vai tocar mais baixa que as outras.
+              <button onClick={() => useStore.getState().update((p) => ({ ...p, master: { ...masterOf(p.master), exportTarget: 'streaming' } }))}>
+                Usar o alvo −14 LUFS na exportação
+              </button>
+            </div>
+          )}
+          <small className="hint">Valores de referência publicados pelos serviços; eles podem mudar. Passe o mouse numa linha para ver como cada um ajusta.</small>
+        </>
+      )}
     </div>
   );
 }
