@@ -946,3 +946,49 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .gen-form small { color: var(--dim); font-weight: 400; }
 .gen-actions { display: flex; gap: 8px; }
 .gen-btn { white-space: nowrap; }
+
+/* ---------- Tablatura & Cifra ---------- */
+.tabview { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.tabview .roll-bar { flex-wrap: wrap; gap: 6px 12px; }
+.tabview .seg { display: flex; }
+.tabview .seg button { border-radius: 0; }
+.tabview .seg button:first-child { border-radius: 4px 0 0 4px; }
+.tabview .seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
+.tabview .seg button.on { border-color: var(--accent); color: var(--accent); position: relative; }
+.tabview .hint { margin: 0; }
+.tab-scroll { flex: 1; overflow: auto; padding: 12px 18px 24px; background: #f4f1ea; color: #1d1d1d; }
+.tab-scroll h2 { margin: 0 0 6px; font-size: 16px; color: #1d1d1d; }
+.tab-scroll h2 small { font-weight: 400; color: #666; font-size: 12px; }
+.tab-scroll .hint { color: #8a5a00; white-space: normal; }
+.tab-scroll .empty { color: #555; }
+.tab-line { display: block; margin: 4px 0 10px; }
+.tab-string { stroke: #888; stroke-width: 1; }
+.tab-bar { stroke: #333; stroke-width: 1.2; }
+.tab-str { font: 600 10px var(--mono); fill: #555; }
+.tab-num { font: 9px var(--mono); fill: #999; }
+.tab-sec { font: 700 11px system-ui, sans-serif; fill: #b0402a; }
+.tab-chord { font: 700 11px var(--mono); fill: #4b3aa8; }
+.tab-bg { fill: #f4f1ea; }
+.tab-fret { font: 700 11px var(--mono); fill: #111; text-anchor: middle; }
+.tab-fret.shifted { fill: #d26a00; }
+.chart-shapes { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 14px; }
+.chord-diagram { display: flex; flex-direction: column; align-items: center; width: 74px; }
+.chord-diagram b { font: 700 12px var(--mono); color: #4b3aa8; }
+.chord-diagram small { color: #888; font-size: 10px; margin-top: 20px; }
+.cd-line { stroke: #444; stroke-width: 1; }
+.cd-nut { fill: #222; }
+.cd-dot { fill: #222; }
+.cd-open { fill: none; stroke: #222; stroke-width: 1.2; }
+.cd-mark { font: 10px sans-serif; fill: #444; text-anchor: middle; }
+.cd-base { font: 9px var(--mono); fill: #444; }
+.chart-sec h3 { margin: 10px 0 4px; font-size: 13px; color: #b0402a; }
+.chart-bars { display: grid; grid-template-columns: repeat(4, minmax(90px, 1fr)); border-left: 2px solid #333; max-width: 720px; }
+.chart-bar { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border-right: 2px solid #333; border-bottom: 1px solid #ccc; font: 700 14px var(--mono); color: #1d1d1d; min-height: 30px; }
+.chart-bar .rep { color: #999; font-weight: 400; }
+
+@media print {
+  body * { visibility: hidden !important; }
+  .print-area, .print-area * { visibility: visible !important; }
+  .print-area { position: absolute; left: 0; top: 0; width: 100%; overflow: visible !important; background: #fff !important; padding: 0 !important; }
+  .tab-bg { fill: #fff; }
+}
