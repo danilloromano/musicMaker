@@ -9,6 +9,7 @@ import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
 import { TunerModal } from './TunerModal';
 import { MetronomeMenu } from './MetronomeMenu';
+import { exportMidi } from '../audio/midiProject';
 import { SongGenModal } from './SongGenModal';
 import { redoShortcut, shortcut } from '../platform';
 import { retimeAudio } from '../audio/tempo';
@@ -186,8 +187,14 @@ export function Transport() {
       </label>
       <Meter className="master" />
       <div className="group">
-        <button title="Importar arquivo de áudio (WAV, MP3, OGG...)" onClick={() => importRef.current?.click()}>
-          Importar áudio
+        <button title="Importar áudio (WAV, MP3, OGG…) ou MIDI (.mid): entra no compasso do cursor" onClick={() => importRef.current?.click()}>
+          Importar
+        </button>
+        <button
+          title="Exportar as notas em MIDI (.mid): uma trilha por instrumento, com andamento, compasso, seções e cifras — para abrir em outro programa"
+          onClick={() => exportMidi() || alert('Não há notas para exportar: o MIDI leva as trilhas de instrumento e de bateria.')}
+        >
+          MIDI
         </button>
         <button className="primary" disabled={exporting} title="Exportar a música (formato e volume na aba Master)" onClick={() => void exportWav()}>
           {exporting ? 'Exportando…' : `Exportar ${(masterOf(project.master).exportFormat ?? 'wav').toUpperCase()}`}
@@ -215,7 +222,7 @@ export function Transport() {
       <input
         ref={importRef}
         type="file"
-        accept="audio/*"
+        accept="audio/*,.mid,.midi,.kar,audio/midi"
         multiple
         hidden
         onChange={async (e) => {
