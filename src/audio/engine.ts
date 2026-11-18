@@ -14,7 +14,7 @@ import { Held, arpStep, playedNotes } from './arp';
 import { withLoading } from '../loading';
 import { micSettingsPath } from '../platform';
 
-const LOOKAHEAD = 0.12; // s de antecedência com que as notas são agendadas
+const LOOKAHEAD = 0.2; // s de antecedência com que as notas são agendadas (folga para a interface ocupada)
 const TICK_MS = 25;
 
 class Engine {
@@ -130,10 +130,43 @@ class Engine {
   /** Trecho de reprodução anterior à última volta do loop (até a volta acontecer de fato). */
   private prevSeg: { t: number; b: number } | null = null;
 
+  /** Instrumentos (e bateria gravada) já carregados para o conjunto atual de trilhas. */
+  private loadedSig = '';
+  /** Play pedido enquanto os sons carregavam (o número muda se o usuário parar antes). */
+  private pendingPlay = 0;
+
+  /**
+   * Garante que as gravações dos instrumentos do projeto estão prontas antes de tocar. Devolve null se já
+   * estão; senão, a promessa do carregamento. Começar a tocar com elas carregando fazia a música engasgar
+   * (a decodificação disputa o processador com o agendamento das notas) e as primeiras notas saírem com o
+   * timbre de reserva.
+   */
+  private preload(): Promise<unknown> | null {
+    const tracks = useStore.getState().project.tracks;
+    const drums = tracks.some((t) => t.kind === 'drums');
+    const sig = (drums ? 'd|' : '') + [...new Set(tracks.map((t) => t.instrument))].sort().join(',');
+    if (sig === this.loadedSig) return null;
+    return Promise.all([drums ? loadDrumSamples(this.ctx) : null, loadInstruments(this.ctx, tracks.map((t) => t.instrument))]).finally(() => {
+      this.loadedSig = sig; // se falhou, toca com o timbre de reserva (não fica tentando a cada play)
+    });
+  }
+
   /** Começa a tocar do cursor. `delay` = segundos até o início (a contagem antes de gravar usa um compasso). */
   play(delay = 0.06) {
     this.ensure();
     if (this.playing) return;
+    const wait = this.preload();
+    if (wait) {
+      const id = ++this.pendingPlay;
+      const done = wait.catch(() => {});
+      // a nave de carregamento só aparece se demorar (o mais comum é já estar quase pronto)
+      const slow = setTimeout(() => void withLoading('Carregando os instrumentos…', () => done), 250);
+      void done.then(() => {
+        clearTimeout(slow);
+        if (id === this.pendingPlay && !this.playing) this.play(delay);
+      });
+      return;
+    }
     this.stopPreview();
     this.startBeat = this.position;
     this.startTime = this.ctx.currentTime + delay;
@@ -149,6 +182,7 @@ class Engine {
   }
 
   stop() {
+    this.pendingPlay++; // cancela um play que esperava os sons carregarem
     if (useStore.getState().recording) this.finishRecording();
     if (!this.playing) return;
     this.position = this.getBeat();
@@ -509,6 +543,9 @@ class Engine {
       alert('Esta trilha está congelada: descongele (botão ❄ no cabeçalho dela) para gravar.');
       return;
     }
+    // a gravação começa a tocar na hora (a contagem já está agendada): os sons precisam estar prontos antes
+    const loading = this.preload();
+    if (loading) await withLoading('Carregando os instrumentos…', () => loading.catch(() => {}));
     // punch-in: grava só dentro do trecho (se já está tocando e passou do começo, a partir de agora)
     const pr = s.project.punch;
     let punch: { start: number; end: number } | undefined;

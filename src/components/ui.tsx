@@ -74,10 +74,14 @@ export function Spectrum({ trackId, color, points, labels = false, className = '
   const ref = useRef<HTMLCanvasElement>(null);
   const data = useRef(new Uint8Array(SPECTRUM_BINS));
   const idle = useRef(false);
+  const frame = useRef(0);
 
   useRaf(() => {
     const cv = ref.current;
     if (!cv) return;
+    // os espectros pequenos (um por trilha) a 30 quadros/s: com muitas trilhas, calcular todos a 60 tomava
+    // tempo do processador que a reprodução precisa, e no tamanho deles a diferença não se vê
+    if (points <= 64 && frame.current++ % 2) return;
     const dpr = window.devicePixelRatio || 1;
     const w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
     if (!w || !h) return;

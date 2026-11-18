@@ -1,3 +1,4 @@
+import { b64bytes } from './b64';
 // Bateria: kit acústico gravado (abaixo, "Kit gravado") com um kit sintetizado de reserva.
 // Kit de bateria acústica sintetizado. Cada peça é calculada uma única vez, amostra a amostra, com um
 // modelo mais próximo do instrumento real (modos da membrana, esteira da caixa, pratos com dezenas de
@@ -357,15 +358,20 @@ function pieceBuffers(ctx: BaseAudioContext, pitch: number): AudioBuffer[] {
  */
 export function warmDrumKit(ctx: BaseAudioContext) {
   void loadDrumSamples(ctx);
+  // a versão sintetizada só é preparada para as peças sem gravação (as gravadas não precisam dela), e aos
+  // poucos, nos intervalos ociosos — sintetizar o kit inteiro travava a interface no primeiro play
   const sr = ctx.sampleRate;
-  const todo = Object.entries(PIECES).flatMap(([p, piece]) => Array.from({ length: piece.variants }, (_, v) => [+p, v]));
+  const todo = Object.entries(PIECES)
+    .filter(([p]) => !SAMPLED[+p])
+    .flatMap(([p, piece]) => Array.from({ length: piece.variants }, (_, v) => [+p, v]));
+  const idle = (cb: () => void) => ('requestIdleCallback' in window ? requestIdleCallback(cb, { timeout: 2000 }) : setTimeout(cb, 50));
   const step = () => {
     const next = todo.shift();
     if (!next) return;
     variantSample(sr, next[0], next[1]);
-    setTimeout(step, 0);
+    idle(step);
   };
-  setTimeout(step, 0);
+  idle(step);
 }
 
 // ---------- Kit gravado ----------
@@ -422,9 +428,7 @@ export function loadDrumSamples(ctx: BaseAudioContext): Promise<void> {
   loading ??= (async () => {
     const kit: Record<string, AudioBuffer[][]> = {};
     const unpack = async ({ manifest, data }: { manifest: Record<string, [number, number][][]>; data: string }) => {
-      const str = atob(data);
-      const bin = new Uint8Array(str.length);
-      for (let i = 0; i < str.length; i++) bin[i] = str.charCodeAt(i);
+      const bin = await b64bytes(data);
       for (const [piece, layers] of Object.entries(manifest)) {
         kit[piece] = await Promise.all(
           layers.map((takes) => Promise.all(takes.map(([o, n]) => ctx.decodeAudioData(bin.slice(o, o + n).buffer)))),

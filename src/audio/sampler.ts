@@ -6,6 +6,7 @@
 import type { Voice } from './instruments';
 import { MODELED_SETS, ModeledSet, renderModel } from './modeled';
 import type { Zone } from './samples/piano.js';
+import { b64bytes } from './b64';
 
 type RecordedSet = 'piano' | 'bass' | 'strings' | 'pipe' | 'guitar' | 'dbass' | 'sax' | 'trumpet' | 'trombone' | 'flute' | 'marimba';
 export type SampleSet = RecordedSet | ModeledSet;
@@ -81,9 +82,7 @@ export function loadSampleSet(ctx: BaseAudioContext, name: SampleSet): Promise<v
       return;
     }
     const { manifest, data } = await LOADERS[name]();
-    const str = atob(data);
-    const bin = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) bin[i] = str.charCodeAt(i);
+    const bin = await b64bytes(data);
     const cache = new Map<number, Promise<AudioBuffer>>();
     const decode = (o: number, n: number) => {
       if (!cache.has(o)) cache.set(o, ctx.decodeAudioData(bin.slice(o, o + n).buffer));
