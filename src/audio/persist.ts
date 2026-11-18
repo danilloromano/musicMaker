@@ -6,12 +6,17 @@ interface RawBuffer {
   channels: Float32Array[];
 }
 
-const toRaw = (b: AudioBuffer): RawBuffer => ({
+export interface RawAudio {
+  sampleRate: number;
+  channels: Float32Array[];
+}
+
+export const toRaw = (b: AudioBuffer): RawBuffer => ({
   sampleRate: b.sampleRate,
   channels: Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c).slice()),
 });
 
-function fromRaw(r: RawBuffer): AudioBuffer {
+export function fromRaw(r: RawBuffer): AudioBuffer {
   const b = new AudioBuffer({ length: r.channels[0].length, numberOfChannels: r.channels.length, sampleRate: r.sampleRate });
   r.channels.forEach((d, c) => b.getChannelData(c).set(d));
   return b;
@@ -27,7 +32,10 @@ function bufferIds(p: Project, frozen = true): string[] {
     if (r.bufferId) ids.add(r.bufferId);
     if (r.src) ids.add(r.src.bufferId); // o original (o esticado pode ser refeito a partir dele)
   }
-  for (const t of p.tracks) if (t.amp?.irId) ids.add(t.amp.irId);
+  for (const t of p.tracks) {
+    if (t.amp?.irId) ids.add(t.amp.irId);
+    if (t.amp?.irB) ids.add(t.amp.irB);
+  }
   if (frozen) for (const t of p.tracks) if (t.frozen) ids.add(t.frozen.bufferId);
   if (p.reference) ids.add(p.reference.bufferId);
   return [...ids];
@@ -45,7 +53,7 @@ function db(): Promise<IDBDatabase> {
   }));
 }
 
-async function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+export async function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const d = await db();
   return new Promise((res, rej) => {
     const rq = fn(d.transaction('kv', mode).objectStore('kv'));
@@ -63,7 +71,8 @@ export async function loadLocal(buffers: Map<string, AudioBuffer>): Promise<Proj
   const used = new Set(bufferIds(p));
   for (const id of used) {
     if (buffers.has(id)) continue;
-    const raw = (await idb('readonly', (s) => s.get(`buf:${id}`))) as RawBuffer | undefined;
+    // IRs da biblioteca ficam em "ir:" (não são apagados com o projeto)
+    const raw = ((await idb('readonly', (s) => s.get(`buf:${id}`))) ?? (await idb('readonly', (s) => s.get(`ir:${id}`)))) as RawBuffer | undefined;
     if (raw) buffers.set(id, fromRaw(raw));
   }
   // áudio esticado que se perdeu: volta ao original (e é esticado de novo ao abrir)

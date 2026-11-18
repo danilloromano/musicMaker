@@ -1,15 +1,16 @@
-import { useRef } from 'react';
+import { useState } from 'react';
 import { PEDALS, PedalDef, RIG_PRESETS, defaultRig, modelOf, paramsOf, pedalDefaults, pedalOf } from '../audio/amp';
 import { engine } from '../audio/engine';
 import { useStore } from '../store';
 import { AmpRig, Track } from '../types';
 import { AmpHead, CabView } from './AmpVisuals';
 import { RotaryKnob } from './RotaryKnob';
+import { IrLibraryModal } from './IrLibraryModal';
 
 /** Pedaleira + amplificador + caixa (impulse response) da trilha selecionada. */
 export function AmpRack({ track: t }: { track: Track }) {
   const st = useStore.getState();
-  const irRef = useRef<HTMLInputElement>(null);
+  const [irLib, setIrLib] = useState(false);
   const rig = t.amp;
 
   if (!rig) {
@@ -178,7 +179,7 @@ export function AmpRack({ track: t }: { track: Track }) {
         <span className="rack-lbl">Timbres prontos</span>
         <div className="presets">
           {RIG_PRESETS.map((p) => (
-            <button key={p.name} onClick={() => st.updateTrack(t.id, { amp: { ...p.make(), irId: rig.irId, irName: rig.irName } })}>
+            <button key={p.name} onClick={() => st.updateTrack(t.id, { amp: { ...p.make(), irId: rig.irId, irName: rig.irName, irB: rig.irB, irBName: rig.irBName } })}>
               {p.name}
             </button>
           ))}
@@ -193,20 +194,10 @@ export function AmpRack({ track: t }: { track: Track }) {
         <CabView
           rig={rig}
           set={set}
-          onLoadIr={() => irRef.current?.click()}
-          irMissing={rig.cab === 'user' && !!rig.irId && !engine.buffers.has(rig.irId)}
+          onLibrary={() => setIrLib(true)}
+          irMissing={(rig.cab === 'user' && !!rig.irId && !engine.buffers.has(rig.irId)) || (rig.cabB === 'user' && !!rig.irB && !engine.buffers.has(rig.irB))}
         />
-        <input
-          ref={irRef}
-          type="file"
-          accept="audio/wav,.wav,audio/*"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            e.target.value = '';
-            if (f) void engine.loadIr(f, t.id);
-          }}
-        />
+        {irLib && <IrLibraryModal trackId={t.id} onClose={() => setIrLib(false)} />}
 
         {PEDALS.filter((d) => d.post).map(pedal)}
       </div>

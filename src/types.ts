@@ -173,6 +173,15 @@ export interface AmpRig {
   cabMix: number; // 0..1
   irId?: string; // buffer do IR do usuário
   irName?: string;
+  /** segunda caixa, misturada com a primeira: 'none'/ausente, uma das embutidas ou 'user' (`irB`) */
+  cabB?: string;
+  irB?: string;
+  irBName?: string;
+  /** mistura entre as caixas A e B (0 = só A, 1 = só B) */
+  cabBlend?: number;
+  /** corte de graves e de agudos depois da caixa, em Hz (ausente/0 = desligado) */
+  cabLow?: number;
+  cabHigh?: number;
 }
 
 export type ArpMode = 'up' | 'down' | 'updown' | 'random' | 'order' | 'chord';

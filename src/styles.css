@@ -874,3 +874,18 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 /* Editor de áudio: andamento e quantização */
 .aed-tempo label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .aed-tempo select { font-size: 12px; }
+
+/* Biblioteca de IRs */
+.cab-wrap { flex-direction: column; }
+.ir-modal { width: 520px; max-width: calc(100vw - 32px); }
+.ir-hint { margin: 0; white-space: normal; }
+.ir-bar { display: flex; gap: 8px; align-items: center; }
+.ir-filter { flex: 1; min-width: 0; }
+.ir-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.ir-list .empty { padding: 18px 8px; }
+.ir-item { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border: 1px solid transparent; border-radius: 6px; }
+.ir-item.on { border-color: var(--accent); }
+.ir-name { flex: 1; min-width: 0; background: transparent; border: 1px solid transparent; color: var(--text); padding: 3px 6px; }
+.ir-name:hover, .ir-name:focus { border-color: var(--line); background: var(--well); }
+.ir-item button { min-width: 30px; padding: 3px 8px; }
+.ir-item button.x:hover { color: var(--rec); }

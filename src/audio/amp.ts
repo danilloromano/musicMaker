@@ -2100,7 +2100,87 @@ class Slot {
 }
 
 /** Identifica a estrutura do rack: se mudar, o rack é remontado; o resto só ajusta parâmetros. */
-export const rigKey = (r: AmpRig, hasIr: boolean) => `${r.amp}|${r.cab}|${r.cab === 'user' ? `${r.irId}:${hasIr}` : ''}`;
+export const rigKey = (r: AmpRig, hasIr: boolean, hasIrB = false) =>
+  `${r.amp}|${r.cab}|${r.cab === 'user' ? `${r.irId}:${hasIr}` : ''}|${r.cabB ?? 'none'}|${r.cabB === 'user' ? `${r.irB}:${hasIrB}` : ''}`;
+
+/**
+ * IR do usuário pronto para usar: na taxa do contexto, sem o silêncio do começo (dois IRs misturados ficam
+ * alinhados, sem cancelar graves), com no máximo 1 s (fade no fim) e com a mesma energia das caixas
+ * embutidas — trocar de IR não muda o volume.
+ */
+const prepCache = new WeakMap<AudioBuffer, AudioBuffer>();
+
+/**
+ * Ganho que o ConvolverNode aplica sozinho a um IR com `normalize = true` (o padrão), como no Chromium (o
+ * motor do Electron): 1 / RMS do IR, calibrado em -58 dB e pela taxa de amostragem.
+ */
+function convolverScale(b: AudioBuffer): number {
+  let power = 0;
+  for (let c = 0; c < b.numberOfChannels; c++) for (const v of b.getChannelData(c)) power += v * v;
+  power = Math.sqrt(power / (b.numberOfChannels * b.length));
+  if (!Number.isFinite(power) || power < 0.000125) power = 0.000125;
+  return (1 / power) * 10 ** (-58 * 0.05) * (44100 / b.sampleRate);
+}
+
+/**
+ * Quanto o IR "soa alto" com guitarra: a média do ganho dele (ao quadrado) em frequências espaçadas por
+ * oitava de 80 Hz a 6 kHz — a faixa da guitarra e onde o ouvido é sensível. Medir só a energia total
+ * deixava IRs mais escuros ou mais brilhantes com volumes bem diferentes.
+ */
+function irLoudness(b: AudioBuffer): number {
+  const sr = b.sampleRate;
+  const n = Math.min(b.length, Math.round(sr * 0.25));
+  let sum = 0, count = 0;
+  for (let k = 0; k <= 24; k++) {
+    const f = 80 * (6000 / 80) ** (k / 24);
+    const w = (2 * Math.PI * f) / sr;
+    for (let c = 0; c < b.numberOfChannels; c++) {
+      const d = b.getChannelData(c);
+      let re = 0, im = 0;
+      for (let i = 0; i < n; i++) {
+        re += d[i] * Math.cos(w * i);
+        im -= d[i] * Math.sin(w * i);
+      }
+      sum += re * re + im * im;
+      count++;
+    }
+  }
+  return sum / count || 1e-12;
+}
+export function prepIr(ctx: BaseAudioContext, raw: AudioBuffer): AudioBuffer {
+  const hit = prepCache.get(raw);
+  if (hit && hit.sampleRate === ctx.sampleRate) return hit;
+  const b = fitRate(ctx, raw);
+  const chs = Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
+  let peak = 0;
+  for (const d of chs) for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+  if (peak <= 0) return b;
+  let start = 0;
+  while (start < b.length && !chs.some((d) => Math.abs(d[start]) > peak * 0.05)) start++;
+  start = Math.max(0, start - 16);
+  // fim: corta a cauda abaixo de -60 dB do pico, até 1 s
+  let end = b.length;
+  while (end > start + 64 && !chs.some((d) => Math.abs(d[end - 1]) > peak * 0.001)) end--;
+  end = Math.min(end, start + ctx.sampleRate);
+  const len = Math.max(64, end - start);
+  const out = ctx.createBuffer(b.numberOfChannels, len, ctx.sampleRate);
+  const fade = Math.min(len >> 2, Math.round(ctx.sampleRate * 0.01));
+  chs.forEach((d, c) => {
+    const o = out.getChannelData(c);
+    o.set(d.subarray(start, start + len));
+    for (let i = 0; i < fade; i++) o[len - 1 - i] *= i / fade;
+  });
+  // o convolver toca este IR sem a normalização automática (ver Rig): o ganho daqui já deixa o volume igual
+  // ao da caixa embutida, que toca com ela
+  const ref = cabIR(ctx, '2x12')!;
+  const g = Math.sqrt(irLoudness(ref) / irLoudness(out)) * convolverScale(ref);
+  for (let c = 0; c < out.numberOfChannels; c++) {
+    const o = out.getChannelData(c);
+    for (let i = 0; i < len; i++) o[i] *= g;
+  }
+  prepCache.set(raw, out);
+  return out;
+}
 
 export class Rig {
   input: GainNode;
@@ -2109,6 +2189,10 @@ export class Rig {
   private amp: ReturnType<typeof makeAmp> | null = null;
   private cabDry: GainNode | null = null;
   private cabWet: GainNode | null = null;
+  private cabA: GainNode | null = null;
+  private cabB: GainNode | null = null;
+  private cabHp: BiquadFilterNode | null = null;
+  private cabLp: BiquadFilterNode | null = null;
   private first = true;
   /** pedal de wah (a posição dele pode ser automatizada) */
   wah: WahFx;
@@ -2119,7 +2203,15 @@ export class Rig {
     else p.setTargetAtTime(v, this.ctx.currentTime, 0.015);
   };
 
-  constructor(private ctx: BaseAudioContext, public key: string, rig: AmpRig, userIr?: AudioBuffer, bpm = 120, song?: MusicKey) {
+  constructor(
+    private ctx: BaseAudioContext,
+    public key: string,
+    rig: AmpRig,
+    userIr?: AudioBuffer,
+    bpm = 120,
+    song?: MusicKey,
+    userIrB?: AudioBuffer,
+  ) {
     this.input = ctx.createGain();
     this.output = ctx.createGain();
     for (const p of PEDALS) this.slots.set(p.id, new Slot(ctx, makePedal(ctx, p.id, this.put)));
@@ -2140,15 +2232,34 @@ export class Rig {
       node = this.amp.out;
     }
 
-    const ir = rig.cab === 'user' ? userIr && fitRate(ctx, userIr) : cabIR(ctx, rig.cab);
-    if (ir) {
-      const conv = ctx.createConvolver();
-      conv.buffer = ir;
+    // caixa A e (opcional) caixa B, misturadas; depois, os cortes de grave e agudo
+    const irOf = (cab: string | undefined, user?: AudioBuffer) => (cab === 'user' ? (user ? prepIr(ctx, user) : null) : cab ? cabIR(ctx, cab) : null);
+    const irA = irOf(rig.cab, userIr);
+    const irB = irOf(rig.cabB, userIrB);
+    if (irA || irB) {
       const sum = ctx.createGain();
+      const wet = ctx.createGain();
       this.cabDry = ctx.createGain();
       this.cabWet = ctx.createGain();
+      this.cabHp = ctx.createBiquadFilter();
+      this.cabHp.type = 'highpass';
+      this.cabHp.Q.value = 0.707;
+      this.cabLp = ctx.createBiquadFilter();
+      this.cabLp.type = 'lowpass';
+      this.cabLp.Q.value = 0.707;
+      for (const [ir, which, user] of [[irA, 'a', rig.cab === 'user'], [irB, 'b', rig.cabB === 'user']] as const) {
+        if (!ir) continue;
+        const conv = ctx.createConvolver();
+        // IR do usuário: o volume já foi igualado em prepIr (a normalização do navegador desfaria isso)
+        if (user) conv.normalize = false;
+        conv.buffer = ir;
+        const g = ctx.createGain();
+        node.connect(conv).connect(g).connect(wet);
+        if (which === 'a') this.cabA = g;
+        else this.cabB = g;
+      }
+      wet.connect(this.cabHp).connect(this.cabLp).connect(this.cabWet).connect(sum);
       node.connect(this.cabDry).connect(sum);
-      node.connect(conv).connect(this.cabWet).connect(sum);
       node = sum;
     }
 
@@ -2175,6 +2286,13 @@ export class Rig {
     if (this.cabDry && this.cabWet) {
       this.put(this.cabDry.gain, 1 - rig.cabMix);
       this.put(this.cabWet.gain, rig.cabMix);
+      // A/B: mistura de potência constante (o volume não afunda no meio)
+      const b = this.cabA && this.cabB ? Math.min(1, Math.max(0, rig.cabBlend ?? 0.5)) : this.cabB ? 1 : 0;
+      if (this.cabA) this.put(this.cabA.gain, Math.cos((b * Math.PI) / 2));
+      if (this.cabB) this.put(this.cabB.gain, Math.sin((b * Math.PI) / 2));
+      const nyq = this.ctx.sampleRate / 2;
+      this.put(this.cabHp!.frequency, rig.cabLow ? Math.min(nyq * 0.9, rig.cabLow) : 10);
+      this.put(this.cabLp!.frequency, rig.cabHigh ? Math.min(nyq * 0.9, rig.cabHigh) : nyq * 0.95);
     }
   }
 

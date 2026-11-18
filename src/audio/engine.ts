@@ -13,6 +13,7 @@ import { Recorder } from './recorder';
 import { Held, arpStep, playedNotes } from './arp';
 import { withLoading } from '../loading';
 import { addRecordedTakes, trackTakes } from './takes';
+import { IrEntry, addIrFiles, loadIrBuffer } from './irLibrary';
 import { applyStretched, needsStretch, stretchBuffer, stretchedId } from './tempo';
 import { micSettingsPath } from '../platform';
 
@@ -905,27 +906,34 @@ class Engine {
     useStore.getState().addRegion({ trackId: target.id, name, start: beat, length: 0, bufferId, offset: 0, duration: buf.duration });
   }
 
-  /** Carrega um arquivo de impulse response (.wav de caixa/microfone) para o rack da trilha. */
-  async loadIr(file: File, trackId: string) {
+  /**
+   * Carrega arquivos de impulse response (.wav de caixa/microfone) para a biblioteca de IRs e, se `trackId`
+   * for dado, usa o primeiro na caixa A ou B do rack da trilha.
+   */
+  async loadIr(files: File[], trackId?: string, slot: 'a' | 'b' = 'a') {
     this.ensure();
-    let buf: AudioBuffer;
-    try {
-      buf = await withLoading('Carregando impulse response…', async () => this.ctx.decodeAudioData(await file.arrayBuffer()));
-    } catch {
-      alert(`Não foi possível ler "${file.name}" como impulse response.`);
+    const { added, errors } = await withLoading('Carregando impulse response…', () => addIrFiles(this.ctx, files, this.buffers));
+    if (errors.length) alert(errors.join('\n'));
+    if (trackId && added[0]) await this.useIr(trackId, added[0], slot);
+    return added;
+  }
+
+  /** Usa um IR da biblioteca na caixa A ou B do rack da trilha. */
+  async useIr(trackId: string, ir: IrEntry, slot: 'a' | 'b' = 'a') {
+    if (!(await loadIrBuffer(ir.id, this.buffers))) {
+      alert(`O IR "${ir.name}" não foi encontrado na biblioteca.`);
       return;
     }
-    if (buf.duration > 3) {
-      alert(`"${file.name}" tem ${buf.duration.toFixed(1)} s: isso parece uma música, não um impulse response. IRs de caixa costumam ter menos de 1 segundo.`);
-      return;
-    }
+    // o projeto guarda uma cópia (continua funcionando mesmo se o IR sair da biblioteca)
+    void saveBufferLocal(ir.id, this.buffers.get(ir.id)!);
     const s = useStore.getState();
     const t = s.project.tracks.find((x) => x.id === trackId);
     if (!t?.amp) return;
-    const irId = uid();
-    this.buffers.set(irId, buf);
-    void saveBufferLocal(irId, buf);
-    s.updateTrack(trackId, { amp: { ...t.amp, cab: 'user', irId, irName: file.name.replace(/\.[^.]+$/, '') } });
+    const amp =
+      slot === 'a'
+        ? { ...t.amp, cab: 'user', irId: ir.id, irName: ir.name }
+        : { ...t.amp, cabB: 'user', irB: ir.id, irBName: ir.name, cabBlend: t.amp.cabBlend ?? 0.5 };
+    s.updateTrack(trackId, { amp });
   }
 
   // ---------- Prévia de loops ----------
