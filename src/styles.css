@@ -601,10 +601,11 @@ body.resizing-v, body.resizing-v * { cursor: ns-resize !important; user-select: 
 }
 .ship { display: block; animation: ship-bob 0.9s ease-in-out infinite alternate; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5)); }
 @keyframes ship-bob { from { transform: translateY(0); } to { transform: translateY(-2px); } }
-.ship-flame { transform-box: fill-box; transform-origin: right center; animation: flame 0.12s steps(2) infinite alternate; }
-@keyframes flame { from { transform: scaleX(0.75); opacity: 0.85; } to { transform: scaleX(1.15); opacity: 1; } }
+.ship-lights circle { animation: ship-blink 0.5s steps(1) infinite; filter: drop-shadow(0 0 1.5px #00d455); }
+.ship-lights .odd { animation-delay: 0.25s; }
+@keyframes ship-blink { 0% { fill: #eafff0; } 50% { fill: #00d455; } }
 .ship-trail {
-  position: absolute; right: calc(100% - 14px); top: 12px; width: 90px; height: 4px; border-radius: 2px;
+  position: absolute; right: calc(100% - 6px); top: 14px; width: 90px; height: 4px; border-radius: 2px;
   background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), 0.65));
 }
 
@@ -615,7 +616,7 @@ body.resizing-v, body.resizing-v * { cursor: ns-resize !important; user-select: 
 @keyframes fill-fly { from { left: calc(-1 * var(--ship-w) - 100px); } to { left: calc(100% - 100px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .stars, .ship, .ship-flame { animation: none; }
+  .stars, .ship, .ship-lights circle { animation: none; }
   .shipbar.indeterminate .shipbar-rider, .shipbar.indeterminate .shipbar-fill { animation-duration: 4s; }
 }
 

@@ -1,32 +1,39 @@
 import { useStore } from '../store';
 
-/** Nave (desenho original), virada para a direita, com chama animada no motor. */
+/** Disco voador (desenho original) com um ET verde na cúpula, inclinado para a frente, com luzes piscando. */
 function Ship() {
   return (
-    <svg className="ship" viewBox="0 0 64 28" width="64" height="28" aria-hidden="true">
+    <svg className="ship" viewBox="0 0 64 28" width="64" height="28" overflow="visible" aria-hidden="true">
       <defs>
         <linearGradient id="ship-body" x1="0" x2="0" y1="0" y2="1">
           <stop offset="0" stopColor="#f2f3ee" />
-          <stop offset="0.55" stopColor="#b9bdb6" />
-          <stop offset="1" stopColor="#7d827c" />
+          <stop offset="0.5" stopColor="#b9bdb6" />
+          <stop offset="1" stopColor="#6f746e" />
         </linearGradient>
-        <linearGradient id="ship-flame" x1="1" x2="0">
-          <stop offset="0" stopColor="#eafff0" />
-          <stop offset="0.35" stopColor="#00d455" />
-          <stop offset="1" stopColor="#00d455" stopOpacity="0" />
-        </linearGradient>
+        <radialGradient id="ship-dome" cx="0.4" cy="0.35" r="0.75">
+          <stop offset="0" stopColor="#d8f4ff" stopOpacity="0.45" />
+          <stop offset="1" stopColor="#5fa8c8" stopOpacity="0.3" />
+        </radialGradient>
       </defs>
-      {/* chama */}
-      <path className="ship-flame" d="M14 10 Q2 14 14 18 Q8 14 14 10 Z M14 11 L0 14 L14 17 Z" fill="url(#ship-flame)" />
-      {/* aletas */}
-      <path d="M22 9 L14 1 L28 8 Z" fill="#00d455" stroke="#2b2e32" strokeWidth="0.8" />
-      <path d="M22 19 L14 27 L28 20 Z" fill="#00d455" stroke="#2b2e32" strokeWidth="0.8" />
-      {/* corpo */}
-      <path d="M14 9 H40 Q56 9 62 14 Q56 19 40 19 H14 Q12 14 14 9 Z" fill="url(#ship-body)" stroke="#2b2e32" strokeWidth="0.9" />
-      {/* faixa e janela */}
-      <rect x="18" y="12.6" width="18" height="2.8" rx="1.4" fill="#00d455" />
-      <ellipse cx="46" cy="13.2" rx="5" ry="2.6" fill="#1f2124" stroke="#2b2e32" strokeWidth="0.6" />
-      <ellipse cx="47.4" cy="12.4" rx="1.8" ry="0.9" fill="#9fd7ff" opacity="0.8" />
+      <g transform="rotate(6 32 16)">
+        {/* ET na cúpula */}
+        <ellipse cx="32" cy="7.6" rx="4.2" ry="4.6" fill="#5fe86a" />
+        <ellipse cx="30.3" cy="7.9" rx="1.5" ry="0.85" transform="rotate(25 30.3 7.9)" fill="#0b0d10" />
+        <ellipse cx="33.7" cy="7.9" rx="1.5" ry="0.85" transform="rotate(-25 33.7 7.9)" fill="#0b0d10" />
+        {/* cúpula de vidro */}
+        <path d="M22 13 Q22 0.8 32 0.8 Q42 0.8 42 13 Z" fill="url(#ship-dome)" stroke="#2b2e32" strokeWidth="0.8" />
+        <path d="M25 7 Q26.5 3.4 30.5 2.8" fill="none" stroke="#fff" strokeWidth="1" strokeLinecap="round" opacity="0.7" />
+        {/* disco */}
+        <ellipse cx="32" cy="18.5" rx="20" ry="4" fill="#4a4e4a" stroke="#2b2e32" strokeWidth="0.8" />
+        <ellipse cx="32" cy="16" rx="30" ry="4.6" fill="url(#ship-body)" stroke="#2b2e32" strokeWidth="0.9" />
+        <path d="M4 16 Q32 20 60 16" fill="none" stroke="#00d455" strokeWidth="1.2" />
+        {/* luzes */}
+        <g className="ship-lights">
+          {[10, 21, 32, 43, 54].map((cx, i) => (
+            <circle key={cx} className={i % 2 ? 'odd' : 'even'} cx={cx} cy={cx === 32 ? 18.6 : cx === 21 || cx === 43 ? 18 : 16.8} r="1.3" fill="#eafff0" />
+          ))}
+        </g>
+      </g>
     </svg>
   );
 }

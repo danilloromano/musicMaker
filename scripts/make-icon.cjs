@@ -1,4 +1,4 @@
-// Gera build/icon.ico (ícone do app, do instalador e do atalho) sem dependências: desenha em RGBA,
+// Gera build/icon.ico (ícone do app, do instalador e do atalho: a cara de um ET verde) sem dependências: desenha em RGBA,
 // codifica cada tamanho como PNG (zlib do Node) e empacota tudo num .ico.
 // Uso: node scripts/make-icon.cjs
 const fs = require('fs');
@@ -6,50 +6,75 @@ const path = require('path');
 const zlib = require('zlib');
 
 const BG = [0x17, 0x18, 0x1a];
-const LIME = [0x00, 0xd4, 0x55]; // verde neon do app
 const RIM = [0x2e, 0x30, 0x34];
+const SKIN_TOP = [0x8c, 0xff, 0x7a]; // verde do ET, mais claro no alto da cabeça
+const SKIN_BOT = [0x1f, 0xb8, 0x3c]; // e mais escuro no queixo
+const EYE = [0x0b, 0x0d, 0x10];
+const SHINE = [0xe8, 0xff, 0xf0];
 
 /**
- * Cobertura (0..1) de cada pixel, com 4x4 subamostras para suavizar as bordas.
+ * Cor de um ponto (coordenadas de 0 a 1): fundo arredondado com borda e a cara de um ET verde
+ * (cabeça em forma de ovo de ponta para baixo, olhos grandes amendoados e inclinados, boca pequena).
+ * Retorna null fora do ícone.
+ */
+function colorAt(x, y) {
+  const radius = 0.22;
+  const insideRounded = (x0, y0, x1, y1, r) => {
+    if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+    const cx = Math.min(Math.max(x, x0 + r), x1 - r), cy = Math.min(Math.max(y, y0 + r), y1 - r);
+    return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+  };
+  if (!insideRounded(0.02, 0.02, 0.98, 0.98, radius)) return null;
+  if (!insideRounded(0.05, 0.05, 0.95, 0.95, radius - 0.03)) return RIM;
+
+  // cabeça: elipse que afina para o queixo
+  const cy = 0.46, ry = 0.37, t = (y - cy) / ry;
+  if (Math.abs(t) > 1) return BG;
+  const halfW = 0.32 * Math.sqrt(1 - t * t) * (t > 0 ? 1 - 0.5 * t : 1);
+  if (Math.abs(x - 0.5) > halfW) return BG;
+
+  // olhos: elipses inclinadas, o canto de fora mais alto
+  for (const side of [-1, 1]) {
+    const ex = 0.5 + side * 0.135, ey = 0.5;
+    const ang = side * -0.5; // ~29°
+    const dx = x - ex, dy = y - ey;
+    const u = dx * Math.cos(ang) + dy * Math.sin(ang), v = -dx * Math.sin(ang) + dy * Math.cos(ang);
+    if ((u / 0.12) ** 2 + (v / 0.062) ** 2 <= 1) {
+      // brilho no alto do olho
+      const sx = ex + side * 0.035, sy = ey - 0.025;
+      if ((x - sx) ** 2 + (y - sy) ** 2 <= 0.022 ** 2) return SHINE;
+      return EYE;
+    }
+  }
+  // boca
+  if (Math.abs(x - 0.5) <= 0.035 && Math.abs(y - 0.7) <= 0.009) return EYE;
+
+  const k = Math.min(1, Math.max(0, (y - 0.09) / 0.74));
+  return SKIN_TOP.map((c, i) => c + (SKIN_BOT[i] - c) * k);
+}
+
+/**
+ * RGBA de cada pixel, com 4x4 subamostras para suavizar as bordas.
  * `pad` = margem em volta (fração do tamanho): os ícones de Mac têm ~10% de respiro em volta do desenho.
  */
 function draw(size, pad = 0) {
   const px = new Uint8Array(size * size * 4);
   const ss = 4;
-  // tudo em coordenadas de 0 a 1
-  const radius = 0.22;
-  const insideRounded = (x, y, x0, y0, x1, y1, r) => {
-    if (x < x0 || x > x1 || y < y0 || y > y1) return false;
-    const cx = Math.min(Math.max(x, x0 + r), x1 - r), cy = Math.min(Math.max(y, y0 + r), y1 - r);
-    return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
-  };
-  // barras de "equalizador": alturas formam uma onda
-  const heights = [0.3, 0.55, 0.78, 0.48, 0.66];
-  const barW = 0.1, gap = 0.045, total = heights.length * barW + (heights.length - 1) * gap;
-  const baseY = 0.78;
   for (let py = 0; py < size; py++) {
     for (let pxl = 0; pxl < size; pxl++) {
-      let cBg = 0, cRim = 0, cBar = 0;
+      let r = 0, g = 0, b = 0, hits = 0;
       for (let sy = 0; sy < ss; sy++) {
         for (let sx = 0; sx < ss; sx++) {
           const x = ((pxl + (sx + 0.5) / ss) / size - pad) / (1 - 2 * pad), y = ((py + (sy + 0.5) / ss) / size - pad) / (1 - 2 * pad);
-          if (!insideRounded(x, y, 0.02, 0.02, 0.98, 0.98, radius)) continue;
-          const inner = insideRounded(x, y, 0.05, 0.05, 0.95, 0.95, radius - 0.03);
-          if (!inner) { cRim++; continue; }
-          let bar = false;
-          heights.forEach((h, i) => {
-            const x0 = 0.5 - total / 2 + i * (barW + gap);
-            if (insideRounded(x, y, x0, baseY - h * 0.62, x0 + barW, baseY, barW / 2)) bar = true;
-          });
-          if (bar) cBar++;
-          else cBg++;
+          const c = colorAt(x, y);
+          if (!c) continue;
+          r += c[0]; g += c[1]; b += c[2]; hits++;
         }
       }
-      const n = ss * ss, a = (cBg + cRim + cBar) / n;
+      if (!hits) continue;
       const i = (py * size + pxl) * 4;
-      if (a === 0) continue;
-      const mix = (k) => (BG[k] * cBg + RIM[k] * cRim + LIME[k] * cBar) / (cBg + cRim + cBar);
-      px[i] = mix(0); px[i + 1] = mix(1); px[i + 2] = mix(2); px[i + 3] = Math.round(a * 255);
+      px[i] = Math.round(r / hits); px[i + 1] = Math.round(g / hits); px[i + 2] = Math.round(b / hits);
+      px[i + 3] = Math.round((hits / (ss * ss)) * 255);
     }
   }
   return px;
