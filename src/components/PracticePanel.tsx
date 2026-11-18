@@ -1,11 +1,72 @@
 import { useEffect, useRef } from 'react';
-import { practice, usePractice } from '../audio/practice';
+import { STEM_NAMES, practice, usePractice } from '../audio/practice';
 import { withLoading } from '../loading';
 import { useRaf } from './ui';
 
 /** Controle deslizante simples (o Slider do app guarda um passo de desfazer; aqui nada é do projeto). */
 function Range({ min, max, step, value, reset, onChange }: { min: number; max: number; step: number; value: number; reset: number; onChange: (v: number) => void }) {
   return <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(+e.target.value)} onDoubleClick={() => onChange(reset)} />;
+}
+
+/**
+ * Separar instrumentos (sem IA): voz, bateria, baixo e resto, cada um com volume, silenciar e solo — para
+ * tirar o baixo e tocar por cima, ouvir só a bateria… — e levar as partes para o projeto como trilhas.
+ */
+function Separation() {
+  const st = usePractice();
+  if (st.separated === null) {
+    return (
+      <div className="sep">
+        <button
+          onClick={() => void practice.separate().catch(() => alert('Não foi possível separar esta música.'))}
+          title="Separa voz, bateria, baixo e o resto com técnicas clássicas de áudio (sem IA): rápido, mas aproximado"
+        >
+          🎚 Separar instrumentos
+        </button>
+        <span className="hint">
+          Sem IA: separa a bateria pelo jeito percussivo do som, o baixo pelos graves e a voz pelo centro do estéreo. É
+          aproximado (sobra um pouco de cada coisa em cada parte), e a voz só se separa em gravações estéreo.
+        </span>
+      </div>
+    );
+  }
+  if (st.separated !== true) {
+    return (
+      <div className="sep">
+        <span className="hint">Separando… {Math.round(st.separated * 100)}%</span>
+        <div className="sep-bar"><i style={{ width: `${st.separated * 100}%` }} /></div>
+      </div>
+    );
+  }
+  const solo = (k: keyof typeof st.mix) =>
+    practice.setMix({ voz: 0, bateria: 0, baixo: 0, resto: 0, [k]: 1 });
+  return (
+    <div className="sep">
+      <div className="sep-rows">
+        {STEM_NAMES.map(([k, name]) => (
+          <div key={k} className={`sep-row ${st.mix[k] === 0 ? 'off' : ''}`}>
+            <span className="sep-name">{name}</span>
+            <Range min={0} max={1} step={0.01} value={st.mix[k]} reset={1} onChange={(v) => practice.setMix({ [k]: v })} />
+            <span className="sep-val">{Math.round(st.mix[k] * 100)}%</span>
+            <button className={st.mix[k] === 0 ? 'toggle on' : ''} title="Tirar esta parte" onClick={() => practice.setMix({ [k]: st.mix[k] === 0 ? 1 : 0 })}>Sem</button>
+            <button title="Ouvir só esta parte" onClick={() => solo(k)}>Só</button>
+          </div>
+        ))}
+      </div>
+      <div className="sep-actions">
+        <button onClick={() => practice.setMix({ voz: 1, bateria: 1, baixo: 1, resto: 1 })}>Tudo de volta</button>
+        <button
+          title="Cria uma trilha de áudio no projeto para cada parte (voz, bateria, baixo e resto), a partir do compasso 1"
+          onClick={() => {
+            const n = practice.sendToProject();
+            if (n) alert(`${n} trilhas de áudio criadas no projeto.`);
+          }}
+        >
+          Levar para o projeto
+        </button>
+      </div>
+    </div>
+  );
 }
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
@@ -180,6 +241,7 @@ export function PracticePanel() {
               </div>
             </div>
             {st.busy && <small className="hint practice-busy">Processando a nova velocidade/tom…</small>}
+            <Separation />
           </div>
         </>
       )}

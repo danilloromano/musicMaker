@@ -1014,3 +1014,17 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .practice-chord small { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
 .practice-chord span { font: 800 28px var(--mono); color: #b7a8ff; min-width: 80px; text-align: center; }
 .practice-busy { color: var(--accent); }
+
+/* Tirar Música: separação */
+.sep { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sep .hint { white-space: normal; margin: 0; max-width: 760px; }
+.sep-bar { flex: 1; min-width: 200px; max-width: 420px; height: 6px; border-radius: 3px; background: var(--well); overflow: hidden; }
+.sep-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+.sep-rows { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: 6px 26px; }
+.sep-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.sep-row.off .sep-name { color: var(--faint); text-decoration: line-through; }
+.sep-name { width: 170px; color: var(--text); }
+.sep-row input { flex: 1; min-width: 80px; }
+.sep-val { width: 36px; text-align: right; color: var(--dim); font: 11px var(--mono); }
+.sep-row button { padding: 1px 8px; font-size: 11px; }
+.sep-actions { display: flex; gap: 8px; }

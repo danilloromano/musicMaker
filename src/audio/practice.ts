@@ -8,6 +8,20 @@ import { useSyncExternalStore } from 'react';
 import { guessChord, chordName } from './chords';
 import { engine } from './engine';
 import { stretchBuffer } from './tempo';
+import type { Stems } from './separate';
+import { newTrack, useStore } from '../store';
+import { uid } from '../types';
+import { saveBufferLocal } from './persist';
+
+/** Volume de cada parte separada (0..1). */
+export interface StemMix {
+  voz: number;
+  bateria: number;
+  baixo: number;
+  resto: number;
+}
+export const STEM_NAMES: [keyof StemMix, string][] = [['voz', 'Voz'], ['bateria', 'Bateria'], ['baixo', 'Baixo'], ['resto', 'Resto (guitarras, teclados…)']];
+const FULL_MIX: StemMix = { voz: 1, bateria: 1, baixo: 1, resto: 1 };
 
 type Proc = { buf: AudioBuffer; stretch: number; rate: number };
 
@@ -23,11 +37,21 @@ export interface PracticeState {
   volume: number;
   loop: { a: number; b: number; on: boolean } | null;
   peaks: Float32Array | null;
+  /** separação: null = não separada; número = processando (0..1); true = pronta */
+  separated: null | number | true;
+  mix: StemMix;
 }
 
 class Practice {
+  /** a música como foi aberta */
+  source: AudioBuffer | null = null;
+  /** o que toca: a música, ou a mistura das partes separadas */
   orig: AudioBuffer | null = null;
-  state: PracticeState = { name: null, duration: 0, playing: false, busy: false, speed: 1, semis: 0, cents: 0, volume: 0.9, loop: null, peaks: null };
+  stems: Stems | null = null;
+  state: PracticeState = {
+    name: null, duration: 0, playing: false, busy: false, speed: 1, semis: 0, cents: 0, volume: 0.9, loop: null, peaks: null,
+    separated: null, mix: FULL_MIX,
+  };
   private cache = new Map<string, Proc>();
   private proc: Proc | null = null;
   private src: AudioBufferSourceNode | null = null;
@@ -70,12 +94,93 @@ class Practice {
   async load(file: File) {
     this.stop();
     const buf = await this.ctx.decodeAudioData(await file.arrayBuffer());
+    this.source = buf;
     this.orig = buf;
+    this.stems = null;
     this.cache.clear();
     this.proc = { buf, stretch: 1, rate: 1 };
     this.playSpeed = 1;
     this.pos0 = 0;
-    this.set({ name: file.name.replace(/\.[^.]+$/, ''), duration: buf.duration, loop: null, peaks: peaksOf(buf, 2400), speed: 1, semis: 0, cents: 0 });
+    this.set({ name: file.name.replace(/\.[^.]+$/, ''), duration: buf.duration, loop: null, peaks: peaksOf(buf, 2400), speed: 1, semis: 0, cents: 0, separated: null, mix: FULL_MIX });
+  }
+
+  // ---------- separação (sem IA, ver separate.ts) ----------
+
+  /** Separa voz, bateria, baixo e o resto (num worker, com progresso no estado). */
+  async separate() {
+    const src = this.source;
+    if (!src || this.state.separated !== null) return;
+    this.set({ separated: 0 });
+    const L = src.getChannelData(0).slice();
+    const R = (src.numberOfChannels > 1 ? src.getChannelData(1) : src.getChannelData(0)).slice();
+    try {
+      const stems = await new Promise<Stems>((resolve, reject) => {
+        const w = new Worker(new URL('./separate.worker.ts', import.meta.url), { type: 'module' });
+        w.onmessage = (e: MessageEvent<{ progress?: number; stems?: Stems }>) => {
+          if (e.data.stems) {
+            resolve(e.data.stems);
+            w.terminate();
+          } else if (e.data.progress !== undefined) this.set({ separated: e.data.progress });
+        };
+        w.onerror = (e) => {
+          reject(e);
+          w.terminate();
+        };
+        w.postMessage({ L, R, sampleRate: src.sampleRate }, [L.buffer, R.buffer]);
+      });
+      if (this.source !== src) return; // abriram outra música no meio
+      this.stems = stems;
+      this.set({ separated: true });
+    } catch (e) {
+      this.set({ separated: null });
+      throw e;
+    }
+  }
+
+  /** Muda o volume das partes: refaz a mistura e continua do mesmo ponto (na velocidade e tom atuais). */
+  setMix(patch: Partial<StemMix>) {
+    const mix = { ...this.state.mix, ...patch };
+    this.set({ mix });
+    const src = this.source;
+    if (!src || !this.stems) return;
+    this.orig = mixStems(src, this.stems, mix);
+    this.cache.clear();
+    this.setParams({});
+  }
+
+  /**
+   * Leva as partes separadas para o projeto: uma trilha de áudio para cada (do começo da música). Elas não
+   * seguem o BPM do projeto (o andamento da gravação é outro).
+   */
+  sendToProject(): number {
+    const src = this.source, st = this.stems;
+    if (!src || !st) return 0;
+    const sr = src.sampleRate;
+    const mono = (d: Float32Array) => {
+      const b = new AudioBuffer({ length: d.length, numberOfChannels: 1, sampleRate: sr });
+      b.getChannelData(0).set(d);
+      return b;
+    };
+    const drums = new AudioBuffer({ length: src.length, numberOfChannels: 2, sampleRate: sr });
+    drums.getChannelData(0).set(st.drumsL);
+    drums.getChannelData(1).set(st.drumsR);
+    const rest = mixStems(src, st, { voz: 0, bateria: 0, baixo: 0, resto: 1 });
+    const parts: [string, AudioBuffer][] = [['Voz (separada)', mono(st.vocals)], ['Bateria (separada)', drums], ['Baixo (separado)', mono(st.bass)], ['Resto (separado)', rest]];
+    const s = useStore.getState();
+    s.update((p) => {
+      const tracks = [...p.tracks];
+      const regions = [...p.regions];
+      for (const [name, buf] of parts) {
+        const t = newTrack('audio', tracks.length, { name: `${name.split(' (')[0]} — ${this.state.name}` });
+        tracks.push(t);
+        const bufferId = uid();
+        engine.buffers.set(bufferId, buf);
+        void saveBufferLocal(bufferId, buf);
+        regions.push({ id: uid(), trackId: t.id, name, start: 0, length: 0, bufferId, offset: 0, duration: buf.duration, fixedTempo: true });
+      }
+      return { ...p, tracks, regions };
+    });
+    return parts.length;
   }
 
   /** Posição atual (segundos na música original). */
@@ -234,6 +339,22 @@ class Practice {
     const c = guessChord(w, bassPc);
     return c ? chordName(c) : null;
   }
+}
+
+/**
+ * Mistura das partes: resto·original + Σ (parte − resto)·parte — o "resto" é o original menos as três
+ * partes, então com tudo em 100% sai exatamente a música original.
+ */
+function mixStems(src: AudioBuffer, st: Stems, m: StemMix): AudioBuffer {
+  const out = new AudioBuffer({ length: src.length, numberOfChannels: 2, sampleRate: src.sampleRate });
+  const gD = m.bateria - m.resto, gB = m.baixo - m.resto, gV = m.voz - m.resto;
+  for (let c = 0; c < 2; c++) {
+    const x = src.getChannelData(Math.min(c, src.numberOfChannels - 1));
+    const d = c ? st.drumsR : st.drumsL;
+    const o = out.getChannelData(c);
+    for (let i = 0; i < o.length; i++) o[i] = m.resto * x[i] + gD * d[i] + gB * st.bass[i] + gV * st.vocals[i];
+  }
+  return out;
 }
 
 /** Picos para o desenho da forma de onda (máximo absoluto por coluna). */
