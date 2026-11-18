@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { engine } from '../audio/engine';
 import { importFiles } from '../audio/importFiles';
 import { DRUM_STYLES, FILL_CHOICES, LOOPS, addLoop, applyDrumStyle, extendPattern, setTrackFills } from '../audio/loops';
@@ -8,6 +8,7 @@ import { AutoPoint, BEATS_PER_BAR, Region, Track, TrackKind, activeFreeze, fitFa
 import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
 import { MarkerLane, MarkerLines, jumpMarker } from './Markers';
+import { clearUnusedTakes, compRange, deleteTake, takePieces, trackTakes, pickWholeTake } from '../audio/takes';
 
 const HEADER_W = 264;
 export const LOOP_MIME = 'application/x-mm-loop';
@@ -304,6 +305,7 @@ export function Timeline() {
               )}
             </div>
           </div>
+          {t.takesView && t.kind === 'audio' && <TakeRows track={t} width={width} ppb={ppb} />}
           {t.autoView && <AutomationRow track={t} width={width} ppb={ppb} />}
           </Fragment>
         ))}
@@ -384,6 +386,7 @@ function freezeState(t: Track): 'on' | 'stale' | 'off' {
 function TrackHeader({ track: t }: { track: Track }) {
   const st = useStore.getState();
   useStore((s) => s.project.regions); // o estado do congelamento depende das regiões da trilha
+  const nTakes = useStore((s) => (t.kind === 'audio' ? trackTakes(s.project, t.id).length : 0));
   const up = (patch: Partial<Track>, history = false) => st.updateTrack(t.id, patch, history);
   const frozen = freezeState(t);
   return (
@@ -404,6 +407,15 @@ function TrackHeader({ track: t }: { track: Track }) {
         >
           A
         </button>
+        {nTakes > 1 && (
+          <button
+            className={`ms takes ${t.takesView ? 'on' : ''}`}
+            title={`Takes (${nTakes} gravações): abre as faixas para escolher o melhor pedaço de cada uma`}
+            onClick={() => up({ takesView: !t.takesView || undefined }, false)}
+          >
+            T
+          </button>
+        )}
         {t.kind !== 'bus' && (
           <button
             className={`ms freeze ${frozen}`}
@@ -569,6 +581,96 @@ function Wave({ region: r, color }: { region: Region; color: string }) {
     }
   }, [r.bufferId, r.offset, r.duration, color]);
   return <canvas className="region-body" ref={ref} />;
+}
+
+// ---------- Takes (comping) ----------
+
+const TAKE_H = 46;
+
+/**
+ * Faixas de takes de uma trilha de áudio: uma por gravação (a mais nova em cima). Os pedaços acesos são os
+ * que estão tocando. Clique num pedaço apagado para usá-lo, ou arraste sobre um take para usar só aquele
+ * trecho dele (encaixa em 1/4 de tempo; com Alt, livre).
+ */
+function TakeRows({ track: t, width, ppb }: { track: Track; width: number; ppb: number }) {
+  const project = useStore((s) => s.project);
+  const st = useStore.getState();
+  const takes = trackTakes(project, t.id).reverse();
+  const [sel, setSel] = useState<{ n: number; a: number; b: number } | null>(null);
+
+  const down = (e: React.PointerEvent, n: number) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const left = (e.currentTarget as HTMLElement).getBoundingClientRect().left;
+    const at = (ev: { clientX: number; altKey: boolean }) => {
+      const raw = Math.max(0, (ev.clientX - left) / ppb);
+      return ev.altKey ? raw : Math.round(raw * 4) / 4;
+    };
+    const x0 = e.clientX;
+    const b0 = at(e);
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      if (Math.abs(ev.clientX - x0) > 3) moved = true;
+      if (moved) {
+        const b = at(ev);
+        setSel({ n, a: Math.min(b0, b), b: Math.max(b0, b) });
+      }
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      setSel(null);
+      if (moved) {
+        const b = at(ev);
+        st.update((p) => compRange(p, t.id, n, Math.min(b0, b), Math.max(b0, b)));
+        return;
+      }
+      // clique: usa o pedaço inteiro sob o mouse
+      const beat = Math.max(0, (ev.clientX - left) / ppb);
+      const hit = takePieces(useStore.getState().project, t.id, n).find(
+        ({ region: r }) => beat >= r.start && beat <= r.start + regionLen(r, project.bpm),
+      );
+      if (hit && !hit.active) st.update((p) => compRange(p, t.id, n, hit.region.start, hit.region.start + regionLen(hit.region, p.bpm)));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  };
+
+  return (
+    <>
+      {takes.map((n, i) => {
+        const ps = takePieces(project, t.id, n);
+        const playing = ps.some((x) => x.active);
+        return (
+          <div key={n} className="row take-row" style={{ height: TAKE_H }}>
+            <div className="th take-th" style={{ width: HEADER_W, ['--c' as string]: t.color }}>
+              <span className={`take-label ${playing ? 'on' : ''}`}>Take {n}</span>
+              <button title="Usar este take inteiro" onClick={() => st.update((p) => pickWholeTake(p, t.id, n))}>Usar</button>
+              <button className="x" title="Apagar este take (onde ele tocava, entra o take mais novo que tem áudio ali)" onClick={() => st.update((p) => deleteTake(p, t.id, n))}>✕</button>
+              {i === 0 && (project.takes ?? []).some((r) => r.trackId === t.id) && (
+                <button title="Descartar os pedaços que não estão em uso (fica só o que está tocando)" onClick={() => st.update((p) => clearUnusedTakes(p, t.id))}>
+                  Limpar
+                </button>
+              )}
+            </div>
+            <div className="lane take-lane" style={{ width, height: TAKE_H }} onPointerDown={(e) => down(e, n)}>
+              {ps.map(({ region: r, active }) => (
+                <div
+                  key={r.id}
+                  className={`take-piece ${active ? 'on' : ''}`}
+                  style={{ left: r.start * ppb, width: Math.max(3, regionLen(r, project.bpm) * ppb), ['--c' as string]: t.color }}
+                  title={active ? 'Tocando' : 'Clique para usar este pedaço · arraste para usar só um trecho'}
+                >
+                  <Wave region={r} color={t.color} />
+                </div>
+              ))}
+              {sel?.n === n && <div className="take-sel" style={{ left: sel.a * ppb, width: (sel.b - sel.a) * ppb }} />}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 // ---------- Automação ----------

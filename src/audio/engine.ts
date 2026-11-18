@@ -12,6 +12,7 @@ import { saveBufferLocal } from './persist';
 import { Recorder } from './recorder';
 import { Held, arpStep, playedNotes } from './arp';
 import { withLoading } from '../loading';
+import { addRecordedTakes, trackTakes } from './takes';
 import { micSettingsPath } from '../platform';
 
 const LOOKAHEAD = 0.2; // s de antecedência com que as notas são agendadas (folga para a interface ocupada)
@@ -41,6 +42,8 @@ class Engine {
 
   private recorder: Recorder | null = null;
   private recNotes: Note[] = [];
+  /** gravação de áudio em loop: início (relógio e tempo) de cada volta depois da primeira */
+  private recPasses: { t: number; beat: number }[] = [];
   private recHeld = new Map<number, { start: number; vel: number }>();
   /**
    * Punch-in: a trilha que está sendo regravada fica muda dentro do trecho (o take antigo some enquanto o
@@ -297,7 +300,8 @@ class Engine {
   private activeLoop() {
     const s = useStore.getState();
     const l = s.project.loop;
-    if (!l?.on || s.recording || l.end - l.start < 0.25 || this.startBeat >= l.end) return null;
+    // gravando: o loop só vale para áudio sem punch-in (cada volta vira um take); MIDI e punch tocam reto
+    if (!l?.on || (s.recording && (s.recording.punch || !this.recorder)) || l.end - l.start < 0.25 || this.startBeat >= l.end) return null;
     return l;
   }
 
@@ -322,6 +326,7 @@ class Engine {
       }
       this.sources = [];
       this.prevSeg = { t: this.startTime, b: this.startBeat };
+      if (this.recorder && useStore.getState().recording) this.recPasses.push({ t: wrap, beat: loop.start });
       this.startTime = wrap;
       this.startBeat = loop.start;
       this.scheduledUntil = loop.start;
@@ -569,6 +574,7 @@ class Engine {
     }
     this.recNotes = [];
     this.recHeld.clear();
+    this.recPasses = [];
     const startBeat = punch ? punch.start : this.getBeat();
     s.set({ recording: { trackId: track.id, startBeat, punch } });
     if (this.playing) {
@@ -619,15 +625,28 @@ class Engine {
     if (punch) return this.finishPunch(rec.trackId, punch.start, end);
 
     if (this.recorder) {
-      const buf = this.recorder.stop(this.recFrom);
+      // uma passada por volta do loop (sem loop, uma só); a última pode ter ficado pela metade
+      const passes = [{ t: this.recFrom, beat: rec.startBeat }, ...this.recPasses];
+      this.recPasses = [];
+      const bufs = this.recorder.stopRanges(passes.map((ps, i) => [ps.t, passes[i + 1]?.t]));
       this.recorder = null;
-      if (buf) {
+      const recs: Region[] = [];
+      bufs.forEach((buf, i) => {
+        // sobra curta no fim (parou logo depois de o loop voltar): descarta
+        if (!buf || (i > 0 && i === bufs.length - 1 && (buf.duration * this.bpm) / 60 < 1)) return;
         const bufferId = uid();
         this.buffers.set(bufferId, buf);
         void saveBufferLocal(bufferId, buf);
-        const r = s.addRegion({ trackId: rec.trackId, name: 'Gravação', start: rec.startBeat, length: 0, bufferId, offset: 0, duration: buf.duration });
-        s.set({ selectedRegionId: r.id });
-      }
+        recs.push({ id: '', trackId: rec.trackId, name: 'Gravação', start: passes[i].beat, length: 0, bufferId, offset: 0, duration: buf.duration });
+      });
+      if (!recs.length) return;
+      s.update((p) => addRecordedTakes(p, rec.trackId, recs));
+      const p = useStore.getState().project;
+      const last = p.regions.find((r) => r.trackId === rec.trackId && r.take === Math.max(...trackTakes(p, rec.trackId)));
+      // mais de uma passada (ou gravou por cima de outra): abre as faixas de takes para escolher
+      const many = trackTakes(p, rec.trackId).length > 1;
+      if (many) s.updateTrack(rec.trackId, { takesView: true }, false);
+      s.set({ selectedRegionId: last?.id ?? null });
       return;
     }
     if (this.recNotes.length) {

@@ -206,6 +206,7 @@ export const useStore = create<State>((set, get) => ({
       ...p,
       tracks: p.tracks.filter((t) => t.id !== id),
       regions: p.regions.filter((r) => r.trackId !== id),
+      takes: p.takes?.filter((r) => r.trackId !== id),
     }));
     const s = get();
     if (s.selectedTrackId === id) set({ selectedTrackId: s.project.tracks[0]?.id ?? null });

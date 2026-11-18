@@ -46,6 +46,14 @@ export class Recorder {
    * `to` (punch-in: só o trecho marcado), ou null se curto demais.
    */
   stop(from = 0, to?: number): AudioBuffer | null {
+    return this.stopRanges([[from, to]])[0];
+  }
+
+  /**
+   * Encerra e devolve um áudio para cada trecho [de, até] (relógio do AudioContext; sem `até` = até o fim).
+   * Gravação em loop: uma única gravação contínua, cortada em uma passada por volta do loop.
+   */
+  stopRanges(ranges: [number, number | undefined][]): (AudioBuffer | null)[] {
     this.source.disconnect(this.node);
     this.node.disconnect();
     this.sink.disconnect();
@@ -53,21 +61,23 @@ export class Recorder {
 
     const sr = this.ctx.sampleRate;
     const total = this.chunks.reduce((n, c) => n + c.length, 0);
-    if (this.t0 < 0) return null;
-    // descarta o que veio antes do início (contagem) e compensa a latência de saída:
-    // o que o músico ouviu estava atrasado em relação ao relógio
-    const latency = this.ctx.baseLatency + (this.ctx.outputLatency || 0);
-    const skip = Math.min(total, Math.max(0, Math.round((from - this.t0 + latency) * sr)));
-    const len = to === undefined ? total - skip : Math.min(total - skip, Math.round((to - from) * sr));
-    if (len < sr * 0.05) return null;
+    if (this.t0 < 0) return ranges.map(() => null);
     const all = new Float32Array(total);
     let o = 0;
     for (const c of this.chunks) {
       all.set(c, o);
       o += c.length;
     }
-    const buf = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: sr });
-    buf.getChannelData(0).set(all.subarray(skip, skip + len));
-    return buf;
+    // descarta o que veio antes do início (contagem) e compensa a latência de saída:
+    // o que o músico ouviu estava atrasado em relação ao relógio
+    const latency = this.ctx.baseLatency + (this.ctx.outputLatency || 0);
+    return ranges.map(([from, to]) => {
+      const skip = Math.min(total, Math.max(0, Math.round((from - this.t0 + latency) * sr)));
+      const len = to === undefined ? total - skip : Math.min(total - skip, Math.round((to - from) * sr));
+      if (len < sr * 0.05) return null;
+      const buf = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: sr });
+      buf.getChannelData(0).set(all.subarray(skip, skip + len));
+      return buf;
+    });
   }
 }

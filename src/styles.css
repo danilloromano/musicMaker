@@ -856,3 +856,17 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .tuner-strings span.on { border-color: #ff5a3c; background: rgba(255, 90, 60, 0.12); }
 .tuner-strings span.ok { border-color: #39e27a; background: rgba(57, 226, 122, 0.14); }
 .tuner-strings span.ok b { color: #39e27a; }
+
+/* ---------- Takes (comping) ---------- */
+.th .ms.takes { font-size: 10px; }
+.th .ms.takes.on { border-color: var(--accent); color: var(--accent); }
+.take-row .take-th { flex-direction: row; align-items: center; justify-content: flex-start; gap: 6px; padding: 4px 10px; background: var(--panel); border-left: 3px solid var(--c); }
+.take-label { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); flex: 1; }
+.take-label.on { color: var(--c); }
+.take-th button { padding: 1px 7px; font-size: 11px; }
+.take-th button.x:hover { color: var(--rec); }
+.take-lane { background-color: rgba(0, 0, 0, 0.22); cursor: crosshair; }
+.take-piece { position: absolute; top: 3px; bottom: 3px; overflow: hidden; opacity: 0.38; border: 1px solid color-mix(in srgb, var(--c) 35%, transparent); background: color-mix(in srgb, var(--c) 8%, #1d2023); display: flex; pointer-events: none; }
+.take-piece.on { opacity: 1; border-color: var(--c); background: color-mix(in srgb, var(--c) 22%, #25282c); box-shadow: inset 0 2px 0 var(--c); }
+.take-piece .region-body { width: 100%; height: 100%; }
+.take-sel { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 22%, transparent); border-left: 1px solid var(--accent); border-right: 1px solid var(--accent); pointer-events: none; z-index: 2; }

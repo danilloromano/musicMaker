@@ -28,6 +28,8 @@ export interface Region {
   gain?: number; // volume da região (linear, 1 = original)
   fadeIn?: number; // segundos
   fadeOut?: number; // segundos
+  /** número do take (gravações no mesmo trecho de uma trilha de áudio; ver audio/takes.ts) */
+  take?: number;
 }
 
 /** Trecho tocado em repetição (em tempos). */
@@ -200,6 +202,8 @@ export interface Track {
   automation?: AutoLane[];
   /** parâmetro mostrado na faixa de automação da timeline (ausente = faixa fechada) */
   autoView?: string;
+  /** faixas de takes abertas na timeline (escolher o melhor trecho de cada gravação) */
+  takesView?: boolean;
   /**
    * Trilha congelada: o instrumento e o rack de amp/pedais renderizados em áudio (`bufferId`, do tempo 0).
    * `key` é a impressão digital do que foi renderizado (ver freezeKey): se a trilha mudar, ela volta a
@@ -246,6 +250,8 @@ export interface Project {
   key?: MusicKey;
   tracks: Track[];
   regions: Region[];
+  /** pedaços de takes que não estão tocando (guardados para o comping; ver audio/takes.ts) */
+  takes?: Region[];
   /** ajustes do master (projetos antigos não têm: usam o padrão) */
   master?: MasterSettings;
   /** efeitos de envio (projetos antigos não têm: reverb + delay padrão) */
