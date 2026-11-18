@@ -94,7 +94,7 @@ export const AMP_ART: Record<string, Art> = {
         <rect x="10" y="96" width="450" height="46" rx="3" fill={`url(#${p}sparkle)`} />
         <rect x="10" y="96" width="450" height="46" rx="3" fill="none" stroke="#5f6368" strokeWidth="1.5" />
         <rect x="370" y="110" width="78" height="18" rx="3" fill="url(#chrome)" stroke="#555" />
-        <text x="409" y="123" textAnchor="middle" fontFamily="Georgia, serif" fontStyle="italic" fontWeight="700" fontSize="11" fill="#222">MusicMaker</text>
+        <text x="409" y="123" textAnchor="middle" fontFamily="Georgia, serif" fontStyle="italic" fontWeight="700" fontSize="11" fill="#222">Alien Studio</text>
         <g transform="translate(0 12)">{corners(470, 138)}</g>
       </>
     ),
@@ -112,7 +112,7 @@ export const AMP_ART: Record<string, Art> = {
         </g>
         <rect x="10" y="22" width="380" height="44" rx="14" fill="#2a1a0e" opacity="0.85" />
         <rect x="16" y="28" width="368" height="32" rx="10" fill={`url(#${p}wheat)`} />
-        <text x="200" y="49" textAnchor="middle" fontFamily="Georgia, serif" fontStyle="italic" fontWeight="700" fontSize="14" fill="#3b2a18">MusicMaker</text>
+        <text x="200" y="49" textAnchor="middle" fontFamily="Georgia, serif" fontStyle="italic" fontWeight="700" fontSize="14" fill="#3b2a18">Alien Studio</text>
         <rect x="10" y="72" width="380" height="70" rx="10" fill={`url(#${p}cream)`} stroke="#8b6a43" strokeWidth="1.5" />
         {[[20, 80], [380, 80], [20, 134], [380, 134]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="2.5" fill="#b8925a" stroke="#6b4c2a" strokeWidth="0.6" />)}
       </>
@@ -129,7 +129,7 @@ export const AMP_ART: Record<string, Art> = {
         <rect x="4" y="16" width="462" height="145" rx="4" fill="none" stroke="#d8c8a8" strokeWidth="2" />
         <rect x="12" y="24" width="446" height="58" rx="2" fill={`url(#${p}weave)`} stroke="#1a1714" strokeWidth="1.5" />
         <rect x="186" y="42" width="98" height="22" rx="4" fill="#1a1512" stroke="#c98a5a" strokeWidth="1.2" />
-        <text x="235" y="58" textAnchor="middle" fontFamily="Georgia, serif" fontStyle="italic" fontWeight="700" fontSize="13" fill="#e2b48a">MusicMaker</text>
+        <text x="235" y="58" textAnchor="middle" fontFamily="Georgia, serif" fontStyle="italic" fontWeight="700" fontSize="13" fill="#e2b48a">Alien Studio</text>
         <rect x="12" y="88" width="446" height="70" rx="3" fill={`url(#${p}copper)`} stroke="#4a2a14" strokeWidth="1.2" />
         <g stroke="#ffffff" strokeOpacity="0.08">{Array.from({ length: 14 }, (_, i) => <line key={i} x1="12" x2="458" y1={91 + i * 5} y2={91 + i * 5} />)}</g>
         {[[20, 94], [450, 94], [20, 152], [450, 152]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="2.2" fill="url(#chrome)" stroke="#333" strokeWidth="0.5" />)}
@@ -150,7 +150,7 @@ export const AMP_ART: Record<string, Art> = {
         {vents(40, 32, 24, 12, lit ? '#d42a14' : '#2c0e0c').map((v) => v)}
         <rect x="20" y="54" width="450" height="72" rx="3" fill="#0e0e0f" stroke="#5a5d62" strokeWidth="1.2" />
         <rect x="28" y="132" width="434" height="14" rx="2" fill="#0b0b0c" />
-        <text x="245" y="143" textAnchor="middle" fontFamily="Consolas, monospace" fontWeight="800" fontSize="10" letterSpacing="5" fill="#ff4a3d">MUSICMAKER · ALTO GANHO</text>
+        <text x="245" y="143" textAnchor="middle" fontFamily="Consolas, monospace" fontWeight="800" fontSize="10" letterSpacing="5" fill="#ff4a3d">ALIEN STUDIO · ALTO GANHO</text>
         {[[14, 14], [476, 14], [14, 146], [476, 146]].map(([x, y]) => <circle key={`${x}${y}`} cx={x} cy={y} r="3" fill="#6a6e74" stroke="#111" />)}
       </>
     ),
@@ -173,7 +173,7 @@ export const AMP_ART: Record<string, Art> = {
         <g>{Array.from({ length: 6 }, (_, i) => <rect key={i} x="54" y={19 + i * 6.5} width="372" height="3" rx="1.5" fill="#3a4049" />)}</g>
         <rect x="44" y="62" width="392" height="6" fill="#2f6fd6" />
         <rect x="44" y="70" width="392" height="68" rx="3" fill="#20252c" stroke="#0f1215" />
-        <text x="240" y="152" textAnchor="middle" fontFamily="Consolas, monospace" fontWeight="800" fontSize="9" letterSpacing="4" fill="#2b2f35">MUSICMAKER BASS</text>
+        <text x="240" y="152" textAnchor="middle" fontFamily="Consolas, monospace" fontWeight="800" fontSize="9" letterSpacing="4" fill="#2b2f35">ALIEN STUDIO BASS</text>
       </>
     ),
   },

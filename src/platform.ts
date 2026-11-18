@@ -12,7 +12,7 @@ export const redoShortcut = () => (isMac ? shortcut('Z', true) : shortcut('Y'));
 /** Onde liberar o microfone para o app quando o sistema bloqueou. */
 export const micSettingsPath = () =>
   isMac
-    ? 'Ajustes do Sistema › Privacidade e Segurança › Microfone (ative o MusicMaker e abra o app de novo)'
+    ? 'Ajustes do Sistema › Privacidade e Segurança › Microfone (ative o Alien Studio e abra o app de novo)'
     : 'Configurações do Windows › Privacidade e segurança › Microfone';
 
 /** Onde tirar a entrada do mudo. */

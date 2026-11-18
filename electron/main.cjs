@@ -1,6 +1,10 @@
 const { app, BrowserWindow, Menu, session, systemPreferences } = require('electron');
 const path = require('path');
 
+// O app se chamava MusicMaker e os projetos salvos (IndexedDB) moram na pasta de dados com esse nome.
+// Mantém a pasta antiga para ninguém perder o que já fez depois da troca de nome para Alien Studio.
+app.setPath('userData', path.join(app.getPath('appData'), 'MusicMaker'));
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
@@ -10,7 +14,7 @@ function createWindow() {
     backgroundColor: '#2b2e32',
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     autoHideMenuBar: true,
-    title: 'MusicMaker',
+    title: 'Alien Studio',
     webPreferences: {
       contextIsolation: true,
       // o agendador de áudio usa timers; não pode ser desacelerado em segundo plano
@@ -25,20 +29,20 @@ function createWindow() {
 
 /**
  * Menu do Mac. O menu padrão do Electron tem Editar › Desfazer (⌘Z), que captura o atalho antes do app
- * e desfaria só o texto de um campo. Aqui o ⌘Z/⌘⇧Z ficam com o MusicMaker; copiar/colar continuam nos campos.
+ * e desfaria só o texto de um campo. Aqui o ⌘Z/⌘⇧Z ficam com o Alien Studio; copiar/colar continuam nos campos.
  */
 function macMenu() {
   return Menu.buildFromTemplate([
     {
       label: app.name,
       submenu: [
-        { role: 'about', label: 'Sobre o MusicMaker' },
+        { role: 'about', label: 'Sobre o Alien Studio' },
         { type: 'separator' },
-        { role: 'hide', label: 'Ocultar o MusicMaker' },
+        { role: 'hide', label: 'Ocultar o Alien Studio' },
         { role: 'hideOthers', label: 'Ocultar os outros' },
         { role: 'unhide', label: 'Mostrar tudo' },
         { type: 'separator' },
-        { role: 'quit', label: 'Sair do MusicMaker' },
+        { role: 'quit', label: 'Sair do Alien Studio' },
       ],
     },
     {

@@ -1,5 +1,5 @@
 {
-  "name": "musicmaker",
+  "name": "alien-studio",
   "version": "0.5.0",
   "description": "Estúdio de produção musical para Windows",
   "private": true,
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.musicmaker.app",
-    "productName": "MusicMaker",
+    "productName": "Alien Studio",
     "files": [
       "dist/**",
       "electron/**",
@@ -39,7 +39,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "MusicMaker",
+      "shortcutName": "Alien Studio",
       "runAfterFinish": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
@@ -49,8 +49,8 @@
       "installerLanguages": [
         "pt_BR"
       ],
-      "artifactName": "MusicMaker-Setup-${version}.exe",
-      "uninstallDisplayName": "MusicMaker"
+      "artifactName": "AlienStudio-Setup-${version}.exe",
+      "uninstallDisplayName": "Alien Studio"
     },
     "mac": {
       "target": [
@@ -66,13 +66,13 @@
       "category": "public.app-category.music",
       "identity": "-",
       "hardenedRuntime": false,
-      "artifactName": "MusicMaker-${version}-mac-${arch}.${ext}",
+      "artifactName": "AlienStudio-${version}-mac-${arch}.${ext}",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "O MusicMaker usa a entrada de áudio para gravar e monitorar guitarra, baixo, voz ou outro instrumento ligado à sua interface de áudio."
+        "NSMicrophoneUsageDescription": "O Alien Studio usa a entrada de áudio para gravar e monitorar guitarra, baixo, voz ou outro instrumento ligado à sua interface de áudio."
       }
     },
     "dmg": {
-      "title": "MusicMaker ${version}"
+      "title": "Alien Studio ${version}"
     }
   },
   "dependencies": {

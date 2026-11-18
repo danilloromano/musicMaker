@@ -289,7 +289,7 @@ export function writeMidi(p: Pick<Project, 'name' | 'bpm' | 'meter' | 'markers' 
 
   // trilha de andamento: nome, andamento, compasso, marcadores e cifras
   const head: Ev[] = [];
-  head.push({ tick: 0, order: 0, data: meta(0x03, utf8(p.name || 'musicMaker')) });
+  head.push({ tick: 0, order: 0, data: meta(0x03, utf8(p.name || 'Alien Studio')) });
   const us = Math.round(60e6 / p.bpm);
   head.push({ tick: 0, order: 1, data: meta(0x51, [(us >> 16) & 0xff, (us >> 8) & 0xff, us & 0xff]) });
   const m = p.meter ?? { num: 4, den: 4 };

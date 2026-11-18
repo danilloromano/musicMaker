@@ -15,7 +15,7 @@ async function boot() {
     </StrictMode>,
   );
 
-  await withLoading('Abrindo o MusicMaker…', async () => {
+  await withLoading('Abrindo o Alien Studio…', async () => {
     try {
       const saved = await loadLocal(engine.buffers);
       if (saved) useStore.getState().loadProject(saved);
