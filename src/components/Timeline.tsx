@@ -8,6 +8,7 @@ import { AutoPoint, Region, barBeatLabel, barBeats, Track, TrackKind, activeFree
 import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
 import { MarkerLane, MarkerLines, jumpMarker } from './Markers';
+import { ChordLane, ChordTools } from './ChordLane';
 import { clearUnusedTakes, compRange, deleteTake, takePieces, trackTakes, pickWholeTake } from '../audio/takes';
 
 const HEADER_W = 264;
@@ -220,6 +221,10 @@ export function Timeline() {
               <button title="Seção anterior (,)" onClick={() => jumpMarker(-1)}>◀</button>
               <button title="Próxima seção (.)" onClick={() => jumpMarker(1)}>▶</button>
             </div>
+            <div className="corner-line">
+              <span>Acordes:</span>
+              <ChordTools />
+            </div>
           </div>
           <div className="ruler" style={{ width }} onPointerDown={scrub}>
             {Array.from({ length: Math.ceil(bars / barStep) }, (_, i) => (
@@ -250,6 +255,7 @@ export function Timeline() {
               </div>
             )}
             <MarkerLane ppb={ppb} beatAt={beatAt} />
+            <ChordLane ppb={ppb} beatAt={beatAt} />
             <div className="ruler-head" ref={rulerHead} />
           </div>
         </div>
@@ -281,6 +287,7 @@ export function Timeline() {
                   }}
                 >
                   <div className="region-name">
+                    {r.harmony && !r.noFollow && project.chords?.length ? <span className="follow-tag" title="Segue a trilha de acordes">♫ </span> : null}
                     {r.name}
                     {r.gain !== undefined && r.gain !== 1 && <small> · {gainDb(r.gain)}</small>}
                   </div>

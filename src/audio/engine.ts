@@ -450,7 +450,7 @@ class Engine {
       const track = tracks.get(r.trackId);
       const strip = this.mixer.strips.get(r.trackId);
       if (!track || !strip || this.mixer.frozenOf(project, track)) continue;
-      for (const n of playedNotes(r, track, this.bpm)) {
+      for (const n of playedNotes(r, track, this.bpm, project.chords)) {
         const abs = r.start + n.start;
         if (abs < from || abs >= until || n.start >= r.length) continue;
         const pm = this.punchMute;
@@ -1178,7 +1178,7 @@ function scheduleAll(off: BaseAudioContext, mixer: Mixer, project: Project, buff
     if (!track || !strip || frozen.has(r.trackId)) continue;
     const buf = r.bufferId && buffers.get(r.bufferId);
     if (buf) playAudioRegion(off, strip.input, r, buf, r.start * spb);
-    for (const n of playedNotes(r, track, project.bpm)) {
+    for (const n of playedNotes(r, track, project.bpm, project.chords)) {
       if (n.start >= r.length) continue;
       const dur = Math.min(n.duration, r.length - n.start) * spb;
       triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, (r.start + n.start) * spb, dur, n.velocity);

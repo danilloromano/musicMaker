@@ -131,6 +131,12 @@ export function PianoRoll() {
           title="Nome da região"
           onChange={(e) => st.updateRegion(region.id, { name: e.target.value }, false)}
         />
+        {region.harmony && (
+          <label title="Com a trilha de acordes, este loop toca nos acordes dela (as notas aqui são as originais; o que toca é transposto). Desligado: toca as notas como estão.">
+            <input type="checkbox" checked={!region.noFollow} onChange={(e) => st.updateRegion(region.id, { noFollow: e.target.checked ? undefined : true })} />
+            Segue os acordes
+          </label>
+        )}
         <label>
           Grade
           <select value={snap} onChange={(e) => { setSnap(+e.target.value); e.currentTarget.blur(); }}>

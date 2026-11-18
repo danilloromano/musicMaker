@@ -1,6 +1,7 @@
 // Biblioteca de loops: padrões MIDI originais que tocam nos instrumentos do próprio app.
 import { useStore } from '../store';
 import { BEATS_PER_BAR, Note, Region, uid } from '../types';
+import { Harmony, inferHarmony } from './chords';
 
 type N = Omit<Note, 'id'>;
 
@@ -959,8 +960,31 @@ export function addLoop(loop: Loop, beat: number, trackId?: string) {
     start,
     length: loop.bars * BEATS_PER_BAR,
     notes: loop.notes.map((n) => ({ ...n, id: uid() })),
+    // a harmonia sobre a qual o loop foi escrito: com ela, ele segue a trilha de acordes
+    ...(loop.kind === 'instrument' ? { harmony: loopHarmony(loop) } : {}),
   });
   useStore.getState().set({ selectedRegionId: r.id, selectedTrackId: target.id });
+}
+
+const harmonyCache = new Map<string, Harmony | undefined>();
+
+/**
+ * Harmonia de um loop melódico: os acordes do loop de acordes do estilo dele (as quatro partes de um estilo
+ * são escritas sobre a mesma progressão), reconhecidos nas notas, um por compasso. Um loop mais curto que
+ * o de acordes usa só o começo da progressão (é o que ele repete).
+ */
+export function loopHarmony(loop: Loop): Harmony | undefined {
+  if (harmonyCache.has(loop.id)) return harmonyCache.get(loop.id);
+  const style = STYLES.find((s) => [...s.bass, ...s.chords, ...s.melody].includes(loop.id));
+  const src = (style && LOOPS.find((l) => l.id === style.chords[0])) ?? (loop.category === 'Acordes' ? loop : undefined);
+  let h: Harmony | undefined;
+  if (src) {
+    const bass = style && LOOPS.find((l) => l.id === style.bass[0]);
+    h = inferHarmony(src.notes, src.bars, bass?.notes, bass?.bars);
+    if (loop.bars < src.bars) h = { period: loop.bars * 4, chords: h.chords.filter((c) => c.at < loop.bars * 4) };
+  }
+  harmonyCache.set(loop.id, h);
+  return h;
 }
 
 /**

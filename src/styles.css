@@ -94,7 +94,7 @@ input:not([type]):hover, input:not([type]):focus { border-color: var(--line); ba
 /* ---------- Timeline ---------- */
 .arrange { flex: 1; overflow: auto; background: var(--bg); min-height: 120px; }
 .arr-inner { position: relative; min-height: 100%; display: flex; flex-direction: column; }
-.ruler-row { display: flex; position: sticky; top: 0; z-index: 6; height: 48px; flex: none; }
+.ruler-row { display: flex; position: sticky; top: 0; z-index: 6; height: 70px; flex: none; }
 .corner {
   position: sticky; left: 0; z-index: 7; flex: none;
   display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 8px;
@@ -126,7 +126,7 @@ input:not([type]):hover, input:not([type]):focus { border-color: var(--line); ba
 .marker:hover .marker-tools { display: flex; }
 .marker-tools button { padding: 0 4px; line-height: 13px; font-size: 11px; background: rgba(0, 0, 0, 0.35); border: none; }
 .marker-tools button:hover { background: var(--c); color: #111; }
-.marker-line { position: absolute; top: 48px; bottom: 0; width: 0; border-left: 1px dashed color-mix(in srgb, var(--c) 55%, transparent); z-index: 3; pointer-events: none; }
+.marker-line { position: absolute; top: 70px; bottom: 0; width: 0; border-left: 1px dashed color-mix(in srgb, var(--c) 55%, transparent); z-index: 3; pointer-events: none; }
 .ruler > span { position: absolute; top: 7px; padding-left: 4px; color: var(--dim); font: 10px var(--mono); pointer-events: none; }
 
 .row { display: flex; height: 100px; flex: none; }
@@ -345,7 +345,7 @@ body.resizing-v, body.resizing-v * { cursor: ns-resize !important; user-select: 
 }
 .punch-band.on { background: rgba(255, 70, 60, 0.85); }
 .punch-shade {
-  position: absolute; top: 48px; bottom: 0; z-index: 3; pointer-events: none;
+  position: absolute; top: 70px; bottom: 0; z-index: 3; pointer-events: none;
   background: rgba(255, 70, 60, 0.06); border-left: 1px solid rgba(255, 70, 60, 0.55); border-right: 1px solid rgba(255, 70, 60, 0.55);
 }
 .toggle.on.punch { border-color: rgba(255, 70, 60, 0.8); color: #ff7a6e; }
@@ -353,7 +353,7 @@ body.resizing-v, body.resizing-v * { cursor: ns-resize !important; user-select: 
 .loop-edge.l { left: -3px; }
 .loop-edge.r { right: -3px; }
 .loop-shade {
-  position: absolute; top: 48px; bottom: 0; z-index: 3; pointer-events: none;
+  position: absolute; top: 70px; bottom: 0; z-index: 3; pointer-events: none;
   background: rgba(245, 192, 78, 0.06); border-left: 1px solid rgba(245, 192, 78, 0.5); border-right: 1px solid rgba(245, 192, 78, 0.5);
 }
 
@@ -908,3 +908,29 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .metro-train-row.off { opacity: 0.45; }
 .metro-train-row input { width: 56px; }
 .metro-train .hint { margin: 0; white-space: normal; }
+
+/* ---------- Trilha de acordes ---------- */
+.chord-lane { position: absolute; left: 0; right: 0; top: 48px; height: 22px; background: var(--panel); border-top: 1px solid var(--line); cursor: copy; }
+.chord {
+  position: absolute; top: 2px; bottom: 2px; display: flex; align-items: center; padding: 0 6px; min-width: 18px;
+  background: rgba(150, 120, 255, 0.16); border-left: 3px solid #9b86ff; border-radius: 0 3px 3px 0;
+  color: #d9d0ff; font: 700 11px var(--mono); cursor: grab; overflow: hidden; white-space: nowrap;
+}
+.chord:hover { background: rgba(150, 120, 255, 0.28); }
+.chord.new { background: rgba(150, 120, 255, 0.3); }
+.chord-edit { width: 80px; height: 16px; padding: 0 4px; font: 700 11px var(--mono); }
+.chord-edit.bad { border-color: var(--rec); color: var(--rec); }
+.chord-tools { position: relative; }
+.chord-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; width: 340px;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  font-size: 12px; color: var(--dim);
+}
+.chord-pop > label { display: grid; grid-template-columns: 60px 1fr; align-items: center; gap: 8px; }
+.chord-pop input { font: 600 13px var(--mono); }
+.chord-pop-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chord-pop-row select { flex: 1; }
+.chord-pop .hint { margin: 0; white-space: normal; }
+.chord-pop .warn { color: var(--rec); }
+.follow-tag { color: #b7a8ff; }

@@ -2,6 +2,15 @@
 // É um efeito da trilha: as notas gravadas continuam sendo o acorde, e o arpejo é gerado ao tocar.
 import { Arp, ArpMode, Note, Region, Track } from '../types';
 import { applyFeel, feelOf } from './feel';
+import { ChordEvent, followChords } from './chords';
+
+/** Impressão digital da trilha de acordes (calculada uma vez por lista). */
+const chordKeys = new WeakMap<ChordEvent[], string>();
+const chordKey = (c: ChordEvent[]) => {
+  let k = chordKeys.get(c);
+  if (k === undefined) chordKeys.set(c, (k = c.map((x) => `${x.beat}:${x.root}:${x.q}:${x.bass ?? ''}`).join(',')));
+  return k;
+};
 
 export const DEFAULT_ARP: Arp = { on: true, mode: 'up', rate: 0.25, octaves: 1, gate: 0.6 };
 
@@ -82,19 +91,24 @@ export function arpeggiate(notes: Note[], arp: Arp, length: number): Note[] {
 const cache = new WeakMap<Note[], { key: string; notes: Note[] }>();
 
 /**
- * As notas que a região toca de fato: arpejadas se a trilha (de instrumento) tem o arpejador ligado, e com
- * o toque humano da trilha (ver feel.ts) no andamento `bpm`.
+ * As notas que a região toca de fato: levadas para a trilha de acordes (`chords`, se a região tem a
+ * harmonia de origem e segue os acordes), arpejadas se a trilha (de instrumento) tem o arpejador ligado, e
+ * com o toque humano da trilha (ver feel.ts) no andamento `bpm`.
  */
-export function playedNotes(r: Region, t: Track, bpm: number): Note[] {
+export function playedNotes(r: Region, t: Track, bpm: number, chords?: ChordEvent[]): Note[] {
   const notes = r.notes ?? [];
   if (!notes.length) return notes;
   const arp = t.arp?.on && t.kind === 'instrument' ? t.arp : null;
   const feel = feelOf(t);
-  if (!arp && !feel) return notes;
-  const key = `${arp ? `${arp.mode}|${arp.rate}|${arp.octaves}|${arp.gate}` : '-'}|${r.length}|${feel}|${bpm}|${t.kind}|${r.id}`;
+  const follow = t.kind === 'instrument' && !!r.harmony && !r.noFollow && !!chords?.length ? chords : null;
+  if (!arp && !feel && !follow) return notes;
+  const key = `${arp ? `${arp.mode}|${arp.rate}|${arp.octaves}|${arp.gate}` : '-'}|${r.length}|${feel}|${bpm}|${t.kind}|${r.id}|${
+    follow ? `${r.start}|${r.harmony!.offset ?? 0}|${chordKey(follow)}` : ''
+  }`;
   const hit = cache.get(notes);
   if (hit?.key === key) return hit.notes;
-  const base = arp ? arpeggiate(notes, arp, r.length) : notes;
+  const followed = follow ? followChords(notes, r.harmony!, follow, r.start) : notes;
+  const base = arp ? arpeggiate(followed, arp, r.length) : followed;
   const out = applyFeel(base, { level: feel, drums: t.kind === 'drums', bpm, length: r.length, salt: r.id });
   cache.set(notes, { key, notes: out });
   return out;

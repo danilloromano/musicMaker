@@ -1,3 +1,4 @@
+import type { ChordEvent, Harmony } from './audio/chords';
 /** 'bus' = trilha de grupo: não tem regiões; outras trilhas mandam a saída para ela (ver Track.output). */
 export type TrackKind = 'instrument' | 'drums' | 'audio' | 'bus';
 
@@ -28,6 +29,10 @@ export interface Region {
   gain?: number; // volume da região (linear, 1 = original)
   fadeIn?: number; // segundos
   fadeOut?: number; // segundos
+  /** harmonia sobre a qual as notas foram escritas (loops): com ela, a região segue a trilha de acordes */
+  harmony?: Harmony;
+  /** não segue a trilha de acordes (toca as notas como estão) */
+  noFollow?: boolean;
   /** número do take (gravações no mesmo trecho de uma trilha de áudio; ver audio/takes.ts) */
   take?: number;
   /** áudio original e quanto ele precisa estar esticado para seguir o andamento (ver audio/tempo.ts) */
@@ -255,6 +260,8 @@ export interface MasterSettings {
 export interface Project {
   name: string;
   bpm: number;
+  /** trilha de acordes (em ordem de posição): os loops com harmonia seguem estes acordes */
+  chords?: ChordEvent[];
   /** compasso (ausente = 4/4); o BPM sempre conta semínimas */
   meter?: Meter;
   metronome: boolean;
@@ -406,18 +413,19 @@ export function freezeKey(p: Project, t: Track): string {
   // cache: a mesma trilha com as mesmas regiões e o mesmo andamento dá a mesma impressão (é consultado a cada
   // agendamento de notas, então não pode refazer o JSON toda vez)
   const hit = keyCache.get(t);
-  if (hit && hit.regions === p.regions && hit.bpm === p.bpm && hit.song === p.key) return hit.key;
+  if (hit && hit.regions === p.regions && hit.bpm === p.bpm && hit.song === p.key && hit.chords === p.chords) return hit.key;
   const key = computeFreezeKey(p, t);
-  keyCache.set(t, { regions: p.regions, bpm: p.bpm, song: p.key, key });
+  keyCache.set(t, { regions: p.regions, bpm: p.bpm, song: p.key, chords: p.chords, key });
   return key;
 }
-const keyCache = new WeakMap<Track, { regions: Region[]; bpm: number; song?: MusicKey; key: string }>();
+const keyCache = new WeakMap<Track, { regions: Region[]; bpm: number; song?: MusicKey; chords?: ChordEvent[]; key: string }>();
 
 function computeFreezeKey(p: Project, t: Track): string {
   const regions = p.regions.filter((r) => r.trackId === t.id).sort((a, b) => (a.id < b.id ? -1 : 1));
   const lanes = (t.automation ?? []).filter((l) => l.param === 'wah' || l.param === 'rotary');
   const song = t.amp?.on && t.amp.pedals?.harmony?.on ? p.key ?? null : null;
-  const text = JSON.stringify([p.bpm, song, t.kind, t.instrument, t.amp ?? null, t.arp?.on ? t.arp : null, t.feel ?? 1, lanes, regions.map((r) => ({ ...r, name: '' }))]);
+  const follows = regions.some((r) => r.harmony && !r.noFollow);
+  const text = JSON.stringify([p.bpm, song, follows ? p.chords ?? null : null, t.kind, t.instrument, t.amp ?? null, t.arp?.on ? t.arp : null, t.feel ?? 1, lanes, regions.map((r) => ({ ...r, name: '' }))]);
   // FNV-1a de 32 bits (duas passadas com sementes diferentes para não colidir por acaso)
   let a = 0x811c9dc5, b = 0x01000193 ^ text.length;
   for (let i = 0; i < text.length; i++) {

@@ -294,6 +294,8 @@ export const useStore = create<State>((set, get) => ({
         start: beat,
         length: len - cut,
         notes: notes.filter((n) => n.start >= cut).map((n) => ({ ...n, id: uid(), start: n.start - cut })),
+        // a harmonia de origem continua do ponto do corte
+        harmony: r.harmony && { ...r.harmony, offset: (r.harmony.offset ?? 0) + cut },
       };
     }
     get().update((pr) => ({ ...pr, regions: pr.regions.flatMap((x) => (x.id === id ? [left, right] : [x])) }));
