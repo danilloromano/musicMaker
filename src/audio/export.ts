@@ -152,9 +152,14 @@ export function quantize(chans: Float32Array[], bits: 16 | 24): Int32Array[] {
 export async function encodeExport(
   chans: Float32Array[],
   sr: number,
-  m: { exportFormat?: 'wav' | 'flac'; exportBits: 16 | 24 },
+  m: { exportFormat?: 'wav' | 'flac' | 'mp3'; exportBits: 16 | 24; exportKbps?: 128 | 192 | 256 | 320 },
   onProgress?: (p: number) => void,
 ): Promise<{ blob: Blob; ext: string }> {
+  if (m.exportFormat === 'mp3') {
+    // codificador próprio (mp3.ts); só é carregado quando alguém exporta em MP3
+    const { encodeMp3 } = await import('./mp3');
+    return { blob: await encodeMp3(chans, sr, m.exportKbps ?? 320, onProgress), ext: 'mp3' };
+  }
   if (m.exportFormat === 'flac') {
     const { encodeFlac } = await import('./flac');
     return { blob: await encodeFlac(quantize(chans, m.exportBits), sr, m.exportBits, onProgress), ext: 'flac' };

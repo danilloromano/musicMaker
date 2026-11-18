@@ -120,29 +120,43 @@ export function MasterPanel() {
         </select>
         <label className="hint">Formato</label>
         <div className="presets">
-          {([['wav', 'WAV'], ['flac', 'FLAC']] as const).map(([f, name]) => (
+          {([['wav', 'WAV'], ['flac', 'FLAC'], ['mp3', 'MP3']] as const).map(([f, name]) => (
             <button key={f} className={m.exportFormat === f ? 'on' : ''} onClick={() => setMaster((x) => ({ ...x, exportFormat: f }), true)}
-              title={f === 'wav' ? 'Sem compressão: o padrão de estúdio' : 'Sem perda de qualidade e ~30% menor que o WAV'}>
+              title={f === 'wav' ? 'Sem compressão: o padrão de estúdio' : f === 'flac' ? 'Sem perda de qualidade e ~30% menor que o WAV' : 'Com perda, bem menor (~1/5 do WAV em 320 kbps): para mandar por mensagem, celular, redes'}>
               {name}
             </button>
           ))}
         </div>
-        <div className="presets">
-          {([24, 16] as const).map((b) => (
-            <button key={b} className={m.exportBits === b ? 'on' : ''} onClick={() => setMaster((x) => ({ ...x, exportBits: b }), true)}>
-              {b} bits
-            </button>
-          ))}
-        </div>
+        {m.exportFormat === 'mp3' ? (
+          <div className="presets">
+            {([320, 256, 192, 128] as const).map((k) => (
+              <button key={k} className={m.exportKbps === k ? 'on' : ''} title={k >= 256 ? 'Qualidade alta' : k === 192 ? 'Boa qualidade, arquivo menor' : 'Arquivo pequeno; perde um pouco de agudo e definição'} onClick={() => setMaster((x) => ({ ...x, exportKbps: k }), true)}>
+                {k} kbps
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="presets">
+            {([24, 16] as const).map((b) => (
+              <button key={b} className={m.exportBits === b ? 'on' : ''} onClick={() => setMaster((x) => ({ ...x, exportBits: b }), true)}>
+                {b} bits
+              </button>
+            ))}
+          </div>
+        )}
         <small className="hint">
           {target.lufs !== null
             ? `Na exportação, o ganho do limitador é ajustado sozinho até a música ficar em ${target.lufs} LUFS, com picos até ${fmt(m.limiter.ceiling)} dBTP.`
             : 'A música sai com o ganho do limitador ajustado aqui.'}
-          {m.exportBits === 16 ? ' 16 bits recebe dither (ruído inaudível que evita distorção).' : ''}
+          {m.exportFormat === 'mp3'
+            ? ' MP3 com codificador próprio: para ouvir e compartilhar; para mixar ou masterizar em outro lugar, prefira WAV ou FLAC.'
+            : m.exportBits === 16
+              ? ' 16 bits recebe dither (ruído inaudível que evita distorção).'
+              : ''}
         </small>
         <button
           className="stems-btn"
-          title="Um arquivo por trilha (no formato e nos bits escolhidos acima), todos começando no início da música, num .zip. Cada stem é a trilha como soa na mix, com os efeitos dela, mas sem o master: para mixar ou masterizar em outro programa."
+          title="Um arquivo por trilha (no formato escolhido acima), todos começando no início da música, num .zip. Cada stem é a trilha como soa na mix, com os efeitos dela, mas sem o master: para mixar ou masterizar em outro programa."
           onClick={() => void exportStems()}
         >
           Exportar stems (.zip)

@@ -254,7 +254,9 @@ export interface MasterSettings {
   /** imagem estéreo: largura (0 = mono, 1 = original, 2 = aberto) e graves em mono abaixo de monoFreq */
   stereo?: { width: number; monoBass: boolean; monoFreq: number };
   /** formato do arquivo exportado (os dois com codificador próprio, sem bibliotecas de terceiros) */
-  exportFormat?: 'wav' | 'flac';
+  exportFormat?: 'wav' | 'flac' | 'mp3';
+  /** taxa do MP3 (kbps) */
+  exportKbps?: 128 | 192 | 256 | 320;
 }
 
 export interface Project {
