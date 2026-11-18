@@ -13,6 +13,7 @@ import { Recorder } from './recorder';
 import { Held, arpStep, playedNotes } from './arp';
 import { withLoading } from '../loading';
 import { addRecordedTakes, trackTakes } from './takes';
+import { applyStretched, needsStretch, stretchBuffer, stretchedId } from './tempo';
 import { micSettingsPath } from '../platform';
 
 const LOOKAHEAD = 0.2; // s de antecedência com que as notas são agendadas (folga para a interface ocupada)
@@ -101,10 +102,12 @@ class Engine {
           queueMicrotask(() => this.restartPlayback());
         }
         if (a.master !== b.master) this.mixer.chain.update(masterOf(a.master));
+        if (a.regions !== b.regions || a.takes !== b.takes) this.queueStretch();
         if (s.abRef !== prev.abRef || s.abMatch !== prev.abMatch || s.refAnalysis !== prev.refAnalysis || s.mixAnalysis !== prev.mixAnalysis) this.applyAB();
         this.routeMonitor();
       });
       this.ready = true;
+      this.queueStretch();
     }
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
@@ -132,6 +135,63 @@ class Engine {
 
   /** Trecho de reprodução anterior à última volta do loop (até a volta acontecer de fato). */
   private prevSeg: { t: number; b: number } | null = null;
+
+  // ---------- Áudio seguindo o andamento (ver audio/tempo.ts) ----------
+
+  private stretchTimer = 0;
+  private stretchJobs = new Map<string, Promise<void>>();
+
+  /** Agenda a verificação (mudanças seguidas de BPM, como digitar 1-2-0, viram uma só). */
+  private queueStretch() {
+    clearTimeout(this.stretchTimer);
+    this.stretchTimer = window.setTimeout(() => this.syncStretch(), 250);
+  }
+
+  /** Estica, em segundo plano, o áudio das regiões que não está na proporção pedida pelo andamento. */
+  private syncStretch() {
+    const p = useStore.getState().project;
+    const todo = new Map<string, { src: string; ratio: number }>();
+    for (const r of [...p.regions, ...(p.takes ?? [])]) {
+      if (!needsStretch(r)) continue;
+      const id = stretchedId(r.src!.bufferId, r.src!.ratio);
+      todo.set(id, { src: r.src!.bufferId, ratio: r.src!.ratio });
+    }
+    const fresh: Promise<void>[] = [];
+    for (const [id, { src, ratio }] of todo) {
+      const apply = () => useStore.getState().update((pr) => applyStretched(pr, src, ratio, id), false);
+      if (this.buffers.has(id)) {
+        apply();
+        continue;
+      }
+      if (this.stretchJobs.has(id)) continue;
+      const orig = this.buffers.get(src);
+      if (!orig) continue;
+      const job = stretchBuffer(orig, ratio)
+        .then((buf) => {
+          this.buffers.set(id, buf);
+          void saveBufferLocal(id, buf);
+          apply();
+        })
+        .catch((e) => console.warn('Não foi possível ajustar o áudio ao andamento', e))
+        .finally(() => this.stretchJobs.delete(id));
+      this.stretchJobs.set(id, job);
+      fresh.push(job);
+    }
+    // a nave só aparece se demorar
+    if (fresh.length) {
+      const all = Promise.all(fresh);
+      const slow = setTimeout(() => void withLoading('Ajustando o áudio ao novo andamento…', () => all), 300);
+      void all.then(() => clearTimeout(slow));
+    }
+  }
+
+  /** Espera o áudio terminar de se ajustar ao andamento (antes de exportar ou congelar). */
+  async whenStretched() {
+    if (!this.ready) return;
+    clearTimeout(this.stretchTimer);
+    this.syncStretch();
+    while (this.stretchJobs.size) await Promise.all([...this.stretchJobs.values()]);
+  }
 
   /** Instrumentos (e bateria gravada) já carregados para o conjunto atual de trilhas. */
   private loadedSig = '';
@@ -503,6 +563,7 @@ class Engine {
 
   /** Congela a trilha (ou recongela, se ela mudou): renderiza instrumento + rack em áudio. */
   async freezeTrack(trackId: string) {
+    await this.whenStretched();
     this.ensure();
     const s = useStore.getState();
     const t = s.project.tracks.find((x) => x.id === trackId);

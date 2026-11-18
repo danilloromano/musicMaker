@@ -1,5 +1,5 @@
 // Salvamento: automático no IndexedDB e manual em arquivo .mmproj (JSON com o áudio embutido).
-import { Project } from '../types';
+import { Project, Region } from '../types';
 
 interface RawBuffer {
   sampleRate: number;
@@ -23,7 +23,10 @@ function fromRaw(r: RawBuffer): AudioBuffer {
  */
 function bufferIds(p: Project, frozen = true): string[] {
   const ids = new Set<string>();
-  for (const r of [...p.regions, ...(p.takes ?? [])]) if (r.bufferId) ids.add(r.bufferId);
+  for (const r of [...p.regions, ...(p.takes ?? [])]) {
+    if (r.bufferId) ids.add(r.bufferId);
+    if (r.src) ids.add(r.src.bufferId); // o original (o esticado pode ser refeito a partir dele)
+  }
   for (const t of p.tracks) if (t.amp?.irId) ids.add(t.amp.irId);
   if (frozen) for (const t of p.tracks) if (t.frozen) ids.add(t.frozen.bufferId);
   if (p.reference) ids.add(p.reference.bufferId);
@@ -63,8 +66,10 @@ export async function loadLocal(buffers: Map<string, AudioBuffer>): Promise<Proj
     const raw = (await idb('readonly', (s) => s.get(`buf:${id}`))) as RawBuffer | undefined;
     if (raw) buffers.set(id, fromRaw(raw));
   }
-  p.regions = p.regions.filter((r) => !r.bufferId || buffers.has(r.bufferId));
-  if (p.takes) p.takes = p.takes.filter((r) => !r.bufferId || buffers.has(r.bufferId));
+  // áudio esticado que se perdeu: volta ao original (e é esticado de novo ao abrir)
+  const heal = (r: Region): Region => (r.bufferId && !buffers.has(r.bufferId) && r.src && buffers.has(r.src.bufferId) ? { ...r, bufferId: r.src.bufferId, bufRatio: 1 } : r);
+  p.regions = p.regions.map(heal).filter((r) => !r.bufferId || buffers.has(r.bufferId));
+  if (p.takes) p.takes = p.takes.map(heal).filter((r) => !r.bufferId || buffers.has(r.bufferId));
   p.tracks = p.tracks.map((t) => (t.frozen && !buffers.has(t.frozen.bufferId) ? { ...t, frozen: undefined } : t));
   // limpa áudios que nenhuma região usa mais
   const keys = (await idb('readonly', (s) => s.getAllKeys())) as string[];
@@ -99,6 +104,9 @@ export function download(blob: Blob, filename: string) {
 }
 
 export function saveProjectFile(p: Project, buffers: Map<string, AudioBuffer>) {
+  // áudio esticado para o andamento não vai no arquivo (só o original; ao abrir, é esticado de novo)
+  const orig = (r: Region): Region => (r.src && r.bufferId !== r.src.bufferId ? { ...r, bufferId: r.src.bufferId, bufRatio: 1 } : r);
+  p = { ...p, regions: p.regions.map(orig), takes: p.takes?.map(orig) };
   const out: Record<string, { sampleRate: number; channels: string[] }> = {};
   for (const id of bufferIds(p, false)) {
     const b = buffers.get(id);

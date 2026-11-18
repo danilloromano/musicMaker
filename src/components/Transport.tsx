@@ -9,6 +9,7 @@ import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
 import { TunerModal } from './TunerModal';
 import { redoShortcut, shortcut } from '../platform';
+import { retimeAudio } from '../audio/tempo';
 
 export function saveProject() {
   saveProjectFile(useStore.getState().project, engine.buffers);
@@ -42,7 +43,8 @@ export function Transport() {
   useEffect(() => setBpmText(String(project.bpm)), [project.bpm]);
   const commitBpm = () => {
     const v = Math.round(+bpmText);
-    if (v >= 40 && v <= 240 && v !== project.bpm) st.update((p) => ({ ...p, bpm: v }));
+    // o áudio vai junto: as regiões continuam na grade (e são esticadas sem mudar a altura)
+    if (v >= 40 && v <= 240 && v !== project.bpm) st.update((p) => retimeAudio(p, v));
     else setBpmText(String(project.bpm));
   };
 
@@ -54,6 +56,8 @@ export function Transport() {
   const exportWav = async () => {
     setExporting(true);
     try {
+      await engine.whenStretched();
+      const project = useStore.getState().project;
       const fmt = (masterOf(project.master).exportFormat ?? 'wav').toUpperCase();
       const { blob, ext, report } = await withLoading(`Exportando ${fmt}…`, (progress) => renderWav(project, engine.buffers, progress));
       download(blob, `${project.name || 'musica'}.${ext}`);

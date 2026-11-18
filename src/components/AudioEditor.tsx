@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../audio/engine';
-import { useStore } from '../store';
+import { pref, savePref, useStore } from '../store';
+import { AUDIO_GRIDS, detectOnsets, quantizeAudioRegion } from '../audio/quantizeAudio';
 import { Region, regionGainAt } from '../types';
 import { gainDb } from './Timeline';
 import { Slider, useRaf } from './ui';
@@ -38,6 +39,16 @@ export function AudioEditor() {
   const sel = useStore((s) => s.audioSel);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const anchor = useRef<{ sec: number; x: number } | null>(null);
+
+  // quantização: grade, força e sensibilidade (lembradas entre sessões)
+  const [qGrid, setQGrid] = useState(() => +(pref('mm.aqGrid') ?? 0.25) || 0.25);
+  const [qStrength, setQStrength] = useState(() => +(pref('mm.aqStrength') ?? 1) || 1);
+  const [qSens, setQSens] = useState(() => +(pref('mm.aqSens') ?? 0.5));
+  /** ataques da região aberta (segundos a partir do começo dela), mostrados como marcas amarelas */
+  const onsets = useMemo(() => {
+    const buf = region?.bufferId && engine.buffers.get(region.bufferId);
+    return buf ? detectOnsets(buf, region.offset ?? 0, region.duration ?? 0, qSens) : [];
+  }, [region?.bufferId, region?.offset, region?.duration, qSens]);
 
   const spb = 60 / bpm;
   const trackRegions = regions.filter((r) => r.trackId === track?.id && r.bufferId);
@@ -215,6 +226,17 @@ export function AudioEditor() {
         if (1 / per >= 8) for (let i = a; i <= b; i++) g.fillRect(xs(i) - 1.5 * dpr, ys(i) - 1.5 * dpr, 3 * dpr, 3 * dpr);
       }
 
+      // ataques detectados (o que a quantização vai puxar para a grade)
+      if (sel) {
+        g.fillStyle = 'rgba(255, 207, 63, 0.85)';
+        for (const t of onsets) {
+          const x = Math.round(xOf(rs + t));
+          if (x < x0 - 1 || x > x1) continue;
+          g.fillRect(x, top, Math.max(1, dpr), 7 * dpr);
+          g.fillRect(x, H - 7 * dpr, Math.max(1, dpr), 7 * dpr);
+        }
+      }
+
       // bordas e nome
       g.fillStyle = sel ? track.color : '#6a6f77';
       g.fillRect(Math.round(xOf(rs)), top, Math.max(1, dpr * (sel ? 2 : 1)), H - top);
@@ -273,7 +295,7 @@ export function AudioEditor() {
       g.fillText(fmt(t + 1e-9, step), x + 3 * dpr, 13 * dpr);
       for (let k = 1; k < 5; k++) g.fillRect(Math.round(xOf(t + (k * step) / 5)), top - 3 * dpr, 1, 3 * dpr);
     }
-  }, [track, trackRegions, pps, vzoom, spb, size, sel]);
+  }, [track, trackRegions, pps, vzoom, spb, size, sel, onsets]);
 
   useEffect(() => draw());
   useEffect(() => {
@@ -447,6 +469,17 @@ export function AudioEditor() {
     if (u) st.updateRegion(u.r.id, { duration: u.cut });
   };
 
+  const quantize = () => {
+    const buf = engine.buffers.get(region.bufferId!);
+    if (!buf) return;
+    const { project, slices } = quantizeAudioRegion(useStore.getState().project, region.id, buf, qGrid, qStrength, qSens);
+    if (!slices) {
+      alert('Nenhum ataque encontrado nesta região. Aumente a sensibilidade e tente de novo.');
+      return;
+    }
+    st.update(() => project);
+  };
+
   const hasSel = !!sel && sel.trackId === track.id;
   const deleteSel = () => sel && st.deleteAudioRange(sel.trackId, sel.start, sel.end);
 
@@ -494,6 +527,26 @@ export function AudioEditor() {
             {[1, 2, 4, 8, 16].map((v) => <option key={v} value={v}>{v}×</option>)}
           </select>
         </label>
+        <div className="aed-group aed-tempo">
+          <label title="Ao mudar o BPM do projeto, esta região estica ou encolhe junto (sem mudar a altura) e continua na grade">
+            <input type="checkbox" checked={!region.fixedTempo} onChange={(e) => st.updateRegion(region.id, { fixedTempo: e.target.checked ? undefined : true })} />
+            Segue o BPM
+          </label>
+          <select title="Grade da quantização" value={qGrid} onChange={(e) => { setQGrid(+e.target.value); savePref('mm.aqGrid', e.target.value); e.currentTarget.blur(); }}>
+            {AUDIO_GRIDS.map((g) => <option key={g.name} value={g.beats}>{g.name}</option>)}
+          </select>
+          <select title="Força: quanto do caminho até a grade cada ataque anda (menos de 100% mantém um pouco do balanço)" value={qStrength} onChange={(e) => { setQStrength(+e.target.value); savePref('mm.aqStrength', e.target.value); e.currentTarget.blur(); }}>
+            {[1, 0.75, 0.5, 0.25].map((v) => <option key={v} value={v}>{v * 100}%</option>)}
+          </select>
+          <select title="Sensibilidade: quantos ataques são detectados (as marcas amarelas na forma de onda)" value={qSens} onChange={(e) => { setQSens(+e.target.value); savePref('mm.aqSens', e.target.value); e.currentTarget.blur(); }}>
+            <option value={0.2}>Só ataques fortes</option>
+            <option value={0.5}>Sensibilidade média</option>
+            <option value={0.8}>Ataques fracos também</option>
+          </select>
+          <button title={`Quantizar: corta a região nos ataques marcados (${onsets.length}) e puxa cada um para a grade`} onClick={quantize}>
+            ⊞ Quantizar
+          </button>
+        </div>
         <span className="hint">
           Clique = cursor · Clique e arraste = selecionar (Delete apaga) · Bordas = aparar · Quadrados = fades · Roda = zoom
         </span>

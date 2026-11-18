@@ -30,6 +30,12 @@ export interface Region {
   fadeOut?: number; // segundos
   /** número do take (gravações no mesmo trecho de uma trilha de áudio; ver audio/takes.ts) */
   take?: number;
+  /** áudio original e quanto ele precisa estar esticado para seguir o andamento (ver audio/tempo.ts) */
+  src?: { bufferId: string; ratio: number };
+  /** quanto o áudio em `bufferId` já está esticado (ausente = 1, o original) */
+  bufRatio?: number;
+  /** não segue o andamento: mudar o BPM não estica esta região */
+  fixedTempo?: boolean;
 }
 
 /** Trecho tocado em repetição (em tempos). */
