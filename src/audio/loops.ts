@@ -1094,7 +1094,7 @@ export function addStyleBand(style: Style, beat: number) {
 }
 
 /** Repete o padrão do loop até preencher `beats` tempos. */
-function tile(loop: Loop, beats: number) {
+export function tile(loop: Loop, beats: number) {
   const cycle = loop.bars * BEATS_PER_BAR;
   const notes: Note[] = [];
   for (let o = 0; o < beats; o += cycle) {

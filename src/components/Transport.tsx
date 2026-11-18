@@ -9,6 +9,7 @@ import { withLoading } from '../loading';
 import { Meter, useRaf } from './ui';
 import { TunerModal } from './TunerModal';
 import { MetronomeMenu } from './MetronomeMenu';
+import { SongGenModal } from './SongGenModal';
 import { redoShortcut, shortcut } from '../platform';
 import { retimeAudio } from '../audio/tempo';
 
@@ -51,6 +52,7 @@ export function Transport() {
   const importRef = useRef<HTMLInputElement>(null);
   const [exporting, setExporting] = useState(false);
   const [tuner, setTuner] = useState(false);
+  const [gen, setGen] = useState(false);
 
   const exportWav = async () => {
     setExporting(true);
@@ -145,6 +147,7 @@ export function Transport() {
         <span className="ico">♮</span><span className="lbl"> Afinador</span>
       </button>
       {tuner && <TunerModal onClose={() => setTuner(false)} />}
+      {gen && <SongGenModal onClose={() => setGen(false)} />}
       <select
         className="key-select"
         value={project.key ? `${project.key.root}:${project.key.minor ? 1 : 0}` : ''}
@@ -172,6 +175,7 @@ export function Transport() {
         <button title={`Refazer (${redoShortcut()})`} disabled={!canRedo} onClick={st.redo}>↷</button>
       </div>
       <div className="group">
+        <button className="gen-btn" title="Gerar música: monta o esboço de uma música inteira a partir de um estilo" onClick={() => setGen(true)}>✨ Gerar música</button>
         <button title="Novo projeto" onClick={newProject}>Novo</button>
         <button title="Abrir projeto (.mmproj)" onClick={() => openRef.current?.click()}>Abrir</button>
         <button title={`Salvar projeto em arquivo (${shortcut('S')})`} onClick={saveProject}>Salvar</button>

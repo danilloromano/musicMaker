@@ -1162,7 +1162,15 @@ function frozenRegion(t: Track, buf: AudioBuffer): Region {
 }
 
 /** Agenda tudo (offline, do tempo 0): o áudio congelado das trilhas congeladas, regiões e notas das outras. */
-function scheduleAll(off: BaseAudioContext, mixer: Mixer, project: Project, buffers: Map<string, AudioBuffer>, spb: number) {
+/** Uma nota a criar na renderização offline (no instante `t`, em segundos). */
+type NoteJob = { t: number; run: () => void };
+
+/**
+ * Agenda o áudio (regiões e trilhas congeladas) e devolve as notas como tarefas: elas são criadas aos
+ * poucos durante a renderização (ver renderProgressive).
+ */
+function scheduleAll(off: BaseAudioContext, mixer: Mixer, project: Project, buffers: Map<string, AudioBuffer>, spb: number): NoteJob[] {
+  const jobs: NoteJob[] = [];
   const tracks = new Map(project.tracks.map((t) => [t.id, t]));
   const frozen = new Set<string>();
   for (const t of project.tracks) {
@@ -1181,9 +1189,38 @@ function scheduleAll(off: BaseAudioContext, mixer: Mixer, project: Project, buff
     for (const n of playedNotes(r, track, project.bpm, project.chords)) {
       if (n.start >= r.length) continue;
       const dur = Math.min(n.duration, r.length - n.start) * spb;
-      triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, (r.start + n.start) * spb, dur, n.velocity);
+      const t = (r.start + n.start) * spb;
+      jobs.push({ t, run: () => triggerNote(off, strip.input, track.kind, track.instrument, n.pitch, t, dur, n.velocity) });
     }
   }
+  return jobs;
+}
+
+/**
+ * Renderiza criando as notas aos poucos: a renderização pausa a cada 2 s de música e cria só as notas do
+ * trecho seguinte. Criar a música inteira de uma vez deixava milhares de nós (de notas que ainda não
+ * começaram ou já acabaram) ligados à saída, e o navegador processa todos a cada bloco de áudio — o tempo
+ * crescia com notas × duração (uma música de 3 min podia levar minutos para exportar).
+ */
+async function renderProgressive(off: OfflineAudioContext, jobs: NoteJob[], onProgress?: (p: number) => void): Promise<AudioBuffer> {
+  jobs.sort((a, b) => a.t - b.t);
+  const W = 2;
+  const dur = off.length / off.sampleRate;
+  let i = 0;
+  const upTo = (t: number) => {
+    while (i < jobs.length && jobs[i].t < t) jobs[i++].run();
+  };
+  upTo(W);
+  for (let k = 1; k * W - 0.05 < dur - 0.05; k++) {
+    // pausa um pouco antes do trecho, para as notas dele serem criadas ainda no futuro
+    const at = k * W - 0.05;
+    void off.suspend(at).then(() => {
+      upTo((k + 1) * W);
+      onProgress?.(at / dur);
+      void off.resume();
+    });
+  }
+  return off.startRendering();
 }
 
 /** Segundos de "rabo" depois da última nota no congelamento (reverb e delay dos pedais terminarem). */
@@ -1218,8 +1255,7 @@ export async function renderFrozen(project: Project, trackId: string, buffers: M
   const tap: AudioNode = strip.rig?.output ?? strip.input;
   tap.disconnect();
   tap.connect(off.destination);
-  scheduleAll(off, mixer, solo, buffers, spb);
-  const out = await off.startRendering();
+  const out = await renderProgressive(off, scheduleAll(off, mixer, solo, buffers, spb));
   // corta o silêncio depois do fim (mantém pelo menos o fim da última região)
   const L = out.getChannelData(0), R = out.getChannelData(1);
   let last = Math.ceil(end * spb * sampleRate);
@@ -1247,17 +1283,6 @@ async function renderMix(project: Project, buffers: Map<string, AudioBuffer>, ma
   mixer.sync(project);
   mixer.automate(project, 0, 0, (b) => b * spb);
   mixer.chain.update(master);
-  scheduleAll(off, mixer, project, buffers, spb);
-  if (onProgress) {
-    const steps = 40;
-    for (let k = 1; k < steps; k++) {
-      // a renderização pausa em cada ponto, avisa o progresso e continua (o último 5% fica para gerar o arquivo)
-      void off.suspend((seconds * k) / steps).then(() => {
-        onProgress(k / steps);
-        void off.resume();
-      });
-    }
-  }
-  return off.startRendering();
+  return renderProgressive(off, scheduleAll(off, mixer, project, buffers, spb), onProgress);
 }
 

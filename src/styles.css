@@ -934,3 +934,15 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .chord-pop .hint { margin: 0; white-space: normal; }
 .chord-pop .warn { color: var(--rec); }
 .follow-tag { color: #b7a8ff; }
+
+/* ---------- Gerar música ---------- */
+.gen-modal { width: 460px; max-width: calc(100vw - 32px); }
+.gen-modal > label, .gen-row > label { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
+.gen-row { display: grid; grid-template-columns: 1fr 150px; gap: 12px; }
+.gen-row > label:last-child { grid-template-columns: 34px 1fr; }
+.gen-hint { margin: 0; white-space: normal; }
+.gen-form { display: flex; flex-wrap: wrap; gap: 4px; }
+.gen-form span { padding: 2px 7px; border-radius: 3px; background: var(--well); font: 600 10px var(--mono); color: var(--text); }
+.gen-form small { color: var(--dim); font-weight: 400; }
+.gen-actions { display: flex; gap: 8px; }
+.gen-btn { white-space: nowrap; }
