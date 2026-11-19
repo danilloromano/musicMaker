@@ -5,6 +5,9 @@ const path = require('path');
 // Mantém a pasta antiga para ninguém perder o que já fez depois da troca de nome para Alien Studio.
 app.setPath('userData', path.join(app.getPath('appData'), 'MusicMaker'));
 
+// Buffer de captura menor: no Windows a entrada (guitarra) passa de ~10 ms para ~3 ms de atraso.
+app.commandLine.appendSwitch('audio-buffer-size', '128');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,

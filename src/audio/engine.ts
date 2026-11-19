@@ -1,4 +1,4 @@
-import { useStore } from '../store';
+import { pref, savePref, useStore } from '../store';
 import { MasterSettings, barBeats, barClicks, meterOf, Note, Project, Region, Track, freezeKey, projectEnd, regionGainAt, regionLen, uid } from '../types';
 import { PRESETS, Voice, loadInstruments, playDrum, startVoice, triggerNote } from './instruments';
 import { loadDrumSamples, warmDrumKit } from './drumKit';
@@ -8,7 +8,7 @@ import { ExportReport, encodeExport, finishMaster } from './export';
 import { Mixer } from './mixer';
 import { audibleSet } from './routing';
 import { makeZip } from './zip';
-import { saveBufferLocal } from './persist';
+import { saveBufferLocal, saveProjectLocal } from './persist';
 import { Recorder } from './recorder';
 import { Held, arpStep, playedNotes } from './arp';
 import { withLoading } from '../loading';
@@ -19,6 +19,18 @@ import { micSettingsPath } from '../platform';
 
 const LOOKAHEAD = 0.2; // s de antecedência com que as notas são agendadas (folga para a interface ocupada)
 const TICK_MS = 25;
+
+export const RATES = [44100, 48000] as const;
+
+/**
+ * Taxa em que o app deve rodar: a escolhida pelo usuário ou, no automático, a da placa de entrada usada por
+ * último. undefined = a do sistema (a da saída padrão).
+ */
+export function wantedRate(setting = useStore.getState().rateSetting): number | undefined {
+  if (setting !== 'auto') return +setting;
+  const r = +(pref('mm.deviceRate') ?? 0);
+  return (RATES as readonly number[]).includes(r) ? r : undefined;
+}
 
 class Engine {
   ctx!: AudioContext;
@@ -57,7 +69,15 @@ class Engine {
   /** Cria o contexto de áudio na primeira interação do usuário. */
   ensure() {
     if (!this.ready) {
-      this.ctx = new AudioContext({ latencyHint: 'interactive' });
+      // roda na mesma taxa da placa (44100 ou 48000): sem conversão no caminho, menos atraso ao monitorar
+      const sampleRate = wantedRate();
+      try {
+        this.ctx = new AudioContext({ latencyHint: 'interactive', ...(sampleRate ? { sampleRate } : {}) });
+      } catch {
+        this.ctx = new AudioContext({ latencyHint: 'interactive' });
+      }
+      useStore.getState().set({ appRate: this.ctx.sampleRate });
+      if (useStore.getState().outputDeviceId) queueMicrotask(() => void this.applyOutput());
       this.mixOut = this.ctx.createGain();
       this.mixOut.connect(this.ctx.destination);
       this.refOut = this.ctx.createGain();
@@ -832,13 +852,52 @@ class Engine {
   async refreshInputs() {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const inputs = devices
-        .filter((d) => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
-        .map((d, i) => ({ id: d.deviceId, label: d.label || `Entrada ${i + 1}` }));
-      useStore.getState().set({ inputs });
+      const list = (kind: MediaDeviceKind, name: string) =>
+        devices
+          .filter((d) => d.kind === kind && d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
+          .map((d, i) => ({ id: d.deviceId, label: d.label || `${name} ${i + 1}`, group: d.groupId }));
+      // "default" é o dispositivo padrão do sistema: o groupId dele diz qual placa física é
+      const dflt = (kind: MediaDeviceKind) =>
+        devices.find((d) => d.kind === kind && d.deviceId === 'default')?.groupId ?? '';
+      useStore.getState().set({
+        inputs: list('audioinput', 'Entrada'),
+        outputs: list('audiooutput', 'Saída'),
+        defaultGroups: { input: dflt('audioinput'), output: dflt('audiooutput') },
+      });
     } catch {
       /* sem acesso a dispositivos */
     }
+  }
+
+  /**
+   * Manda o som do app para a saída escolhida (null = padrão do sistema). Com entrada e saída na mesma placa
+   * o sistema não precisa compensar dois relógios diferentes, e a monitoração da guitarra atrasa bem menos.
+   */
+  async applyOutput(): Promise<boolean> {
+    if (!this.ready) return true;
+    const ctx = this.ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+    if (!ctx.setSinkId) return false;
+    const id = useStore.getState().outputDeviceId ?? '';
+    try {
+      await ctx.setSinkId(id);
+      return true;
+    } catch {
+      // saída escolhida desconectada: volta para a padrão em vez de ficar mudo
+      if (id) await ctx.setSinkId('').catch(() => {});
+      return false;
+    }
+  }
+
+  /**
+   * A taxa de um contexto de áudio não muda depois de criado: para trocar, guarda o projeto e recarrega a
+   * janela (os áudios já ficam salvos no IndexedDB assim que são criados). Não roda gravando.
+   */
+  async restartAudio() {
+    if (useStore.getState().recording) return;
+    this.stop();
+    this.closeInput();
+    await saveProjectLocal(useStore.getState().project).catch(console.warn);
+    location.reload();
   }
 
   /** Abre o dispositivo escolhido e liga o canal selecionado ao barramento de entrada. */
@@ -890,7 +949,10 @@ class Engine {
     // "muted" = o sistema não está entregando sinal (dispositivo no mudo nas configurações de som ou na tecla do notebook)
     const reportMuted = () => useStore.getState().set({ inputMuted: track.muted });
     track.onmute = track.onunmute = reportMuted;
-    s.set({ inputOpen: true, inputChannels: channels, inputMuted: track.muted });
+    const inputRate = track.getSettings().sampleRate ?? null;
+    // lembra a taxa da placa: no modo automático o app abre nela da próxima vez (ou ao reiniciar o áudio)
+    if (inputRate) savePref('mm.deviceRate', String(inputRate));
+    s.set({ inputOpen: true, inputChannels: channels, inputMuted: track.muted, inputRate });
     await this.refreshInputs();
     return true;
   }
@@ -904,7 +966,7 @@ class Engine {
     this.inNodes.forEach((n) => n.disconnect());
     this.inNodes = [];
     this.inStream = null;
-    useStore.getState().set({ inputOpen: false, inputMuted: false });
+    useStore.getState().set({ inputOpen: false, inputMuted: false, inputRate: null });
   }
 
   /** O sinal da entrada (antes de qualquer efeito) para o afinador, ou undefined se a entrada está fechada. */

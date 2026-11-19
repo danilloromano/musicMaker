@@ -1,4 +1,4 @@
-import { engine } from '../audio/engine';
+import { RATES, engine, wantedRate } from '../audio/engine';
 import { DRUM_MAP, presetGroups } from '../audio/instruments';
 import { LOOPS, Loop, STYLES, STYLE_GROUPS, STYLE_PARTS, addLoop, addStyleBand } from '../audio/loops';
 import { useEffect, useState } from 'react';
@@ -217,7 +217,33 @@ function AudioInput() {
   const open = useStore((s) => s.inputOpen);
   const muted = useStore((s) => s.inputMuted);
   const monitor = useStore((s) => s.monitor);
+  const outputs = useStore((s) => s.outputs);
+  const outputId = useStore((s) => s.outputDeviceId);
+  const defaults = useStore((s) => s.defaultGroups);
+  const inputRate = useStore((s) => s.inputRate);
+  const appRate = useStore((s) => s.appRate);
+  const rateSetting = useStore((s) => s.rateSetting);
+  const recording = useStore((s) => !!s.recording);
   const set = useStore.getState().set;
+  // taxa que o app usaria se reiniciasse agora (no automático, a da placa aberta por último; a entrada
+  // guarda a taxa dela antes de atualizar inputRate, então isto acompanha a placa aberta)
+  const pendingRate = wantedRate(rateSetting);
+
+  const changeOutput = async (id: string | null) => {
+    set({ outputDeviceId: id });
+    savePref('mm.outputDevice', id ?? '');
+    if (!(await engine.applyOutput())) {
+      alert('Não foi possível usar essa saída de áudio. O som continua saindo pela saída padrão do sistema.');
+      set({ outputDeviceId: null });
+      savePref('mm.outputDevice', '');
+    }
+  };
+  // entrada e saída na mesma placa física? (o groupId é o mesmo para entrada e saída de um aparelho USB)
+  const inGroup = deviceId ? inputs.find((i) => i.id === deviceId)?.group : defaults.input;
+  const outGroup = outputId ? outputs.find((o) => o.id === outputId)?.group : defaults.output;
+  const splitBoards = open && !!inGroup && !!outGroup && inGroup !== outGroup;
+  const sameBoardOut = splitBoards ? outputs.find((o) => o.group === inGroup) : undefined;
+  const outMissing = outputId && outputs.length > 0 && !outputs.some((o) => o.id === outputId);
 
   // muda uma preferência e, se a entrada já estiver ligada, reabre com a nova configuração
   const change = (patch: { inputDeviceId?: string | null; inputChannel?: number }) => {
@@ -230,7 +256,7 @@ function AudioInput() {
 
   return (
     <div className="fx-card wide input-card">
-      <h4>Entrada de áudio — guitarra, microfone, placa de áudio</h4>
+      <h4>Entrada e saída de áudio — guitarra, microfone, placa de áudio</h4>
       <div className="input-row">
         <label>
           Dispositivo
@@ -260,6 +286,37 @@ function AudioInput() {
             <option value={2}>1 + 2 (somadas)</option>
           </select>
         </label>
+        <label>
+          Saída
+          <select
+            title="Por onde o som do app sai. Para menos atraso ao monitorar, use a saída da mesma placa da entrada."
+            value={outputId ?? ''}
+            onChange={(e) => {
+              void changeOutput(e.target.value || null);
+              e.currentTarget.blur();
+            }}
+          >
+            <option value="">Padrão do sistema</option>
+            {outputs.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            {outMissing && <option value={outputId}>(dispositivo desconectado)</option>}
+          </select>
+        </label>
+        <label>
+          Taxa
+          <select
+            title="Taxa de amostragem do app. Automática: a mesma da placa de entrada, sem conversão no caminho."
+            value={rateSetting}
+            onChange={(e) => {
+              const v = e.target.value as typeof rateSetting;
+              set({ rateSetting: v });
+              savePref('mm.sampleRate', v === 'auto' ? '' : v);
+              e.currentTarget.blur();
+            }}
+          >
+            <option value="auto">Automática (da placa)</option>
+            {RATES.map((r) => <option key={r} value={String(r)}>{r} Hz</option>)}
+          </select>
+        </label>
         <button className={open ? 'toggle on' : 'toggle'} onClick={() => (open ? engine.closeInput() : void engine.openInput())}>
           {open ? 'Entrada ligada' : 'Ligar entrada'}
         </button>
@@ -283,6 +340,42 @@ function AudioInput() {
           ⚠ Esta entrada está no mudo no {isMac ? 'Mac' : 'Windows'}, então não chega som nenhum ao app. Tire do mudo{' '}
           {isMac ? 'em ' : ''}{inputSettingsPath()} (ou escolha outro dispositivo acima).
         </div>
+      )}
+      {splitBoards && (
+        <div className="input-warn">
+          ⚠ A entrada e a saída estão em placas diferentes. O som da guitarra demora mais para chegar às caixas.
+          {sameBoardOut ? (
+            <>
+              {' '}
+              <button className="link" onClick={() => void changeOutput(sameBoardOut.id)}>
+                Usar a saída {sameBoardOut.label}
+              </button>{' '}
+              e ligue as caixas ou o fone nela.
+            </>
+          ) : (
+            ' Para monitorar com menos atraso, ligue as caixas ou o fone na própria placa de áudio.'
+          )}
+        </div>
+      )}
+      {appRate && pendingRate && pendingRate !== appRate ? (
+        <div className="input-warn">
+          ⚠ O app está rodando a {appRate} Hz{rateSetting === 'auto' && inputRate ? ` e a placa a ${inputRate} Hz` : ''}. Para
+          passar a {pendingRate} Hz o áudio precisa reiniciar (o projeto continua salvo).{' '}
+          <button className="link" disabled={recording} onClick={() => void engine.restartAudio()}>
+            Reiniciar o áudio agora
+          </button>
+        </div>
+      ) : (
+        open &&
+        inputRate &&
+        appRate &&
+        inputRate !== appRate && (
+          <div className="input-warn">
+            ⚠ A placa está a {inputRate} Hz e o app a {appRate} Hz, então o som é convertido no caminho (mais atraso).
+            Escolha a taxa "Automática" ou coloque a placa em {appRate} Hz{' '}
+            {isMac ? 'no app Configuração de Áudio e MIDI' : 'no Painel de controle de som (Propriedades → Avançado)'}.
+          </div>
+        )
       )}
       <small className="input-hint">
         {open && channels < 2 && channel === 1

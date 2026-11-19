@@ -84,7 +84,16 @@ interface State {
   mixAnalysis: Analysis | null;
 
   // entrada de áudio (preferências do computador, não fazem parte do projeto)
-  inputs: { id: string; label: string }[];
+  inputs: { id: string; label: string; group: string }[];
+  outputs: { id: string; label: string; group: string }[];
+  /** placa física (groupId) dos dispositivos padrão do sistema, para saber se entrada e saída são a mesma placa */
+  defaultGroups: { input: string; output: string };
+  outputDeviceId: string | null; // null = padrão do sistema
+  /** taxa de amostragem da entrada aberta e do app (Hz): diferentes = conversão no caminho, mais atraso */
+  inputRate: number | null;
+  appRate: number | null;
+  /** taxa do app: 'auto' = a mesma da placa de entrada; ou fixa */
+  rateSetting: 'auto' | '44100' | '48000';
   inputDeviceId: string | null; // null = padrão do sistema
   inputChannel: number; // 0 = entrada 1, 1 = entrada 2, 2 = soma das duas
   inputChannels: number; // quantos canais o dispositivo aberto entrega
@@ -172,6 +181,12 @@ export const useStore = create<State>((set, get) => ({
   mixAnalysis: null,
 
   inputs: [],
+  outputs: [],
+  defaultGroups: { input: '', output: '' },
+  outputDeviceId: pref('mm.outputDevice') || null,
+  inputRate: null,
+  appRate: null,
+  rateSetting: (['44100', '48000'] as const).find((r) => r === pref('mm.sampleRate')) ?? 'auto',
   inputDeviceId: pref('mm.inputDevice') || null,
   inputChannel: +(pref('mm.inputChannel') ?? 0) || 0,
   inputChannels: 1,
