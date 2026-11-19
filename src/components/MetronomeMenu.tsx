@@ -29,12 +29,17 @@ export function MetronomeMenu() {
   useEffect(() => {
     if (!open) return;
     const down = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    // captura + stopPropagation: o Esc só fecha o menu (sem voltar o cursor ao início)
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setOpen(false);
+    };
     window.addEventListener('pointerdown', down, true);
-    window.addEventListener('keydown', key);
+    window.addEventListener('keydown', key, true);
     return () => {
       window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('keydown', key);
+      window.removeEventListener('keydown', key, true);
     };
   }, [open]);
 

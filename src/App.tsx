@@ -62,7 +62,11 @@ function useShortcuts() {
       else if (k === ',') jumpMarker(-1);
       else if (k === '.') jumpMarker(1);
       else if (k === 'r' && !e.repeat) void engine.toggleRecord();
-      else if (k === 'escape') s.set({ audioSel: null });
+      // Esc: tira a seleção do editor de áudio, se houver; senão volta o cursor ao início
+      else if (k === 'escape') {
+        if (s.audioSel) s.set({ audioSel: null });
+        else engine.seek(0);
+      }
       else if ((k === 'delete' || k === 'backspace') && s.audioSel && s.bottomTab === 'audio') {
         // trecho selecionado no editor de áudio: apaga só ele
         s.deleteAudioRange(s.audioSel.trackId, s.audioSel.start, s.audioSel.end);

@@ -86,7 +86,7 @@ export function Transport() {
         onChange={(e) => st.update((p) => ({ ...p, name: e.target.value }), false)}
       />
       <div className="group">
-        <button className="tbtn" title="Voltar ao início (Enter)" onClick={() => engine.seek(0)}>⏮</button>
+        <button className="tbtn" title="Voltar ao início (Enter ou Esc)" onClick={() => engine.seek(0)}>⏮</button>
         <button className={`tbtn ${playing ? 'on' : ''}`} title="Tocar / parar (Espaço)" onClick={() => engine.toggle()}>
           {playing ? '■' : '▶'}
         </button>
