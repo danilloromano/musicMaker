@@ -6,9 +6,11 @@
 // buffers de 64–128 amostras: ~8–10 ms de ida e volta na Fast Track. Roda num processo só para isso, longe da
 // interface, para que nada da tela atrase um bloco de áudio.
 //
-// Por enquanto faz a monitoração da entrada (sinal limpo). A gravação continua pelo caminho normal do app
-// (getUserMedia), que funciona ao mesmo tempo que o ASIO. A cadeia de amp/pedais entra aqui na etapa 2.
-import type { HostEvent, HostRequest, HostStatus, LowLatencyDevice } from '../../src/audio/lowLatencyProtocol';
+// A entrada passa pelo rack da trilha (pedais de antes do amp, amp e caixa: src/audio/rt/rig.ts, o mesmo
+// circuito do app). A gravação continua pelo caminho normal do app (getUserMedia), que funciona ao mesmo tempo
+// que o ASIO, e grava o sinal seco.
+import type { HostEvent, HostRequest, HostStatus, LowLatencyDevice, RtRig } from '../../src/audio/lowLatencyProtocol';
+import { RtRigProcessor, warmupRig } from '../../src/audio/rt/rig';
 
 import { RtAudio } from 'audify';
 import { constants, setPriority } from 'node:os';
@@ -30,6 +32,12 @@ let status: HostStatus = { running: false, deviceId: null, buffer: 0, rate: 0, l
 let channel = 0;
 let targetGain = 0;
 let gain = 0;
+
+// rack da trilha: o último pedido fica guardado para remontar quando a placa reabre (outra taxa/buffer)
+let rig: RtRig | null = null;
+let ir: Extract<HostRequest, { type: 'ir' }> | null = null;
+let proc: RtRigProcessor | null = null;
+let work = new Float64Array(0);
 
 // medição
 let inChannels = 2;
@@ -82,6 +90,7 @@ function stop() {
     }
   }
   rt = null;
+  proc = null;
   status = { ...status, running: false };
 }
 
@@ -114,6 +123,8 @@ function start(req: Extract<HostRequest, { type: 'start' }>) {
         sendStatus();
       },
     );
+    // compila o rack antes de tocar (o primeiro bloco de cada circuito sairia lento)
+    warmupRig(rate, block);
     // folga: blocos de silêncio na fila de saída absorvem um callback atrasado (custa 1 bloco cada)
     for (let k = 0; k < req.safety; k++) r.write(Buffer.alloc(block * outChannels * 4));
     r.start();
@@ -127,6 +138,10 @@ function start(req: Extract<HostRequest, { type: 'start' }>) {
     return sendStatus();
   }
   rt = r;
+  proc = new RtRigProcessor(rate, block);
+  if (ir) proc.setIr(ir.key, ir.a, ir.b);
+  proc.setRig(rig);
+  work = new Float64Array(block);
   budgetMs = (block / rate) * 1000;
   late = 0;
   lastCall = 0;
@@ -154,15 +169,23 @@ function render(pcm: Buffer, block: number, outChannels: number) {
   const inp = new Float32Array(pcm.buffer, pcm.byteOffset, pcm.byteLength >> 2);
   const out = outChannels === inChannels ? inp : new Float32Array(block * outChannels);
   const ch = inChannels < 2 ? 0 : channel;
-  for (let i = 0; i < block; i++) {
-    // rampa curta no ganho: ligar/desligar a monitoração sem estalo
-    gain += (targetGain - gain) * 0.005;
+  const n = Math.min(block, Math.floor(inp.length / inChannels));
+  const w = work;
+  for (let i = 0; i < n; i++) {
     const a = inp[i * inChannels];
     const b = inChannels > 1 ? inp[i * inChannels + 1] : a;
     const x = ch === 2 ? a + b : ch === 1 ? b : a;
     const ax = x < 0 ? -x : x;
     if (ax > peak) peak = ax;
-    const y = x * gain;
+    // ±1e-18 alternado: impede números subnormais (lentos) nos filtros quando a entrada fica em silêncio
+    w[i] = x + (i & 1 ? 1e-18 : -1e-18);
+  }
+  // o rack trabalha em blocos do tamanho combinado com o driver (a convolução da caixa depende disso)
+  if (proc && n === w.length) proc.process(w);
+  for (let i = 0; i < n; i++) {
+    // rampa curta no ganho: ligar/desligar a monitoração sem estalo
+    gain += (targetGain - gain) * 0.005;
+    const y = w[i] * gain;
     const o = y > 1 ? 1 : y < -1 ? -1 : y;
     for (let c = 0; c < outChannels; c++) out[i * outChannels + c] = o;
   }
@@ -191,6 +214,14 @@ function onMessage(m: HostRequest) {
       channel = m.channel;
       targetGain = m.gain;
       break;
+    case 'rig':
+      rig = m.rig;
+      proc?.setRig(rig);
+      break;
+    case 'ir':
+      ir = m;
+      proc?.setIr(m.key, m.a, m.b);
+      break;
   }
 }
 
@@ -200,6 +231,8 @@ process.on('message', (m: HostRequest | { type: 'reset' }) => {
   if (m.type === 'reset') {
     stop();
     targetGain = gain = 0;
+    rig = null;
+    ir = null;
     sendStatus();
   } else onMessage(m);
 });

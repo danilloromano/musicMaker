@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 
-// Processo de áudio de baixa latência (electron/host/audioHost.ts): roda no Node do Electron (utilityProcess),
+// Processo de áudio de baixa latência (electron/host/audioHost.ts): roda no Node do Electron (processo filho),
 // então sai como um único CommonJS. O audify (módulo nativo) fica de fora e é carregado de node_modules.
 export default defineConfig({
   build: {

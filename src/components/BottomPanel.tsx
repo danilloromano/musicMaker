@@ -1,5 +1,5 @@
 import { RATES, engine, wantedRate } from '../audio/engine';
-import { refreshLowLatencyDevices, setLowLatency } from '../audio/lowLatency';
+import { lowLatencyMissing, refreshLowLatencyDevices, setLowLatency } from '../audio/lowLatency';
 import { DRUM_MAP, presetGroups } from '../audio/instruments';
 import { LOOPS, Loop, STYLES, STYLE_GROUPS, STYLE_PARTS, addLoop, addStyleBand } from '../audio/loops';
 import { useEffect, useState } from 'react';
@@ -226,7 +226,9 @@ function LowLatencyRow() {
   const status = useStore((s) => s.llStatus);
   const meter = useStore((s) => s.llMeter);
   const open = useStore((s) => s.inputOpen);
+  const track = useStore((s) => s.project.tracks.find((t) => t.id === s.selectedTrackId));
   if (!available) return null;
+  const missing = lowLatencyMissing(track);
   const low = engineSel === 'low';
   const load = meter && meter.budget ? Math.round((100 * meter.loadAvg) / meter.budget) : 0;
 
@@ -293,7 +295,9 @@ function LowLatencyRow() {
                 ? `● ${api} ligado: ${status.latencyMs.toFixed(1).replace('.', ',')} ms de ida e volta (buffer de ${status.buffer})` +
                   ` · processamento ${load}%` +
                   (meter?.late ? ` · ${meter.late} atraso(s) do processo: se ouvir estalos, aumente o buffer ou ligue a folga` : '') +
-                  '. Por enquanto você ouve o sinal limpo; amp e pedais da trilha entram na monitoração na próxima versão.'
+                  (missing.length
+                    ? `. Ainda fora da monitoração (só na gravação/reprodução): ${missing.join(', ')}.`
+                    : '.')
                 : open
                   ? `Abrindo a placa pelo ${api}…`
                   : `A placa abre pelo ${api} quando você ligar a entrada. A gravação continua pelo caminho normal.`}

@@ -24,7 +24,37 @@ export type HostRequest =
     }
   | { type: 'stop' }
   /** canal da placa (0, 1 ou 2 = soma dos dois) e ganho da monitoração (linear; 0 = mudo) */
-  | { type: 'monitor'; channel: number; gain: number };
+  | { type: 'monitor'; channel: number; gain: number }
+  /** rack de amp/pedais da trilha monitorada (null = sinal limpo) */
+  | { type: 'rig'; rig: RtRig | null }
+  /** IRs das caixas A e B na taxa da placa (mandados só quando mudam; `key` liga ao RtRig.cab.irKey) */
+  | { type: 'ir'; key: string; a: Float32Array | null; b: Float32Array | null };
+
+/** Um pedal de antes do amp, com o circuito já escolhido (`id` = id do modelo nos pedais com vários circuitos). */
+export interface RtPedal {
+  id: string;
+  on: boolean;
+  p: number[];
+}
+
+/** O rack como o processo de áudio precisa: só o que ele processa, já resolvido pela interface. */
+export interface RtRig {
+  /** pedais de antes do amp, na ordem do rack */
+  pedals: RtPedal[];
+  /** modelo do amp (null = sem amp) */
+  amp: string | null;
+  knobs: { gain: number; bass: number; mid: number; treble: number; presence: number; master: number };
+  cab: {
+    /** mistura com o sinal sem caixa (0..1) */
+    mix: number;
+    /** caixa A ↔ B (0..1) */
+    blend: number;
+    /** cortes depois da caixa em Hz (0 = desligado) */
+    low: number;
+    high: number;
+    irKey: string;
+  } | null;
+}
 
 export interface HostStatus {
   running: boolean;

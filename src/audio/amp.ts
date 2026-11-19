@@ -2,6 +2,7 @@
 // Tudo roda no canal da trilha, então a gravação continua seca e o timbre pode ser trocado depois (re-amp).
 import { AmpRig, MusicKey, PedalState } from '../types';
 import { workletsReady } from './master';
+import { Curve, GateCurve, curveFn, gateCurveFn, sampleCurve } from './rt/curves';
 import { AMPS, AmpModel, ToneStackParts, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from './ampCircuits';
 
 // ---------- Definições ----------
@@ -232,7 +233,6 @@ export const PEDALS: PedalDef[] = [
     ] },
 ];
 
-type Curve = 'soft' | 'hard' | 'asym' | 'germ' | 'tape' | 'diode' | 'germAsym' | 'fet';
 
 export { AMPS } from './ampCircuits';
 
@@ -372,27 +372,7 @@ function fitRate(ctx: BaseAudioContext, b: AudioBuffer): AudioBuffer {
 const curves = new Map<Curve, Float32Array<ArrayBuffer>>();
 function curve(kind: Curve) {
   let c = curves.get(kind);
-  if (!c) {
-    const n = 4096;
-    c = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = (i / (n - 1)) * 2 - 1;
-      c[i] =
-        kind === 'soft' ? Math.tanh(2.5 * x) / Math.tanh(2.5)
-        : kind === 'hard' ? (7 * x) / (1 + 6 * Math.abs(x))
-        // fita: ganho 1 nos sinais baixos (não realimenta o laço do delay), comprime só os picos
-        : kind === 'tape' ? Math.tanh(1.5 * x) / 1.5
-        : kind === 'germ' ? Math.tanh(1.4 * x) / Math.tanh(1.4) // diodo de germânio: joelho baixo e bem macio
-        // diodos de silício para a terra (op-amp com clipagem dura, mas com joelho arredondado)
-        : kind === 'diode' ? (4 * x) / (1 + Math.abs(4 * x) ** 2.5) ** 0.4 / 0.988
-        // transistor de germânio polarizado: o lado negativo satura antes (assimetria → harmônicos pares)
-        : kind === 'germAsym' ? (x >= 0 ? Math.tanh(1.2 * x) / Math.tanh(1.2) : (-0.8 * Math.tanh(-2.5 * x)) / Math.tanh(2.5))
-        // JFET: lei quadrática (x + x²) → curva levemente torta, harmônicos pares; satura bem devagar
-        : kind === 'fet' ? Math.tanh(1.4 * x + 0.35 * x * x) / Math.tanh(1.75)
-        : x >= 0 ? Math.tanh(3 * x) / Math.tanh(3) : (-0.7 * Math.tanh(-6 * x)) / Math.tanh(6);
-    }
-    curves.set(kind, c);
-  }
+  if (!c) curves.set(kind, (c = sampleCurve(curveFn(kind), 4096)));
   return c;
 }
 
@@ -419,6 +399,18 @@ function filter(ctx: BaseAudioContext, type: BiquadFilterType, f: number, q = Ma
   n.Q.value = q;
   n.gain.value = db;
   return n;
+}
+
+/**
+ * Atraso que o oversampling 4x do WaveShaperNode do Chromium introduz (medido: 192 amostras, em qualquer taxa).
+ * Onde um caminho com saturação é somado a um caminho limpo, o limpo é atrasado o mesmo tanto para os dois
+ * chegarem juntos (senão a soma vira um filtro pente que o circuito real não tem).
+ */
+const OS4_LATENCY = 192;
+function alignDelay(ctx: BaseAudioContext) {
+  const d = ctx.createDelay(0.05);
+  d.delayTime.value = OS4_LATENCY / ctx.sampleRate;
+  return d;
 }
 
 function shaper(ctx: BaseAudioContext, kind: Curve) {
@@ -495,24 +487,9 @@ function noiseGate(ctx: BaseAudioContext, put: Put): Fx {
 }
 
 const gateCurves = new Map<string, Float32Array<ArrayBuffer>>();
-function gateCurve(kind: 'rect' | 'open' | 'clamp') {
+function gateCurve(kind: GateCurve) {
   let c = gateCurves.get(kind);
-  if (!c) {
-    const n = 2048;
-    c = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = (i / (n - 1)) * 2 - 1;
-      if (kind === 'rect') c[i] = Math.abs(x);
-      // entradas acima de 1 ficam no último ponto da curva (1): é o limite da soma dos caminhos
-      else if (kind === 'clamp') c[i] = Math.max(0, x);
-      else {
-        // fechado abaixo de 0,15, aberto acima de 0,35, transição suave no meio
-        const t = Math.min(1, Math.max(0, (x - 0.15) / 0.2));
-        c[i] = t * t * (3 - 2 * t);
-      }
-    }
-    gateCurves.set(kind, c);
-  }
+  if (!c) gateCurves.set(kind, (c = sampleCurve(gateCurveFn(kind), 2048)));
   return c;
 }
 
@@ -539,7 +516,7 @@ function feedbackDrive(
   const sh = shaper(ctx, o.curve);
   const clipLevel = ctx.createGain();
   clipLevel.gain.value = 0.5; // os diodos limitam a parte suja a ~0,5 do sinal cheio
-  inp.connect(sum); // caminho limpo
+  inp.connect(alignDelay(ctx)).connect(sum); // caminho limpo (alinhado com o atraso da clipagem)
   inp.connect(hp).connect(pre).connect(sh).connect(clipLevel).connect(sum);
   const dc = filter(ctx, 'highpass', 30);
   const bass = filter(ctx, 'lowshelf', 250, 0.7, -o.bassCut); // grave enxuto na saída
@@ -572,7 +549,7 @@ function transparentDrive(ctx: BaseAudioContext, put: Put): Fx {
   const lp = filter(ctx, 'lowpass', 6500);
   const dirty = ctx.createGain();
   const sum = ctx.createGain();
-  inp.connect(clean).connect(sum);
+  inp.connect(alignDelay(ctx)).connect(clean).connect(sum); // alinhado com o atraso da clipagem
   inp.connect(hp).connect(pre).connect(sh).connect(lp).connect(dirty).connect(sum);
   const mid = filter(ctx, 'peaking', 1000, 0.8, 0.5);
   const treble = filter(ctx, 'highshelf', 1500);
@@ -1830,7 +1807,7 @@ function makePedal(ctx: BaseAudioContext, id: string, put: Put): Fx {
       // uma banda de pico por fader (largura de ~1 oitava, como os EQs gráficos) e o volume no fim
       const bands = EQ_BANDS.map((f) => filter(ctx, 'peaking', f, 1.4));
       const level = ctx.createGain();
-      bands.reduce<AudioNode>((a, b) => a.connect(b), bands[0]);
+      for (let i = 1; i < bands.length; i++) bands[i - 1].connect(bands[i]);
       bands[bands.length - 1].connect(level);
       return {
         in: bands[0],
@@ -2114,7 +2091,7 @@ const prepCache = new WeakMap<AudioBuffer, AudioBuffer>();
  * Ganho que o ConvolverNode aplica sozinho a um IR com `normalize = true` (o padrão), como no Chromium (o
  * motor do Electron): 1 / RMS do IR, calibrado em -58 dB e pela taxa de amostragem.
  */
-function convolverScale(b: AudioBuffer): number {
+export function convolverScale(b: AudioBuffer): number {
   let power = 0;
   for (let c = 0; c < b.numberOfChannels; c++) for (const v of b.getChannelData(c)) power += v * v;
   power = Math.sqrt(power / (b.numberOfChannels * b.length));

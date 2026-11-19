@@ -10,5 +10,5 @@
     "isolatedModules": true,
     "types": ["node", "electron"]
   },
-  "include": ["electron/host", "src/audio/lowLatencyProtocol.ts"]
+  "include": ["electron/host", "src/audio/lowLatencyProtocol.ts", "src/audio/rt", "src/audio/ampCircuits.ts"]
 }

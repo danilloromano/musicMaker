@@ -18,7 +18,11 @@ app.commandLine.appendSwitch('audio-buffer-size', '128');
 let audioHost = null;
 function startAudioHost() {
   const file = path.join(__dirname, '..', 'dist-host', 'audio-host.cjs');
-  audioHost = fork(file, [], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+  audioHost = fork(file, [], {
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    // 'advanced' = clone estruturado: os IRs das caixas (Float32Array) passam inteiros, sem virar JSON
+    serialization: 'advanced',
+  });
   audioHost.on('message', (m) => {
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('audio-host', m);
   });
