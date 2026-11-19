@@ -682,6 +682,11 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .m-corr-dot.bad { background: var(--rec); }
 .m-readouts span.small { font-size: 13px; color: var(--dim); }
 .master select { background: var(--well); color: var(--text); border: 1px solid var(--line); padding: 5px; font: inherit; font-size: 12px; }
+.preset-selects { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset-selects .preset-group { flex: 1 1 150px; min-width: 0; }
+.preset-selects .preset-group + .preset-group { margin-top: 0; }
+.preset-selects select { width: 100%; }
+.preset-selects .preset-group.on select { border-color: var(--accent); color: var(--accent); }
 .last-export { font-size: 12px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 6px; }
 .last-export b { color: var(--accent); font-family: var(--mono); font-weight: 600; }
 .last-export .warn { margin-top: 6px; color: var(--solo); }

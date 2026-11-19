@@ -50,18 +50,28 @@ export function MasterPanel() {
     <div className="fx master">
       <div className="fx-card wide">
         <h4>Preset de master</h4>
-        {MASTER_GROUPS.map((g) => (
-          <div key={g.group} className="preset-group">
-            <small>{g.group}</small>
-            <div className="presets">
-              {g.ids.map((id) => MASTER_PRESETS.find((p) => p.id === id)!).map((p) => (
-                <button key={p.id} className={active?.id === p.id ? 'on' : ''} title={p.desc} onClick={() => setMaster((x) => applyPreset(x, p.s), true)}>
-                  {p.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+        <div className="preset-selects">
+          {MASTER_GROUPS.map((g) => {
+            const inGroup = active && g.ids.includes(active.id) ? active.id : '';
+            return (
+              <label key={g.group} className={inGroup ? 'preset-group on' : 'preset-group'}>
+                <small>{g.group}</small>
+                <select
+                  value={inGroup}
+                  onChange={(e) => {
+                    const p = MASTER_PRESETS.find((x) => x.id === e.target.value);
+                    if (p) setMaster((x) => applyPreset(x, p.s), true);
+                  }}
+                >
+                  <option value="" disabled>—</option>
+                  {g.ids.map((id) => MASTER_PRESETS.find((p) => p.id === id)!).map((p) => (
+                    <option key={p.id} value={p.id} title={p.desc}>{p.name}</option>
+                  ))}
+                </select>
+              </label>
+            );
+          })}
+        </div>
         {active && <p className="hint preset-desc">{active.desc}</p>}
       </div>
 
