@@ -27,8 +27,15 @@ export type HostRequest =
   | { type: 'monitor'; channel: number; gain: number }
   /** rack de amp/pedais da trilha monitorada (null = sinal limpo) */
   | { type: 'rig'; rig: RtRig | null }
-  /** IRs das caixas A e B na taxa da placa (mandados só quando mudam; `key` liga ao RtRig.cab.irKey) */
-  | { type: 'ir'; key: string; a: Float32Array | null; b: Float32Array | null };
+  /**
+   * Pedaço de um IR. Os IRs vão em pedaços de 64 KB espaçados no tempo: o processo de áudio desserializa cada
+   * mensagem de uma vez, e um IR de reverb inteiro (~3 MB) travaria o áudio por alguns milissegundos.
+   */
+  | { type: 'chunk'; id: string; offset: number; total: number; data: Float32Array }
+  /** IRs das caixas A e B na taxa da placa (ids dos pedaços já enviados; `key` liga ao RtRig.cab.irKey) */
+  | { type: 'ir'; key: string; a: string | null; b: string | null }
+  /** IR estéreo do reverb (`key` = taxa|tipo|passo do tempo, a mesma que o pedal calcula) */
+  | { type: 'reverb'; key: string; l: string; r: string };
 
 /** Um pedal de antes do amp, com o circuito já escolhido (`id` = id do modelo nos pedais com vários circuitos). */
 export interface RtPedal {
@@ -41,6 +48,11 @@ export interface RtPedal {
 export interface RtRig {
   /** pedais de antes do amp, na ordem do rack */
   pedals: RtPedal[];
+  /** pedais de depois da caixa, na ordem do rack */
+  post: RtPedal[];
+  /** andamento (delay sincronizado) e tom da música (harmonizador) */
+  bpm: number;
+  song: { root: number; minor: boolean } | null;
   /** modelo do amp (null = sem amp) */
   amp: string | null;
   knobs: { gain: number; bass: number; mid: number; treble: number; presence: number; master: number };

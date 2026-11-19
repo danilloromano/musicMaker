@@ -1,449 +1,19 @@
-// Rack de guitarra amostra a amostra para o motor de baixa latência: os pedais de antes do amp, o amplificador e
-// a caixa, com os mesmos circuitos do rack do app (amp.ts). Cada classe aqui reproduz o grafo de nós do
-// pedal de lá — mesma ordem, filtros, curvas e valores — para a monitoração ter o timbre da trilha.
+// Rack de guitarra amostra a amostra para o motor de baixa latência: pedais de antes do amp (mono), amplificador,
+// caixa e pedais de depois da caixa (estéreo), com os mesmos circuitos do rack do app (amp.ts). Cada classe
+// reproduz o grafo de nós do pedal de lá — mesma ordem, filtros, curvas e valores — para a monitoração ter o
+// timbre da trilha.
 //
 // Não depende do navegador nem do amp.ts (que usa o Web Audio): roda no processo de áudio (electron/host).
 import type { RtPedal, RtRig } from '../lowLatencyProtocol';
-import { AMPS, AmpModel, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from '../ampCircuits';
-import { Curve, GateCurve, curveFn, gateCurveFn, sampleCurve } from './curves';
-import { Biquad, BiquadType, Convolver, Highpass1, Iir3, Param, Shaper, VarBiquad, applyGain } from './dsp';
+import { AMPS, AmpModel, gainPot, magnitude, outGain, powerDrive, toneStackZ } from '../ampCircuits';
+import { Biquad, Highpass1, Iir3, LongConvolver, Param, Shaper, VarBiquad, applyGain, buildInSlices } from './dsp';
+import { Fx, RigEnv, SMOOTH, add, copy, scale, tubeTable } from './base';
+import { RT_PEDALS, makeFx } from './pre';
+import { Reverb, ReverbIr, StereoFx, makePostFx } from './post';
 
-/** Constante de tempo da suavização dos botões (a mesma do `put` do rack do app). */
-const SMOOTH = 0.015;
-
-const expMap = (v: number, a: number, b: number) => a * (b / a) ** v;
-const num = (v: number | undefined, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-
-// ---------- Tabelas das curvas (as mesmas do WaveShaperNode do app) ----------
-
-const tables = new Map<string, Float32Array>();
-const table = (key: string, make: () => Float32Array) => {
-  let t = tables.get(key);
-  if (!t) tables.set(key, (t = make()));
-  return t;
-};
-const clipTable = (k: Curve) => table(k, () => sampleCurve(curveFn(k), 4096));
-const gateTable = (k: GateCurve) => table(`gate:${k}`, () => sampleCurve(gateCurveFn(k), 2048));
-const tubeTable = (k: 'triode' | 'power') => table(`tube:${k}`, () => sampleCurve(k === 'triode' ? triode : powerTube, 4096));
-
-// ---------- Base ----------
-
-/** Um efeito: processa um bloco no lugar; `set` recebe os botões (0..1). */
-abstract class Fx {
-  readonly params: Param[] = [];
-  constructor(protected sr: number, protected B: number) {}
-  protected p(v = 1) {
-    const x = new Param(v);
-    this.params.push(x);
-    return x;
-  }
-  protected vb(type: BiquadType, f: number, q = Math.SQRT1_2, db = 0) {
-    const v = new VarBiquad(this.sr, type, f, q, db);
-    this.params.push(...v.params());
-    return v;
-  }
-  protected bq(type: BiquadType, f: number, q = Math.SQRT1_2, db = 0) {
-    return new Biquad(this.sr, type, f, q, db);
-  }
-  protected clip(k: Curve) {
-    return new Shaper(clipTable(k), this.sr, true);
-  }
-  protected buf() {
-    return new Float64Array(this.B);
-  }
-  tick(k: number) {
-    for (const p of this.params) p.tick(k);
-  }
-  abstract run(b: Float64Array, n: number): void;
-  abstract set(p: number[], snap: boolean): void;
-}
-
-const copy = (src: Float64Array, dst: Float64Array, n: number) => {
-  for (let i = 0; i < n; i++) dst[i] = src[i];
-};
-const add = (dst: Float64Array, src: Float64Array, n: number) => {
-  for (let i = 0; i < n; i++) dst[i] += src[i];
-};
-const scale = (b: Float64Array, n: number, g: number) => {
-  for (let i = 0; i < n; i++) b[i] *= g;
-};
-
-// ---------- Pedais ----------
-
-/** Noise gate (ver noiseGate em amp.ts): envelope retificado → curva de abertura → ataque rápido + release. */
-class Gate extends Fx {
-  private pre = this.p(1);
-  private rect = new Shaper(gateTable('rect'), this.sr);
-  private open = new Shaper(gateTable('open'), this.sr);
-  private clamp = new Shaper(gateTable('clamp'), this.sr);
-  private env = this.bq('lowpass', 150);
-  private fast = this.bq('lowpass', 1 / (2 * Math.PI * 0.001));
-  private rel = this.vb('lowpass', 5);
-  run(b: Float64Array, n: number) {
-    const rel = this.rel;
-    rel.update();
-    const g0 = this.pre.prev, dg = (this.pre.value - g0) / n;
-    for (let i = 0; i < n; i++) {
-      const e = this.env.tick(this.rect.tick(b[i] * (g0 + dg * (i + 1))));
-      const o = this.open.tick(e);
-      b[i] *= this.clamp.tick(this.fast.tick(o) + rel.bq.tick(o));
-    }
-  }
-  set([thr, release]: number[], snap: boolean) {
-    const db = -80 + num(thr, 0.4) * 50;
-    this.pre.set(0.4 / 10 ** (db / 20), snap);
-    this.rel.f.set(1 / (2 * Math.PI * (0.02 + num(release, 0.3) * 0.38)), snap);
-  }
-}
-
-/** Distorção simples (drivePedal): passa-altas → ganho → clipagem → tom → nível. */
-class Drive extends Fx {
-  private h: Biquad;
-  private pre = this.p();
-  private sh: Shaper;
-  private dc = this.bq('highpass', 25);
-  private tone = this.vb('lowpass', 3000);
-  private out = this.p();
-  constructor(sr: number, B: number, hp: number, private range: number, kind: Curve, private toneA: number, private toneB: number, private outScale: number) {
-    super(sr, B);
-    this.h = this.bq('highpass', hp);
-    this.sh = this.clip(kind);
-  }
-  run(b: Float64Array, n: number) {
-    this.h.run(b, n);
-    applyGain(b, n, this.pre);
-    this.sh.run(b, n);
-    this.dc.run(b, n);
-    this.tone.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([drive, t, level]: number[], snap: boolean) {
-    this.pre.set(1 + num(drive, 0.5) * this.range, snap);
-    this.tone.f.set(expMap(num(t, 0.5), this.toneA, this.toneB), snap);
-    this.out.set(this.outScale * num(level, 0.5) * 2, snap);
-  }
-}
-
-interface FeedbackOpts { min: number; range: number; curve: Curve; bassCut: number; hump: [number, number]; toneA: number; toneB: number; out: number }
-
-/** Overdrive com diodos na realimentação (TS808 / SD-1): limpo + parte clipada sem graves. */
-class FeedbackDrive extends Fx {
-  private clean = this.buf();
-  private hp = new Highpass1(this.sr, 720);
-  private pre = this.p();
-  private sh: Shaper;
-  private dc = this.bq('highpass', 30);
-  private bass: Biquad;
-  private hump: Biquad;
-  private tone = this.vb('lowpass', 3000, 0.6);
-  private out = this.p();
-  constructor(sr: number, B: number, private o: FeedbackOpts) {
-    super(sr, B);
-    this.sh = this.clip(o.curve);
-    this.bass = this.bq('lowshelf', 250, 0.7, -o.bassCut);
-    this.hump = this.bq('peaking', o.hump[0], 0.7, o.hump[1]);
-  }
-  run(b: Float64Array, n: number) {
-    copy(b, this.clean, n);
-    this.hp.run(b, n);
-    applyGain(b, n, this.pre);
-    this.sh.run(b, n);
-    scale(b, n, 0.5);
-    add(b, this.clean, n);
-    this.dc.run(b, n);
-    this.bass.run(b, n);
-    this.hump.run(b, n);
-    this.tone.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([drive, t, level]: number[], snap: boolean) {
-    this.pre.set(this.o.min + num(drive, 0.4) * this.o.range, snap);
-    this.tone.f.set(expMap(num(t, 0.5), this.o.toneA, this.o.toneB), snap);
-    this.out.set(this.o.out * num(level, 0.5) * 2, snap);
-  }
-}
-
-/** Overdrive transparente (Klon): limpo de banda cheia + sujo de germânio, cruzados pelo ganho. */
-class TransparentDrive extends Fx {
-  private cleanBuf = this.buf();
-  private clean = this.p();
-  private hp = new Highpass1(this.sr, 250);
-  private pre = this.p();
-  private sh = this.clip('germ');
-  private lp = this.bq('lowpass', 6500);
-  private dirty = this.p();
-  private mid = this.bq('peaking', 1000, 0.8, 0.5);
-  private treble = this.vb('highshelf', 1500);
-  private dc = this.bq('highpass', 30);
-  private out = this.p();
-  run(b: Float64Array, n: number) {
-    copy(b, this.cleanBuf, n);
-    applyGain(this.cleanBuf, n, this.clean);
-    this.hp.run(b, n);
-    applyGain(b, n, this.pre);
-    this.sh.run(b, n);
-    this.lp.run(b, n);
-    applyGain(b, n, this.dirty);
-    add(b, this.cleanBuf, n);
-    this.mid.run(b, n);
-    this.treble.run(b, n);
-    this.dc.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([gain, tr, level]: number[], snap: boolean) {
-    const g = num(gain, 0.35);
-    this.clean.set(1 - g * 0.5, snap);
-    this.pre.set(1 + g * 50, snap);
-    this.dirty.set(0.1 + g * 0.35, snap);
-    this.treble.db.set((num(tr, 0.5) - 0.5) * 20, snap);
-    this.out.set(0.5 * num(level, 0.55) * 2, snap);
-  }
-}
-
-/** Distorção Preta (RAT). */
-class BlackDist extends Fx {
-  private hp = new Highpass1(this.sr, 60);
-  private emph = this.bq('peaking', 1000, 0.6, 3);
-  private pre = this.p();
-  private sh = this.clip('diode');
-  private dc = this.bq('highpass', 30);
-  private flt = this.vb('lowpass', 3000, 0.5);
-  private out = this.p();
-  run(b: Float64Array, n: number) {
-    this.hp.run(b, n);
-    this.emph.run(b, n);
-    applyGain(b, n, this.pre);
-    this.sh.run(b, n);
-    this.dc.run(b, n);
-    this.flt.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([dist, f, vol]: number[], snap: boolean) {
-    this.pre.set(2 + num(dist, 0.5) ** 2 * 400, snap);
-    this.flt.f.set(expMap(1 - num(f, 0.4), 600, 14000), snap);
-    this.out.set(0.3 * num(vol, 0.5) * 2, snap);
-  }
-}
-
-/** Distorção Britânica (amp num pedal): dois estágios assimétricos e médios. */
-class BritDist extends Fx {
-  private hp = new Highpass1(this.sr, 90);
-  private g1 = this.p();
-  private s1 = this.clip('asym');
-  private between = this.bq('lowpass', 5500);
-  private g2 = this.p();
-  private s2 = this.clip('soft');
-  private dc = this.bq('highpass', 30);
-  private mid = this.bq('peaking', 750, 0.8, 4);
-  private tone = this.vb('highshelf', 2200);
-  private cut = this.bq('lowpass', 7000);
-  private out = this.p();
-  run(b: Float64Array, n: number) {
-    this.hp.run(b, n);
-    applyGain(b, n, this.g1);
-    this.s1.run(b, n);
-    this.between.run(b, n);
-    applyGain(b, n, this.g2);
-    this.s2.run(b, n);
-    this.dc.run(b, n);
-    this.mid.run(b, n);
-    this.tone.run(b, n);
-    this.cut.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([gain, t, level]: number[], snap: boolean) {
-    const g = num(gain, 0.5);
-    this.g1.set(1.5 + g * 12, snap);
-    this.g2.set(1 + g * 6, snap);
-    this.tone.db.set((num(t, 0.5) - 0.5) * 18, snap);
-    this.out.set(0.32 * num(level, 0.5) * 2, snap);
-  }
-}
-
-/** Distorção Metal (MT-2): dois estágios duros e EQ ativo. */
-class MetalDist extends Fx {
-  private hp = new Highpass1(this.sr, 100);
-  private g1 = this.p();
-  private s1 = this.clip('hard');
-  private between = this.bq('lowpass', 6000);
-  private g2 = this.p();
-  private s2 = this.clip('diode');
-  private dc = this.bq('highpass', 30);
-  private low = this.bq('lowshelf', 120, 0.7, 6);
-  private mid = this.vb('peaking', 800, 0.9);
-  private high = this.vb('highshelf', 3000);
-  private fizz = this.bq('lowpass', 8000, 0.7);
-  private out = this.p();
-  run(b: Float64Array, n: number) {
-    this.hp.run(b, n);
-    applyGain(b, n, this.g1);
-    this.s1.run(b, n);
-    this.between.run(b, n);
-    applyGain(b, n, this.g2);
-    this.s2.run(b, n);
-    this.dc.run(b, n);
-    this.low.run(b, n);
-    this.mid.run(b, n);
-    this.high.run(b, n);
-    this.fizz.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([drive, m, h, level]: number[], snap: boolean) {
-    const d = num(drive, 0.6);
-    this.g1.set(5 + d * 40, snap);
-    this.g2.set(2 + d * 10, snap);
-    this.mid.db.set((num(m, 0.3) - 0.5) * 30, snap);
-    this.high.db.set((num(h, 0.55) - 0.5) * 24, snap);
-    this.out.set(0.22 * num(level, 0.5) * 2, snap);
-  }
-}
-
-/** Fuzz Muff (Big Muff): dois estágios macios e o tom que mistura passa-baixas e passa-altas. */
-class MuffFuzz extends Fx {
-  private hp = new Highpass1(this.sr, 80);
-  private g1 = this.p();
-  private s1 = this.clip('soft');
-  private f1 = this.bq('lowpass', 3500);
-  private g2 = this.p();
-  private s2 = this.clip('soft');
-  private dc = this.bq('highpass', 30);
-  private lp = this.bq('lowpass', 700, 0.5);
-  private hpT = this.bq('highpass', 1400, 0.5);
-  private lg = this.p();
-  private hg = this.p();
-  private out = this.p();
-  private hi = this.buf();
-  run(b: Float64Array, n: number) {
-    this.hp.run(b, n);
-    applyGain(b, n, this.g1);
-    this.s1.run(b, n);
-    this.f1.run(b, n);
-    applyGain(b, n, this.g2);
-    this.s2.run(b, n);
-    this.dc.run(b, n);
-    copy(b, this.hi, n);
-    this.lp.run(b, n);
-    applyGain(b, n, this.lg);
-    this.hpT.run(this.hi, n);
-    applyGain(this.hi, n, this.hg);
-    add(b, this.hi, n);
-    applyGain(b, n, this.out);
-  }
-  set([sus, t, vol]: number[], snap: boolean) {
-    const s = num(sus, 0.6), tt = num(t, 0.5);
-    this.g1.set(3 + s * 30, snap);
-    this.g2.set(2 + s * 12, snap);
-    this.lg.set(1 - tt, snap);
-    this.hg.set(tt * 1.3, snap);
-    this.out.set(0.45 * num(vol, 0.5) * 2, snap);
-  }
-}
-
-/** Fuzz Germânio (Fuzz Face): um estágio assimétrico, limpa tocando leve. */
-class GermFuzz extends Fx {
-  private hp = new Highpass1(this.sr, 40);
-  private pre = this.p();
-  private sh = this.clip('germAsym');
-  private dc = this.bq('highpass', 30);
-  private warm = this.bq('lowpass', 4500, 0.6);
-  private out = this.p();
-  run(b: Float64Array, n: number) {
-    this.hp.run(b, n);
-    applyGain(b, n, this.pre);
-    this.sh.run(b, n);
-    this.dc.run(b, n);
-    this.warm.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([fuzz, vol]: number[], snap: boolean) {
-    this.pre.set(1 + num(fuzz, 0.65) * 60, snap);
-    this.out.set(0.35 * num(vol, 0.5) * 2, snap);
-  }
-}
-
-const EQ_BANDS = [100, 200, 400, 800, 1600, 3200, 6400];
-
-/** Equalizador gráfico de 7 bandas e volume. */
-class GraphicEq extends Fx {
-  private bands = EQ_BANDS.map((f) => this.vb('peaking', f, 1.4));
-  private level = this.p();
-  run(b: Float64Array, n: number) {
-    for (const x of this.bands) x.run(b, n);
-    applyGain(b, n, this.level);
-  }
-  set(p: number[], snap: boolean) {
-    this.bands.forEach((x, i) => x.db.set((num(p[i], 0.5) - 0.5) * 30, snap));
-    this.level.set(10 ** (((num(p[EQ_BANDS.length], 0.5) - 0.5) * 30) / 20), snap);
-  }
-}
-
-/** Booster limpo: ganho linear e prateleiras. */
-class BoostClean extends Fx {
-  private g = this.p();
-  private ls = this.vb('lowshelf', 120);
-  private hs = this.vb('highshelf', 2500);
-  run(b: Float64Array, n: number) {
-    applyGain(b, n, this.g);
-    this.ls.run(b, n);
-    this.hs.run(b, n);
-  }
-  set([gain, bright, bass]: number[], snap: boolean) {
-    this.g.set(1 + num(gain, 0.4) * 7, snap);
-    this.hs.db.set(num(bright, 0.3) * 10, snap);
-    this.ls.db.set((num(bass, 0.5) - 0.5) * 12, snap);
-  }
-}
-
-/** Booster FET: satura de leve, presença e tom. */
-class BoostFet extends Fx {
-  private hp = new Highpass1(this.sr, 70);
-  private pre = this.p();
-  private sh = this.clip('fet');
-  private dc = this.bq('highpass', 25);
-  private presence = this.bq('peaking', 2800, 0.8, 3);
-  private tone = this.vb('lowpass', 8000, 0.6);
-  private out = this.p();
-  run(b: Float64Array, n: number) {
-    this.hp.run(b, n);
-    applyGain(b, n, this.pre);
-    this.sh.run(b, n);
-    this.dc.run(b, n);
-    this.presence.run(b, n);
-    this.tone.run(b, n);
-    applyGain(b, n, this.out);
-  }
-  set([gain, t, level]: number[], snap: boolean) {
-    this.pre.set(1 + num(gain, 0.45) * 14, snap);
-    this.tone.f.set(expMap(num(t, 0.55), 2500, 14000), snap);
-    this.out.set((num(level, 0.5) * 2) / 1.49, snap);
-  }
-}
-
-function makeFx(id: string, sr: number, B: number): Fx | null {
-  switch (id) {
-    case 'gate': return new Gate(sr, B);
-    case 'eq': return new GraphicEq(sr, B);
-    case 'boostClean': return new BoostClean(sr, B);
-    case 'boostFet': return new BoostFet(sr, B);
-    case 'odGreen': return new FeedbackDrive(sr, B, { min: 12, range: 106, curve: 'soft', bassCut: 9, hump: [720, 4], toneA: 800, toneB: 5000, out: 0.37 });
-    case 'odYellow': return new FeedbackDrive(sr, B, { min: 10, range: 120, curve: 'asym', bassCut: 6, hump: [900, 2], toneA: 1500, toneB: 9000, out: 0.4 });
-    case 'odGold': return new TransparentDrive(sr, B);
-    case 'dist': return new Drive(sr, B, 120, 250, 'hard', 1200, 9000, 0.25);
-    case 'distBlack': return new BlackDist(sr, B);
-    case 'distBrit': return new BritDist(sr, B);
-    case 'distMetal': return new MetalDist(sr, B);
-    case 'fuzz': return new Drive(sr, B, 60, 600, 'asym', 700, 6000, 0.25);
-    case 'fuzzMuff': return new MuffFuzz(sr, B);
-    case 'fuzzGerm': return new GermFuzz(sr, B);
-    default: return null;
-  }
-}
-
-/** Pedais (ids de circuito) que a monitoração de baixa latência já processa. */
-export const RT_PEDALS = new Set([
-  'gate', 'eq', 'boostClean', 'boostFet', 'odGreen', 'odYellow', 'odGold',
-  'dist', 'distBlack', 'distBrit', 'distMetal', 'fuzz', 'fuzzMuff', 'fuzzGerm',
-]);
+export { RT_PEDALS };
+/** Pedais de depois da caixa que a monitoração processa (todos os do app). */
+export const RT_POST = new Set(['chorus', 'phaser', 'flanger', 'vibrato', 'rotary', 'tremolo', 'delay', 'reverb']);
 
 /** Pedal com chave liga/desliga: mistura seco/processado com a mesma suavização (sem estalo). */
 class Slot {
@@ -452,8 +22,9 @@ class Slot {
   constructor(readonly id: string, readonly fx: Fx, B: number) {
     this.dry = new Float64Array(B);
   }
-  set(st: RtPedal, snap: boolean) {
+  set(st: RtPedal, snap: boolean, env: RigEnv) {
     this.mix.set(st.on ? 1 : 0, snap);
+    this.fx.env = env;
     this.fx.set(st.p, snap);
   }
   run(b: Float64Array, n: number, k: number) {
@@ -588,8 +159,8 @@ class Amp extends Fx {
 
 /** Caixa A e B (convolução com os IRs) misturadas, cortes de grave/agudo e mistura com o sinal sem caixa. */
 class Cab extends Fx {
-  private a: Convolver | null = null;
-  private b: Convolver | null = null;
+  private a: LongConvolver | null = null;
+  private b: LongConvolver | null = null;
   private gA = this.p(1);
   private gB = this.p(0);
   private wetG = this.p(1);
@@ -598,13 +169,36 @@ class Cab extends Fx {
   private lp: VarBiquad;
   private dry = this.buf();
   private wb = this.buf();
+  private building: { cancel(): void } | null = null;
+  key = '';
   constructor(sr: number, B: number) {
     super(sr, B);
     this.lp = this.vb('lowpass', (sr / 2) * 0.95, 0.707);
   }
-  setIr(a: Float32Array | null, b: Float32Array | null) {
-    this.a = a ? new Convolver(a, this.B) : null;
-    this.b = b ? new Convolver(b, this.B) : null;
+  /** Monta as convoluções aos poucos (IRs de até 1 s) e troca quando prontas; `now` = na hora (testes). */
+  setIr(key: string, a: Float32Array | null, b: Float32Array | null, onReady: () => void, now = false) {
+    this.building?.cancel();
+    const B = this.B;
+    function* both() {
+      const ca = a ? yield* LongConvolver.build(a, B) : null;
+      const cb = b ? yield* LongConvolver.build(b, B) : null;
+      return [ca, cb] as const;
+    }
+    const done = ([ca, cb]: readonly [LongConvolver | null, LongConvolver | null]) => {
+      this.building = null;
+      this.a = ca;
+      this.b = cb;
+      this.key = key;
+      onReady();
+    };
+    if (now) {
+      const g = both();
+      for (;;) {
+        const r = g.next();
+        if (r.done) return done(r.value);
+      }
+    }
+    this.building = buildInSlices(both(), done);
   }
   get loaded() {
     return !!(this.a || this.b);
@@ -624,13 +218,15 @@ class Cab extends Fx {
   run(x: Float64Array, n: number) {
     if (!this.a && !this.b) return;
     copy(x, this.dry, n);
+    x.fill(0);
     const w = this.wb;
     if (this.a) {
-      this.a.run(this.dry, x);
+      this.a.run(this.dry, x, n);
       applyGain(x, n, this.gA);
-    } else x.fill(0);
+    }
     if (this.b) {
-      this.b.run(this.dry, w);
+      w.fill(0);
+      this.b.run(this.dry, w, n);
       applyGain(w, n, this.gB);
       add(x, w, n);
     }
@@ -642,18 +238,79 @@ class Cab extends Fx {
   }
 }
 
+// ---------- Pedais estéreo ----------
+
+/** Pedal de depois da caixa com chave liga/desliga (mistura seco/processado nos dois canais). */
+class StereoSlot {
+  private mix = new Param(0);
+  private dl: Float64Array;
+  private dr: Float64Array;
+  constructor(readonly id: string, readonly fx: StereoFx, B: number) {
+    this.dl = new Float64Array(B);
+    this.dr = new Float64Array(B);
+  }
+  set(st: RtPedal, snap: boolean, env: RigEnv) {
+    this.mix.set(st.on ? 1 : 0, snap);
+    this.fx.env = env;
+    this.fx.set(st.p, snap);
+  }
+  run(L: Float64Array, R: Float64Array, n: number, k: number) {
+    this.mix.tick(k);
+    const m0 = this.mix.prev, m1 = this.mix.value;
+    if (m0 === 0 && m1 === 0) return;
+    this.fx.tick(k);
+    if (m0 === 1 && m1 === 1) return this.fx.run(L, R, n);
+    copy(L, this.dl, n);
+    copy(R, this.dr, n);
+    this.fx.run(L, R, n);
+    const d = (m1 - m0) / n;
+    for (let i = 0; i < n; i++) {
+      const m = m0 + d * (i + 1);
+      L[i] = L[i] * m + this.dl[i] * (1 - m);
+      R[i] = R[i] * m + this.dr[i] * (1 - m);
+    }
+  }
+}
+
 // ---------- Rack ----------
 
+/** Reaproveita os slots que continuam com o mesmo circuito (mantém o estado dos filtros e dos ecos). */
+function syncSlots<S extends { id: string; set(st: RtPedal, snap: boolean, env: RigEnv): void }>(
+  old: S[],
+  want: RtPedal[],
+  make: (id: string) => S | null,
+  snap: boolean,
+  env: RigEnv,
+): S[] {
+  const byId = new Map(old.map((s) => [s.id, s]));
+  const out: S[] = [];
+  for (const st of want) {
+    let s = byId.get(st.id);
+    if (!s) {
+      const made = make(st.id);
+      if (!made) continue;
+      s = made;
+      s.set(st, true, env);
+      // pedal novo que já chega ligado entra com o mix suave a partir de 0
+      if (!snap && st.on) s.set({ ...st, on: false }, true, env);
+    }
+    s.set(st, snap, env);
+    out.push(s);
+  }
+  return out;
+}
+
 /**
- * O rack inteiro (mono): pedais de antes do amp na ordem do app → amp → caixa. Os pedais de depois da caixa
- * (modulação, delay, reverb) e os que ainda não foram portados passam direto.
+ * O rack inteiro: pedais de antes do amp (mono, na ordem do app) → amp → caixa → pedais de depois da caixa
+ * (estéreo). Os IRs (caixas e reverb) chegam prontos da interface e são montados aos poucos.
  */
 export class RtRigProcessor {
   private slots: Slot[] = [];
+  private post: StereoSlot[] = [];
   private amp: Amp | null = null;
   private cab: Cab;
-  private irKey = '';
   private rig: RtRig | null = null;
+  private reverbIr: ReverbIr | null = null;
   private k: number;
   private first = true;
   constructor(private sr: number, private B: number) {
@@ -670,51 +327,70 @@ export class RtRigProcessor {
     }
     const snap = this.first;
     this.first = false;
-    // pedais: reaproveita os que continuam com o mesmo circuito (mantém o estado dos filtros)
-    const old = new Map(this.slots.map((s) => [s.id, s]));
-    this.slots = [];
-    for (const st of r.pedals) {
-      let s = old.get(st.id);
-      if (!s) {
-        const fx = makeFx(st.id, this.sr, this.B);
-        if (!fx) continue;
-        s = new Slot(st.id, fx, this.B);
-        s.set(st, true);
-        // pedal novo que já chega ligado entra com o mix suave a partir de 0
-        if (!snap && st.on) s.set({ ...st, on: false }, true);
-      }
-      s.set(st, snap);
-      this.slots.push(s);
-    }
+    const env: RigEnv = { bpm: r.bpm, song: r.song };
+    this.slots = syncSlots(this.slots, r.pedals, (id) => {
+      const fx = makeFx(id, this.sr, this.B);
+      return fx ? new Slot(id, fx, this.B) : null;
+    }, snap, env);
+    this.post = syncSlots(this.post, r.post, (id) => {
+      const fx = makePostFx(id, this.sr, this.B);
+      return fx ? new StereoSlot(id, fx, this.B) : null;
+    }, snap, env);
     const model = r.amp ? AMPS.find((a) => a.id === r.amp) ?? null : null;
     if (model !== this.amp?.model) {
       this.amp = model ? new Amp(this.sr, this.B, model) : null;
       this.amp?.setKnobs(r.knobs, true);
     } else this.amp?.setKnobs(r.knobs, snap);
     if (r.cab) this.cab.setCab(r.cab, snap);
+    this.applyReverbIr();
   }
 
   /** IRs das caixas (já na taxa da placa e com o volume ajustado pelo app). */
-  setIr(key: string, a: Float32Array | null, b: Float32Array | null) {
-    this.irKey = key;
-    this.cab.setIr(a, b);
-    if (this.rig?.cab) this.cab.setCab(this.rig.cab, true);
+  setIr(key: string, a: Float32Array | null, b: Float32Array | null, now = false) {
+    this.cab.setIr(key, a, b, () => {
+      if (this.rig?.cab) this.cab.setCab(this.rig.cab, true);
+    }, now);
   }
 
-  /** Processa um bloco de B amostras no lugar. */
-  process(b: Float64Array) {
+  /** IR do reverb (estéreo, na taxa da placa, já com a normalização do ConvolverNode). */
+  setReverbIr(ir: ReverbIr, now = false) {
+    this.reverbIr = ir;
+    this.applyReverbIr(now);
+  }
+
+  private applyReverbIr(now = false) {
+    const fx = this.post.find((s) => s.id === 'reverb')?.fx as Reverb | undefined;
+    const ir = this.reverbIr;
+    if (!fx || !ir || fx.irKey !== ir.key || fx.loadedKey === ir.key) return;
+    if (now) fx.setIrNow(ir);
+    else fx.setIr(ir);
+  }
+
+  /** Chave da IR de reverb que os botões pedem agora (null = reverb desligado ou sem rack). */
+  get reverbWant(): string | null {
+    const s = this.post.find((x) => x.id === 'reverb');
+    return s ? (s.fx as Reverb).irKey : null;
+  }
+
+  /** Processa um bloco de B amostras: entra mono em `L`, sai estéreo em `L` e `R`. */
+  process(L: Float64Array, R: Float64Array) {
     const r = this.rig;
-    if (!r) return;
     const n = this.B, k = this.k;
-    for (const s of this.slots) s.run(b, n, k);
+    if (!r) {
+      R.set(L);
+      return;
+    }
+    for (const s of this.slots) s.run(L, n, k);
     if (this.amp) {
       this.amp.tick(k);
-      this.amp.run(b, n);
+      this.amp.run(L, n);
     }
-    if (r.cab && r.cab.irKey === this.irKey && this.cab.loaded) {
+    if (r.cab && r.cab.irKey === this.cab.key && this.cab.loaded) {
       this.cab.tick(k);
-      this.cab.run(b, n);
+      this.cab.run(L, n);
     }
+    R.set(L);
+    for (const s of this.post) s.run(L, R, n, k);
   }
 }
 
@@ -724,17 +400,22 @@ export class RtRigProcessor {
  */
 export function warmupRig(sr: number, B: number) {
   const p = new RtRigProcessor(sr, B);
-  const ir = new Float32Array(Math.round(0.08 * sr));
+  const ir = new Float32Array(Math.round(0.3 * sr));
   ir[0] = 1;
-  p.setIr('warm', ir, ir);
+  ir[ir.length - 1] = 0.1;
+  p.setIr('warm', ir, ir, true);
   const knobs = { gain: 0.5, bass: 0.5, mid: 0.5, treble: 0.5, presence: 0.5, master: 0.5 };
-  const pedals = [...RT_PEDALS].map((id) => ({ id, on: true, p: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] }));
-  const b = new Float64Array(B);
+  const on = (id: string) => ({ id, on: true, p: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] });
+  const pedals = [...RT_PEDALS].map(on);
+  const post = [...RT_POST].map(on);
+  const L = new Float64Array(B), R = new Float64Array(B);
   for (const m of AMPS) {
-    p.setRig({ pedals, amp: m.id, knobs, cab: { mix: 0.5, blend: 0.5, low: 80, high: 8000, irKey: 'warm' } });
+    p.setRig({ pedals, post, amp: m.id, knobs, bpm: 120, song: null, cab: { mix: 0.5, blend: 0.5, low: 80, high: 8000, irKey: 'warm' } });
+    const want = p.reverbWant;
+    if (want) p.setReverbIr({ key: want, l: ir, r: ir }, true);
     for (let k = 0; k < 40; k++) {
-      for (let i = 0; i < B; i++) b[i] = Math.sin(k * B + i) * 0.1;
-      p.process(b);
+      for (let i = 0; i < B; i++) L[i] = Math.sin(k * B + i) * 0.1;
+      p.process(L, R);
     }
   }
 }

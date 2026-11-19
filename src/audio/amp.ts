@@ -3,6 +3,11 @@
 import { AmpRig, MusicKey, PedalState } from '../types';
 import { workletsReady } from './master';
 import { Curve, GateCurve, curveFn, gateCurveFn, sampleCurve } from './rt/curves';
+import {
+  COMP_REF, EQ_BANDS, HARMONY_DEF, HARMONY_STEPS, KEY_NAMES, REVERB_TYPES, ROTORS, ReverbType, compSettings, delayDiv, delaySeconds,
+  expMap, freeDelay, harmonyKey, harmonyStep, lfoHarmonics, pitchRatio, pitchSemis, reverbStep, reverbType, tremCurveFn, wahFreq,
+} from './rt/pedalMath';
+export { pitchSemis };
 import { AMPS, AmpModel, ToneStackParts, gainPot, magnitude, outGain, powerDrive, powerTube, toneStackZ, triode } from './ampCircuits';
 
 // ---------- Definições ----------
@@ -36,46 +41,8 @@ export interface PedalModel {
   params: PedalDef['params'];
 }
 
-/** Tons do harmonizador e intervalos (em graus da escala: 2 = terça, 4 = quinta, 7 = oitava). */
-const KEY_NAMES = ['Dó', 'Dó#', 'Ré', 'Ré#', 'Mi', 'Fá', 'Fá#', 'Sol', 'Sol#', 'Lá', 'Lá#', 'Si'];
-const HARMONY_STEPS = [
-  { name: '-8ª', deg: -7 }, { name: '-6ª', deg: -5 }, { name: '-5ª', deg: -4 }, { name: '-4ª', deg: -3 }, { name: '-3ª', deg: -2 },
-  { name: '+3ª', deg: 2 }, { name: '+4ª', deg: 3 }, { name: '+5ª', deg: 4 }, { name: '+6ª', deg: 5 }, { name: '+8ª', deg: 7 },
-];
-const harmonyKey = (v: number) => Math.min(11, Math.round(v * 11));
-const harmonyStep = (v: number) => Math.min(HARMONY_STEPS.length - 1, Math.round(v * (HARMONY_STEPS.length - 1)));
-const HARMONY_DEF = 5 / (HARMONY_STEPS.length - 1); // terça acima
-
-/** Botão de intervalo do pedal de pitch (0..1) → semitons inteiros de -12 a +12. */
-export const pitchSemis = (v: number) => Math.round(v * 24 - 12);
 const fmtSemis = (s: number) => (s === 12 ? '+8ª' : s === -12 ? '-8ª' : `${s > 0 ? '+' : ''}${s} st`);
 
-/** Tipos do pedal de reverb (ordem do botão Tipo) e a faixa de tempo (s) de cada um. */
-const REVERB_TYPES = [
-  { id: 'spring', name: 'Mola', min: 0.8, max: 3.5 },
-  { id: 'plate', name: 'Placa', min: 0.6, max: 5 },
-  { id: 'shimmer', name: 'Shimmer', min: 2, max: 9 },
-  { id: 'hall', name: 'Hall', min: 1.5, max: 8 },
-  { id: 'room', name: 'Sala', min: 0.8, max: 5 },
-] as const;
-type ReverbType = (typeof REVERB_TYPES)[number]['id'];
-const reverbType = (v: number) => Math.min(REVERB_TYPES.length - 1, Math.round(v * (REVERB_TYPES.length - 1)));
-
-/** Figuras do delay sincronizado (em tempos de semínima). */
-const DELAY_DIVS = [
-  { name: '1/16', beats: 0.25 },
-  { name: '1/8 tercina', beats: 1 / 3 },
-  { name: '1/16 pont.', beats: 0.375 },
-  { name: '1/8', beats: 0.5 },
-  { name: '1/4 tercina', beats: 2 / 3 },
-  { name: '1/8 pont.', beats: 0.75 },
-  { name: '1/4', beats: 1 },
-  { name: '1/4 pont.', beats: 1.5 },
-  { name: '1/2', beats: 2 },
-];
-const delayDiv = (v: number) => DELAY_DIVS[Math.min(DELAY_DIVS.length - 1, Math.round(v * (DELAY_DIVS.length - 1)))];
-/** Tempo livre do delay (s): normal 60 ms a 1 s; reverso, trechos de 0,15 a 1,5 s. */
-const freeDelay = (v: number, reverse: boolean) => (reverse ? 0.15 + v * 1.35 : 0.06 + v * 0.94);
 function delayTimeLabel(v: number, all: number[]) {
   if ((all[7] ?? 0) >= 0.5) return delayDiv(v).name;
   return `${Math.round(freeDelay(v, (all[6] ?? 0) >= 0.5) * 1000)} ms`;
@@ -86,8 +53,6 @@ function group(id: string, name: string, models: PedalModel[]): PedalDef {
   return { id, name, color: models[0].color, post: false, params: models[0].params, models };
 }
 
-/** Bandas do equalizador gráfico (uma oitava entre elas, como nos pedais de EQ de 7 bandas). */
-const EQ_BANDS = [100, 200, 400, 800, 1600, 3200, 6400];
 const fmtHz = (f: number) => (f >= 1000 ? `${(f / 1000).toString().replace('.', ',')}k` : `${f}`);
 const fmtDb = (db: number) => `${db > 0.05 ? '+' : ''}${db.toFixed(1).replace('.', ',')} dB`;
 
@@ -428,7 +393,6 @@ function lfo(ctx: BaseAudioContext) {
   return { o, depth };
 }
 
-const expMap = (v: number, a: number, b: number) => a * (b / a) ** v;
 
 function drivePedal(ctx: BaseAudioContext, put: Put, hp: number, range: number, kind: Curve, toneA: number, toneB: number, outScale: number): Fx {
   const h = filter(ctx, 'highpass', hp);
@@ -612,7 +576,7 @@ function migrateDelay(p: number[], d: PedalDef): number[] {
  * Osciladores com a mesma frequência, ligados no mesmo instante, ficam travados com essa defasagem.
  */
 function phasedWave(ctx: BaseAudioContext, phase: number, triangle: boolean) {
-  const harmonics = triangle ? [1, 0, -1 / 9, 0, 1 / 25, 0, -1 / 49] : [1];
+  const harmonics = lfoHarmonics(triangle);
   const real = new Float32Array(harmonics.length + 1), imag = new Float32Array(harmonics.length + 1);
   harmonics.forEach((a, i) => {
     const k = i + 1, ph = 2 * Math.PI * phase * k;
@@ -679,12 +643,6 @@ function chorusPedal(ctx: BaseAudioContext, put: Put): Fx {
 }
 
 // ---------- Rotary ----------
-
-/** Velocidades (Hz) e inércia (constante de tempo, s) de cada rotor: a corneta é leve, o tambor pesado. */
-const ROTORS = {
-  horn: { slow: 0.83, fast: 6.7, tau: 0.35, xover: 'highpass' as const, doppler: 0.00035, am: 0.45, mics: 0.25 },
-  drum: { slow: 0.67, fast: 5.8, tau: 1.3, xover: 'lowpass' as const, doppler: 0.00012, am: 0.3, mics: 0.25 },
-};
 
 /**
  * Rotary (caixa Leslie): pré com leve saturação valvulada → divisor em 800 Hz → corneta (agudos) e tambor
@@ -817,9 +775,6 @@ function rotaryPedal(ctx: BaseAudioContext, put: Put): RotaryFx {
 
 // ---------- Compressor ----------
 
-/** Nível de referência de uma palhetada (dBFS) usado na compensação automática de volume. */
-const COMP_REF = -12;
-
 /**
  * Compressor de pedal com quatro botões e dois caracteres:
  * - Sustain: limiar e razão juntos (mais sustain = comprime mais cedo e mais forte);
@@ -833,22 +788,24 @@ function compPedal(ctx: BaseAudioContext, put: Put): Fx {
   const inp = ctx.createGain(), out = ctx.createGain(), dry = ctx.createGain(), wet = ctx.createGain();
   const c = ctx.createDynamicsCompressor();
   const tone = filter(ctx, 'lowpass', 20000, 0.5);
-  inp.connect(dry).connect(out);
+  // o compressor do navegador atrasa o sinal (pré-atraso de 6 ms): o limpo do Blend é atrasado igual, senão
+  // a soma dos dois vira um filtro pente
+  const align = ctx.createDelay(0.05);
+  align.delayTime.value = Math.floor(0.006 * ctx.sampleRate) / ctx.sampleRate;
+  inp.connect(align).connect(dry).connect(out);
   inp.connect(c).connect(tone).connect(wet).connect(out);
   return {
     in: inp,
     out: out,
     set: ([sus, lvl, att, blend, mode]) => {
       const studio = (mode ?? 0) >= 0.5;
-      const s = sus ?? 0.5;
-      const threshold = studio ? -6 - s * 34 : -10 - s * 40;
-      const ratio = studio ? 2 + s * 4 : 6 + s * 14;
+      const { threshold, ratio, knee, attack, release, tone: toneHz } = compSettings(sus ?? 0.5, att ?? 0.35, studio);
       put(c.threshold, threshold);
       put(c.ratio, ratio);
-      put(c.knee, studio ? 12 : 3);
-      put(c.attack, expMap(att ?? 0.35, 0.001, 0.04));
-      put(c.release, studio ? 0.3 : 0.1);
-      put(tone.frequency, studio ? 20000 : 6500);
+      put(c.knee, knee);
+      put(c.attack, attack);
+      put(c.release, release);
+      put(tone.frequency, toneHz);
       // compensação: o quanto uma palhetada no nível de referência é reduzida. O compressor do Web Audio já
       // aplica sozinho um ganho de ~60% da redução de um sinal em 0 dBFS; aqui entra só a diferença.
       const slope = 1 - 1 / ratio;
@@ -927,13 +884,7 @@ const tremCurves = new Map<number, Float32Array<ArrayBuffer>>();
 function tremCurve(step: number) {
   let c = tremCurves.get(step);
   if (!c) {
-    const k = 0.3 + (step / 20) ** 2 * 30;
-    const n = 1024;
-    c = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = (i / (n - 1)) * 2 - 1;
-      c[i] = Math.tanh(k * x) / Math.tanh(k);
-    }
+    c = sampleCurve(tremCurveFn(step), 1024);
     tremCurves.set(step, c);
   }
   return c;
@@ -1268,7 +1219,7 @@ function concertIR(sr: number, seconds: number): Float32Array[] {
 
 const reverbCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
 /** IR do reverb (em cache): `type` = tipo; `step` = tempo quantizado (0..15) para não recalcular a cada movimento. */
-function reverbIR(ctx: BaseAudioContext, type: ReverbType, step: number): AudioBuffer {
+export function reverbIR(ctx: BaseAudioContext, type: ReverbType, step: number): AudioBuffer {
   let cache = reverbCache.get(ctx);
   if (!cache) reverbCache.set(ctx, (cache = new Map()));
   const key = `${type}|${step}`;
@@ -1329,7 +1280,7 @@ function reverbPedal(ctx: BaseAudioContext, put: Put): Fx {
       put(wet.gain, mix * 1.2);
       const type = REVERB_TYPES[reverbType(kind ?? 0)].id;
       put(loop.gain, type === 'shimmer' ? 0.32 : 0);
-      const step = Math.round(time * 15);
+      const step = reverbStep(time);
       const k = `${type}|${step}`;
       if (k === key) return;
       key = k;
@@ -1511,7 +1462,7 @@ function delayPedal(ctx: BaseAudioContext, put: Put): Fx {
         }
       }
       // sincronizado: a figura no andamento da música (no máximo 2,4 s, o limite da linha de atraso)
-      const seconds = (sync ?? 0) >= 0.5 ? Math.min(2.4, (delayDiv(time).beats * 60) / bpm) : freeDelay(time, reverse);
+      const seconds = delaySeconds(time, (sync ?? 0) >= 0.5, reverse, bpm);
       cur!.net.set(seconds, rep, mod ?? 0, put);
     },
   };
@@ -1560,7 +1511,7 @@ function pitchPedalHQ(ctx: BaseAudioContext, put: Put): Fx {
     in: inp,
     out,
     set: ([interval, fine, mix]) => {
-      put(node.parameters.get('ratio')!, 2 ** ((pitchSemis(interval ?? 1) + ((fine ?? 0.5) - 0.5)) / 12));
+      put(node.parameters.get('ratio')!, pitchRatio(interval ?? 1, fine ?? 0.5));
       const m = mix ?? 0.5;
       put(dry.gain, Math.min(1, 2 * (1 - m)));
       put(wet.gain, Math.min(1, 2 * m));
@@ -1603,7 +1554,7 @@ function pitchPedal(ctx: BaseAudioContext, put: Put): Fx {
     out,
     oscs: [base, ...loops],
     set: ([interval, fine, mix]) => {
-      const ratio = 2 ** ((pitchSemis(interval ?? 1) + ((fine ?? 0.5) - 0.5)) / 12);
+      const ratio = pitchRatio(interval ?? 1, fine ?? 0.5);
       // velocidade da rampa: o atraso muda (1 - ratio) segundos por segundo
       const rate = (saw.duration * Math.abs(1 - ratio)) / PITCH_WINDOW;
       for (const s of loops) put(s.playbackRate, rate);
@@ -1628,7 +1579,6 @@ function pitchPedal(ctx: BaseAudioContext, put: Put): Fx {
  * a força do sinal à frequência: a palhetada abre o filtro e ele fecha conforme a nota morre.
  */
 /** Frequência do wah (Hz) para uma posição 0..1 do pedal; no modo Auto a posição é só o ponto de partida. */
-const wahFreq = (pos: number, auto: boolean) => expMap(pos, 350, 2400) * (auto ? 0.6 : 1);
 
 /** Posição do wah vinda da automação: número = posição fixa (parado no cursor); 'scheduled' = a automação agenda a curva. */
 export type WahOverride = number | 'scheduled' | undefined;

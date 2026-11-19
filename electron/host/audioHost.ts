@@ -35,9 +35,23 @@ let gain = 0;
 
 // rack da trilha: o último pedido fica guardado para remontar quando a placa reabre (outra taxa/buffer)
 let rig: RtRig | null = null;
-let ir: Extract<HostRequest, { type: 'ir' }> | null = null;
+let ir: { key: string; a: Float32Array | null; b: Float32Array | null } | null = null;
+let reverb: { key: string; l: Float32Array; r: Float32Array } | null = null;
+/** IRs chegando em pedaços (ver 'chunk' no protocolo) */
+const parts = new Map<string, Float32Array>();
+const take = (id: string | null) => {
+  if (!id) return null;
+  const a = parts.get(id) ?? null;
+  parts.delete(id);
+  return a;
+};
+/** Pedaços de envios do mesmo tipo que a interface abandonou no meio (chegou um mais novo). */
+const dropStale = (prefix: string) => {
+  for (const k of [...parts.keys()]) if (k.startsWith(prefix)) parts.delete(k);
+};
 let proc: RtRigProcessor | null = null;
-let work = new Float64Array(0);
+let workL = new Float64Array(0);
+let workR = new Float64Array(0);
 
 // medição
 let inChannels = 2;
@@ -141,7 +155,9 @@ function start(req: Extract<HostRequest, { type: 'start' }>) {
   proc = new RtRigProcessor(rate, block);
   if (ir) proc.setIr(ir.key, ir.a, ir.b);
   proc.setRig(rig);
-  work = new Float64Array(block);
+  if (reverb) proc.setReverbIr(reverb);
+  workL = new Float64Array(block);
+  workR = new Float64Array(block);
   budgetMs = (block / rate) * 1000;
   late = 0;
   lastCall = 0;
@@ -170,7 +186,7 @@ function render(pcm: Buffer, block: number, outChannels: number) {
   const out = outChannels === inChannels ? inp : new Float32Array(block * outChannels);
   const ch = inChannels < 2 ? 0 : channel;
   const n = Math.min(block, Math.floor(inp.length / inChannels));
-  const w = work;
+  const w = workL, wr = workR;
   for (let i = 0; i < n; i++) {
     const a = inp[i * inChannels];
     const b = inChannels > 1 ? inp[i * inChannels + 1] : a;
@@ -181,13 +197,16 @@ function render(pcm: Buffer, block: number, outChannels: number) {
     w[i] = x + (i & 1 ? 1e-18 : -1e-18);
   }
   // o rack trabalha em blocos do tamanho combinado com o driver (a convolução da caixa depende disso)
-  if (proc && n === w.length) proc.process(w);
+  if (proc && n === w.length) proc.process(w, wr);
+  else wr.set(w);
+  const clip = (y: number) => (y > 1 ? 1 : y < -1 ? -1 : y);
   for (let i = 0; i < n; i++) {
     // rampa curta no ganho: ligar/desligar a monitoração sem estalo
     gain += (targetGain - gain) * 0.005;
-    const y = w[i] * gain;
-    const o = y > 1 ? 1 : y < -1 ? -1 : y;
-    for (let c = 0; c < outChannels; c++) out[i * outChannels + c] = o;
+    if (outChannels >= 2) {
+      out[i * outChannels] = clip(w[i] * gain);
+      out[i * outChannels + 1] = clip(wr[i] * gain);
+    } else out[i] = clip(((w[i] + wr[i]) / 2) * gain);
   }
   rt?.write(out === inp ? pcm : Buffer.from(out.buffer));
   const dt = performance.now() - t0;
@@ -218,10 +237,25 @@ function onMessage(m: HostRequest) {
       rig = m.rig;
       proc?.setRig(rig);
       break;
-    case 'ir':
-      ir = m;
-      proc?.setIr(m.key, m.a, m.b);
+    case 'chunk': {
+      let a = parts.get(m.id);
+      if (!a) parts.set(m.id, (a = new Float32Array(m.total)));
+      a.set(m.data, m.offset);
       break;
+    }
+    case 'ir':
+      ir = { key: m.key, a: take(m.a), b: take(m.b) };
+      dropStale('cab');
+      proc?.setIr(ir.key, ir.a, ir.b);
+      break;
+    case 'reverb': {
+      const l = take(m.l), r = take(m.r);
+      dropStale('reverb');
+      if (!l || !r) break;
+      reverb = { key: m.key, l, r };
+      proc?.setReverbIr(reverb);
+      break;
+    }
   }
 }
 
@@ -233,6 +267,8 @@ process.on('message', (m: HostRequest | { type: 'reset' }) => {
     targetGain = gain = 0;
     rig = null;
     ir = null;
+    reverb = null;
+    parts.clear();
     sendStatus();
   } else onMessage(m);
 });

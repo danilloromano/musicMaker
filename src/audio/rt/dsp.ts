@@ -338,3 +338,211 @@ export class Convolver {
     for (let i = 0; i < B; i++) out[i] = re[B + i];
   }
 }
+
+/**
+ * Cauda de uma convolução longa: partições grandes (N amostras), atrasadas 2N. Como o resultado de cada bloco
+ * de entrada só é ouvido N amostras depois de ele ficar completo, a conta (FFT, multiplicações, FFT inversa) é
+ * repartida entre os N/B callbacks seguintes: nenhum bloco de áudio fica com a conta pesada inteira.
+ */
+class TailStage {
+  private M: number;
+  private half: number;
+  private fft: FFT;
+  private Xr: Float32Array[];
+  private Xi: Float32Array[];
+  private xpos = 0;
+  private hist: Float64Array;
+  private fill = 0;
+  private re: Float64Array;
+  private im: Float64Array;
+  private ar: Float64Array;
+  private ai: Float64Array;
+  private job = -1;
+  private S: number;
+  private cur: Float64Array;
+  private next: Float64Array;
+  private outPos = 0;
+  constructor(private Hr: Float32Array[], private Hi: Float32Array[], private N: number, B: number) {
+    this.M = 2 * N;
+    this.half = N;
+    this.fft = new FFT(this.M);
+    const P = Hr.length;
+    this.Xr = Array.from({ length: P }, () => new Float32Array(N + 1));
+    this.Xi = Array.from({ length: P }, () => new Float32Array(N + 1));
+    this.hist = new Float64Array(this.M);
+    this.re = new Float64Array(this.M);
+    this.im = new Float64Array(this.M);
+    this.ar = new Float64Array(N + 1);
+    this.ai = new Float64Array(N + 1);
+    this.S = N / B;
+    this.cur = new Float64Array(N);
+    this.next = new Float64Array(N);
+  }
+  /** Soma em `out` a contribuição da cauda para este bloco e recebe a entrada dele. */
+  run(x: Float64Array, out: Float64Array, n: number) {
+    const N = this.N;
+    if (this.outPos >= N) {
+      const t = this.cur;
+      this.cur = this.next;
+      this.next = t;
+      this.outPos = 0;
+    }
+    const c = this.cur, o = this.outPos;
+    for (let i = 0; i < n; i++) out[i] += c[o + i];
+    this.outPos += n;
+    if (this.job >= 0) {
+      this.step(this.job);
+      this.job = this.job + 1 === this.S ? -1 : this.job + 1;
+    }
+    const h = this.hist;
+    for (let i = 0; i < n; i++) h[N + this.fill + i] = x[i];
+    this.fill += n;
+    if (this.fill >= N) {
+      // bloco completo: a conta começa no próximo callback
+      this.re.set(h);
+      h.copyWithin(0, N);
+      this.fill = 0;
+      this.job = 0;
+    }
+  }
+  private step(k: number) {
+    const P = this.Hr.length, S = this.S, half = this.half;
+    if (k === 0) {
+      this.im.fill(0);
+      this.fft.run(this.re, this.im, false);
+      this.xpos = this.xpos + 1 === P ? 0 : this.xpos + 1;
+      const xr = this.Xr[this.xpos], xi = this.Xi[this.xpos];
+      for (let i = 0; i <= half; i++) {
+        xr[i] = this.re[i];
+        xi[i] = this.im[i];
+      }
+      this.ar.fill(0);
+      this.ai.fill(0);
+    }
+    // multiplicações: nos passos do meio (ou junto com as FFTs, se houver só 2 passos)
+    const macSteps = S >= 3 ? S - 2 : S;
+    const mk = S >= 3 ? k - 1 : k;
+    if (mk >= 0 && mk < macSteps) {
+      const p0 = Math.floor((mk * P) / macSteps), p1 = Math.floor(((mk + 1) * P) / macSteps);
+      const ar = this.ar, ai = this.ai;
+      for (let p = p0; p < p1; p++) {
+        let q = this.xpos - p;
+        if (q < 0) q += P;
+        const xr = this.Xr[q], xi = this.Xi[q], hr = this.Hr[p], hi = this.Hi[p];
+        for (let i = 0; i <= half; i++) {
+          ar[i] += xr[i] * hr[i] - xi[i] * hi[i];
+          ai[i] += xr[i] * hi[i] + xi[i] * hr[i];
+        }
+      }
+    }
+    if (k === S - 1) {
+      const re = this.re, im = this.im, M = this.M;
+      for (let i = 0; i <= half; i++) {
+        re[i] = this.ar[i];
+        im[i] = this.ai[i];
+      }
+      for (let i = 1; i < half; i++) {
+        re[M - i] = re[i];
+        im[M - i] = -im[i];
+      }
+      this.fft.run(re, im, true);
+      for (let i = 0; i < this.N; i++) this.next[i] = re[this.N + i];
+    }
+  }
+}
+
+/**
+ * Convolução de IR longo sem latência e com custo por bloco constante: o começo do IR (2N amostras) em
+ * partições do tamanho do bloco, o resto em partições de N amostras (ver TailStage). Serve para as caixas
+ * (IRs de até 1 s) e para o reverb (até ~9 s).
+ */
+export class LongConvolver {
+  private constructor(private head: Convolver, private tail: TailStage | null) {}
+
+  /**
+   * Monta aos poucos (gerador: cada `yield` é um ponto onde dá para parar e deixar o áudio rodar). As partições
+   * da cauda são FFTs grandes; feitas todas de uma vez travariam o processo por dezenas de ms.
+   */
+  static *build(ir: Float32Array, B: number): Generator<void, LongConvolver> {
+    // partição da cauda: maior para IRs longos (menos partições), sempre ≥ 4 blocos para repartir a conta
+    let N = ir.length > 48000 ? 2048 : 1024;
+    while (N < 4 * B) N *= 2;
+    const H = Math.min(ir.length, 2 * N);
+    const head = new Convolver(ir.subarray(0, H), B);
+    if (ir.length <= H) return new LongConvolver(head, null);
+    const P = Math.ceil((ir.length - H) / N);
+    const fft = new FFT(2 * N);
+    const re = new Float64Array(2 * N), im = new Float64Array(2 * N);
+    const Hr: Float32Array[] = [], Hi: Float32Array[] = [];
+    for (let p = 0; p < P; p++) {
+      re.fill(0);
+      im.fill(0);
+      const s = H + p * N;
+      for (let i = 0; i < N && s + i < ir.length; i++) re[i] = ir[s + i];
+      fft.run(re, im, false);
+      Hr.push(Float32Array.from(re.subarray(0, N + 1)));
+      Hi.push(Float32Array.from(im.subarray(0, N + 1)));
+      yield;
+    }
+    return new LongConvolver(head, new TailStage(Hr, Hi, N, B));
+  }
+
+  /** Monta de uma vez (testes e IRs curtos). */
+  static now(ir: Float32Array, B: number): LongConvolver {
+    const g = LongConvolver.build(ir, B);
+    for (;;) {
+      const r = g.next();
+      if (r.done) return r.value;
+    }
+  }
+
+  /** Convolui um bloco de B amostras de `x` em `out` (não podem ser o mesmo buffer). */
+  run(x: Float64Array, out: Float64Array, n: number) {
+    this.head.run(x, out);
+    this.tail?.run(x, out, n);
+  }
+}
+
+/**
+ * Roda um gerador de montagem em fatias de até `sliceMs`, cedendo a vez entre elas (o callback de áudio roda
+ * no mesmo processo). `cancel()` abandona a montagem (chegou outra mais nova).
+ */
+export function buildInSlices<T>(gen: Generator<void, T>, done: (v: T) => void, sliceMs = 0.3) {
+  let cancelled = false;
+  const tick = () => {
+    if (cancelled) return;
+    const t0 = performance.now();
+    for (;;) {
+      const r = gen.next();
+      if (r.done) return done(r.value);
+      if (performance.now() - t0 > sliceMs) break;
+    }
+    setTimeout(tick, 0);
+  };
+  tick();
+  return { cancel: () => void (cancelled = true) };
+}
+
+/** Linha de atraso com leitura interpolada (como o DelayNode): `read(d)` = amostra de d amostras atrás. */
+export class DelayLine {
+  private buf: Float64Array;
+  private mask: number;
+  private w = 0;
+  constructor(maxSamples: number) {
+    let n = 1;
+    while (n < maxSamples + 4) n <<= 1;
+    this.buf = new Float64Array(n);
+    this.mask = n - 1;
+  }
+  write(x: number) {
+    this.buf[this.w] = x;
+    this.w = (this.w + 1) & this.mask;
+  }
+  /** amostra de `d` amostras atrás (0 = a última escrita; fracionário = interpolação linear, como o DelayNode) */
+  read(d: number) {
+    const pos = this.w - 1 - d;
+    const i = Math.floor(pos), f = pos - i;
+    const a = this.buf[i & this.mask], b = this.buf[(i + 1) & this.mask];
+    return a + (b - a) * f;
+  }
+}
