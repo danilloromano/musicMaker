@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Menu, session, systemPreferences } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, session, systemPreferences } = require('electron');
+const { fork } = require('child_process');
 const path = require('path');
 
 // O app se chamava MusicMaker e os projetos salvos (IndexedDB) moram na pasta de dados com esse nome.
@@ -7,6 +8,32 @@ app.setPath('userData', path.join(app.getPath('appData'), 'MusicMaker'));
 
 // Buffer de captura menor: no Windows a entrada (guitarra) passa de ~10 ms para ~3 ms de atraso.
 app.commandLine.appendSwitch('audio-buffer-size', '128');
+
+/**
+ * Processo de áudio de baixa latência (dist-host/audio-host.cjs, compilado de electron/host/audioHost.ts):
+ * abre a placa pelo ASIO (CoreAudio no Mac) para a monitoração. Fica num processo próprio para que nada da
+ * tela atrase um bloco de áudio. É um processo filho comum (o Electron rodando como Node): no utilityProcess
+ * a DLL nativa do audify trava ao carregar no Windows. As mensagens vão e voltam pelo processo principal.
+ */
+let audioHost = null;
+function startAudioHost() {
+  const file = path.join(__dirname, '..', 'dist-host', 'audio-host.cjs');
+  audioHost = fork(file, [], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+  audioHost.on('message', (m) => {
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send('audio-host', m);
+  });
+  audioHost.on('exit', (code) => {
+    audioHost = null;
+    if (app.isQuitting) return;
+    // caiu (driver travou, placa arrancada no meio): sobe de novo e avisa a interface
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('audio-host', { type: 'status', running: false, deviceId: null, buffer: 0, rate: 0, latencyMs: 0, error: `O processo de áudio parou (código ${code}). Ligue a monitoração de novo.` });
+    }
+    setTimeout(startAudioHost, 1000);
+  });
+}
+
+ipcMain.on('audio-host', (_e, m) => audioHost?.connected && audioHost.send(m));
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -22,8 +49,11 @@ function createWindow() {
       contextIsolation: true,
       // o agendador de áudio usa timers; não pode ser desacelerado em segundo plano
       backgroundThrottling: false,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
+  // cada carregamento (inclusive recarregar) é uma interface nova: a monitoração antiga para
+  win.webContents.on('did-finish-load', () => audioHost?.connected && audioHost.send({ type: 'reset' }));
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) win.loadURL(devUrl);
@@ -81,10 +111,15 @@ app.whenReady().then(() => {
     }
     cb(permission === 'media' || permission === 'midi');
   });
+  startAudioHost();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  app.isQuitting = true;
 });
 
 app.on('window-all-closed', () => {

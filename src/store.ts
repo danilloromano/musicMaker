@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { ExportReport } from './audio/export';
 import type { Analysis } from './audio/analysis';
+import type { HostStatus, LowLatencyDevice } from './audio/lowLatencyProtocol';
 import { Marker, barBeats, Note, Project, Region, SECTION_NAMES, Track, TrackKind, fitFades, regionLen, uid } from './types';
 
 const COLORS = ['#ff7a45', '#38d9c0', '#b98cff', '#ffcf3f', '#ff5fa2', '#5fb4ff', '#9be15d', '#e0b48a'];
@@ -101,6 +102,20 @@ interface State {
   inputMuted: boolean; // aberta, mas o sistema não entrega sinal (dispositivo no mudo)
   monitor: boolean;
 
+  // monitoração de baixa latência (ASIO no Windows, CoreAudio no Mac) — ver audio/lowLatency.ts
+  /** 'system' = pelo áudio do Chromium (~70 ms); 'low' = pelo driver da placa (~10 ms) */
+  monitorEngine: 'system' | 'low';
+  /** o app está rodando no Electron com o processo de áudio (no navegador não há) */
+  llAvailable: boolean;
+  llApi: string;
+  llDevices: LowLatencyDevice[];
+  llDeviceId: number | null;
+  llBuffer: number;
+  /** 1 bloco de folga na saída (mais 1,5 ms a 64 amostras, sem estalos se o processo atrasar) */
+  llSafe: boolean;
+  llStatus: HostStatus;
+  llMeter: { peak: number; loadAvg: number; loadMax: number; budget: number; late: number } | null;
+
   set: (patch: Partial<State>) => void;
   /** Guarda o estado atual no histórico de desfazer. */
   snapshot: () => void;
@@ -193,6 +208,16 @@ export const useStore = create<State>((set, get) => ({
   inputOpen: false,
   inputMuted: false,
   monitor: false,
+
+  monitorEngine: pref('mm.monitorEngine') === 'low' ? 'low' : 'system',
+  llAvailable: false,
+  llApi: '',
+  llDevices: [],
+  llDeviceId: pref('mm.llDevice') ? +pref('mm.llDevice')! : null,
+  llBuffer: +(pref('mm.llBuffer') ?? 64) || 64,
+  llSafe: pref('mm.llSafe') !== '0',
+  llStatus: { running: false, deviceId: null, buffer: 0, rate: 0, latencyMs: 0, error: null },
+  llMeter: null,
 
   set: (patch) => set(patch),
 

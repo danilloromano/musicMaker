@@ -16,6 +16,7 @@ import { addRecordedTakes, trackTakes } from './takes';
 import { IrEntry, addIrFiles, loadIrBuffer } from './irLibrary';
 import { applyStretched, needsStretch, retimeAudio, stretchBuffer, stretchedId } from './tempo';
 import { micSettingsPath } from '../platform';
+import { lowLatencyActive, setLowLatencyMuted } from './lowLatency';
 
 const LOOKAHEAD = 0.2; // s de antecedência com que as notas são agendadas (folga para a interface ocupada)
 const TICK_MS = 25;
@@ -976,6 +977,7 @@ class Engine {
 
   /** Afinador aberto no modo mudo: a monitoração fica em silêncio (afina sem soltar som na caixa). */
   muteMonitor(mute: boolean) {
+    setLowLatencyMuted(mute);
     if (!this.ready) return;
     this.monitorGain.gain.setTargetAtTime(mute ? 0 : 1, this.ctx.currentTime, 0.01);
   }
@@ -984,7 +986,9 @@ class Engine {
   private routeMonitor() {
     const s = useStore.getState();
     const t = s.project.tracks.find((x) => x.id === s.selectedTrackId);
-    const target = s.monitor && s.inputOpen && t?.kind === 'audio' && this.mixer.strips.has(t.id) ? t.id : null;
+    // com a monitoração de baixa latência (ASIO) rodando, a guitarra já sai por lá: aqui não monitora
+    const target =
+      s.monitor && s.inputOpen && !lowLatencyActive() && t?.kind === 'audio' && this.mixer.strips.has(t.id) ? t.id : null;
     if (target === this.monitorTarget) return;
     this.monitorGain.disconnect();
     if (target) this.monitorGain.connect(this.mixer.strips.get(target)!.input);

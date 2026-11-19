@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { engine } from './audio/engine';
 import { loadLocal, saveProjectLocal } from './audio/persist';
+import { initLowLatency } from './audio/lowLatency';
 import { withLoading } from './loading';
 import { useStore } from './store';
 import './styles.css';
@@ -23,6 +24,8 @@ async function boot() {
       console.warn('Não foi possível restaurar o projeto salvo', e);
     }
   });
+  // monitoração de baixa latência (ASIO/CoreAudio), quando o app roda no Electron
+  initLowLatency();
   const s = useStore.getState();
   if (!s.selectedTrackId) s.set({ selectedTrackId: s.project.tracks[0]?.id ?? null });
 

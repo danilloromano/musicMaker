@@ -6,17 +6,18 @@
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "dev": "concurrently -k \"vite\" \"vite build --config vite.host.config.ts --watch\" \"wait-on tcp:5173 file:dist-host/audio-host.cjs && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "dev:web": "vite",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.host.json",
+    "build": "npm run typecheck && vite build && npm run host",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win",
     "icon": "node scripts/make-icon.cjs",
     "drums": "node scripts/build-drums.cjs",
     "perc": "node scripts/build-perc.cjs",
     "instruments": "node scripts/build-instruments.cjs",
-    "dist:mac": "npm run build && electron-builder --mac"
+    "dist:mac": "npm run build && electron-builder --mac",
+    "host": "vite build --config vite.host.config.ts"
   },
   "build": {
     "appId": "com.musicmaker.app",
@@ -24,7 +25,8 @@
     "files": [
       "dist/**",
       "electron/**",
-      "build/icon.ico"
+      "build/icon.ico",
+      "dist-host/**"
     ],
     "directories": {
       "output": "release"
@@ -73,9 +75,14 @@
     },
     "dmg": {
       "title": "Alien Studio ${version}"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/audify/**"
+    ],
+    "npmRebuild": false
   },
   "dependencies": {
+    "audify": "^1.10.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.1.0"

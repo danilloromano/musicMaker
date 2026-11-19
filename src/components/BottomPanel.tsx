@@ -1,4 +1,5 @@
 import { RATES, engine, wantedRate } from '../audio/engine';
+import { refreshLowLatencyDevices, setLowLatency } from '../audio/lowLatency';
 import { DRUM_MAP, presetGroups } from '../audio/instruments';
 import { LOOPS, Loop, STYLES, STYLE_GROUPS, STYLE_PARTS, addLoop, addStyleBand } from '../audio/loops';
 import { useEffect, useState } from 'react';
@@ -208,6 +209,100 @@ function Fx({ track: t }: { track: Track }) {
   );
 }
 
+const LL_BUFFERS = [32, 64, 128, 256, 512];
+
+/**
+ * Motor da monitoração: pelo áudio do sistema (Chromium, ~70 ms) ou direto pelo driver da placa (ASIO no
+ * Windows, CoreAudio no Mac, ~10 ms). Só aparece no app instalado (no navegador não há processo de áudio).
+ */
+function LowLatencyRow() {
+  const available = useStore((s) => s.llAvailable);
+  const engineSel = useStore((s) => s.monitorEngine);
+  const api = useStore((s) => s.llApi) || (isMac ? 'CoreAudio' : 'ASIO');
+  const devices = useStore((s) => s.llDevices);
+  const deviceId = useStore((s) => s.llDeviceId);
+  const buffer = useStore((s) => s.llBuffer);
+  const safe = useStore((s) => s.llSafe);
+  const status = useStore((s) => s.llStatus);
+  const meter = useStore((s) => s.llMeter);
+  const open = useStore((s) => s.inputOpen);
+  if (!available) return null;
+  const low = engineSel === 'low';
+  const load = meter && meter.budget ? Math.round((100 * meter.loadAvg) / meter.budget) : 0;
+
+  return (
+    <>
+      <div className="input-row">
+        <label>
+          Monitoração
+          <select
+            title="Por onde você ouve o instrumento enquanto toca"
+            value={engineSel}
+            onChange={(e) => {
+              setLowLatency({ monitorEngine: e.target.value as 'system' | 'low' });
+              e.currentTarget.blur();
+            }}
+          >
+            <option value="system">Áudio do sistema (~70 ms)</option>
+            <option value="low">{api}: baixa latência (~10 ms)</option>
+          </select>
+        </label>
+        {low && (
+          <>
+            <label>
+              Placa {api}
+              <select
+                value={deviceId ?? ''}
+                onFocus={refreshLowLatencyDevices}
+                onChange={(e) => {
+                  setLowLatency({ llDeviceId: +e.target.value });
+                  e.currentTarget.blur();
+                }}
+              >
+                {!devices.length && <option value="">Nenhuma placa {api} encontrada</option>}
+                {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </label>
+            <label>
+              Buffer
+              <select
+                title="Menor = menos atraso. Se ouvir estalos, aumente."
+                value={buffer}
+                onChange={(e) => {
+                  setLowLatency({ llBuffer: +e.target.value });
+                  e.currentTarget.blur();
+                }}
+              >
+                {LL_BUFFERS.map((b) => <option key={b} value={b}>{b} amostras</option>)}
+              </select>
+            </label>
+            <label className="check" title="Um bloco a mais de folga na saída: evita estalos raros ao custo de ~1,5 ms">
+              <input type="checkbox" checked={safe} onChange={(e) => setLowLatency({ llSafe: e.target.checked })} />
+              Folga contra estalos
+            </label>
+          </>
+        )}
+      </div>
+      {low && (
+        <small className={status.error ? 'input-warn' : 'input-hint'}>
+          {status.error
+            ? `⚠ ${status.error}`
+            : !devices.length
+              ? `Nenhum driver ${api} encontrado. Instale o driver da sua placa de áudio (ou o ASIO4ALL) e abra esta lista de novo.`
+              : status.running
+                ? `● ${api} ligado: ${status.latencyMs.toFixed(1).replace('.', ',')} ms de ida e volta (buffer de ${status.buffer})` +
+                  ` · processamento ${load}%` +
+                  (meter?.late ? ` · ${meter.late} atraso(s) do processo: se ouvir estalos, aumente o buffer ou ligue a folga` : '') +
+                  '. Por enquanto você ouve o sinal limpo; amp e pedais da trilha entram na monitoração na próxima versão.'
+                : open
+                  ? `Abrindo a placa pelo ${api}…`
+                  : `A placa abre pelo ${api} quando você ligar a entrada. A gravação continua pelo caminho normal.`}
+        </small>
+      )}
+    </>
+  );
+}
+
 /** Escolha da placa/entrada onde a guitarra ou o microfone estão ligados, com medidor e monitoração. */
 function AudioInput() {
   const inputs = useStore((s) => s.inputs);
@@ -335,6 +430,7 @@ function AudioInput() {
           <Meter input />
         </div>
       </div>
+      <LowLatencyRow />
       {open && muted && (
         <div className="input-warn">
           ⚠ Esta entrada está no mudo no {isMac ? 'Mac' : 'Windows'}, então não chega som nenhum ao app. Tire do mudo{' '}
