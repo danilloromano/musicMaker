@@ -625,7 +625,11 @@ class Univibe extends Fx {
  * Wah: passa-banda ressonante (fórmula do BiquadFilterNode, recalculada a cada amostra como o nó faz quando a
  * frequência recebe um sinal) na posição do pedal; no Auto o envelope da palhetada soma à frequência.
  */
-class Wah extends Fx {
+export class Wah extends Fx {
+  /** frequência vinda da automação (Hz); null = a do botão Posição */
+  ext: number | null = null;
+  /** modo Auto (a automação converte a posição do pedal em Hz conforme o modo) */
+  auto = false;
   private rect = new Shaper(gateTable('rect'), this.sr);
   private envLp = this.bq('lowpass', 9);
   private base = this.p(800);
@@ -638,7 +642,7 @@ class Wah extends Fx {
   private y2 = 0;
   run(b: Float64Array, n: number) {
     const sr = this.sr, nyq = sr / 2;
-    const b0 = this.base.prev, db = (this.base.value - b0) / n;
+    const b0 = this.ext ?? this.base.prev, db = this.ext !== null ? 0 : (this.base.value - b0) / n;
     const a0 = this.amount.prev, da = (this.amount.value - a0) / n;
     const q0 = this.q.prev, dq = (this.q.value - q0) / n;
     const w0 = this.wet.prev, dw = (this.wet.value - w0) / n;
@@ -661,7 +665,7 @@ class Wah extends Fx {
     this.y2 = y2;
   }
   set([pos, sens, res, mode]: number[], snap: boolean) {
-    const auto = num(mode, 0) >= 0.5;
+    const auto = (this.auto = num(mode, 0) >= 0.5);
     this.base.set(wahFreq(num(pos, 0.5), auto), snap);
     this.amount.set(auto ? num(sens, 0.5) * 9000 : 0, snap);
     const q = 2 + num(res, 0.5) * 8;

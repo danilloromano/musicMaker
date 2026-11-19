@@ -1,5 +1,6 @@
 import { MusicKey, Project, Track, activeFreeze } from '../types';
-import { Rig, rigKey } from './amp';
+import { Rig, RigLike, rigKey } from './amp';
+import { WorkletRig } from './rigNode';
 import { MasterChain, ensureWorklets, workletsReady } from './master';
 import { activeLanes, audibleSet, outputOf, sendAmount, sendsOf, sidechainOf, speedChanges, valueAt } from './routing';
 import { SendReturn } from './sends';
@@ -26,7 +27,7 @@ export interface Strip {
   /** envio para cada efeito */
   sends: Map<string, GainNode>;
   analyser: AnalyserNode;
-  rig?: Rig;
+  rig?: RigLike;
   side?: { key: string; nodes: AudioNode[]; meter: AnalyserNode; direct: boolean };
 }
 
@@ -125,7 +126,8 @@ export class Mixer {
     const want = t.amp?.on && !frozen ? t.amp : null;
     const ir = want?.cab === 'user' && want.irId ? this.getBuffer(want.irId) : undefined;
     const irB = want?.cabB === 'user' && want.irB ? this.getBuffer(want.irB) : undefined;
-    // o octaver usa AudioWorklet: quando os worklets carregam, o rack é remontado para ganhá-lo
+    // com os AudioWorklets carregados o rack roda no worklet (o mesmo código da monitoração de baixa latência,
+    // sem o atraso do oversampling dos nós); antes disso, o rack de nós. Quando carregam, o rack é remontado.
     const key = want && `${rigKey(want, !!ir, !!irB)}|${workletsReady(this.ctx) ? 'w' : ''}`;
     if (s.rig && s.rig.key !== key) {
       s.input.disconnect();
@@ -134,7 +136,9 @@ export class Mixer {
       s.input.connect(s.eq[0]);
     }
     if (want && key && !s.rig) {
-      s.rig = new Rig(this.ctx, key, want, ir, bpm, song, irB);
+      s.rig = workletsReady(this.ctx)
+        ? new WorkletRig(this.ctx, key, want, ir, bpm, song, irB)
+        : new Rig(this.ctx, key, want, ir, bpm, song, irB);
       s.input.disconnect();
       s.input.connect(s.rig.input);
       s.rig.output.connect(s.eq[0]);

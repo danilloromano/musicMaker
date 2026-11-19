@@ -3,6 +3,9 @@
 import { StereoLimiter } from './limiter';
 import { Correlation, Loudness, TruePeak, dbfs } from './loudness';
 import { HarmonyCore, HarmonySettings, OctaveCore, PhaserCore, PitchCore, ReverseCore, UnivibeCore } from '../rt/cores';
+import { BuildQueue, buildNow } from '../rt/dsp';
+import { RtRigProcessor, warmupRig } from '../rt/rig';
+import type { RtRig } from '../lowLatencyProtocol';
 
 // tipos do escopo de AudioWorklet (não fazem parte da biblioteca DOM do TypeScript)
 declare const sampleRate: number;
@@ -244,3 +247,82 @@ class PitchProcessor extends AudioWorkletProcessor {
   }
 }
 registerProcessor('mm-pitch', PitchProcessor);
+
+// ---------- Rack de guitarra (rt/rig.ts: o mesmo código da monitoração de baixa latência) ----------
+
+/** Rack recebido na criação do nó (na exportação offline ele precisa estar completo antes do 1º bloco). */
+export interface RigWorkletOptions {
+  rig: RtRig | null;
+  cab: { key: string; a: Float32Array | null; b: Float32Array | null } | null;
+  reverb: { key: string; l: Float32Array; r: Float32Array } | null;
+  /** exportação/congelamento: monta os IRs na hora (não há pressa de tempo real) */
+  offline: boolean;
+}
+
+export type RigWorkletMessage =
+  | { type: 'rig'; rig: RtRig | null }
+  | { type: 'reverb'; key: string; l: Float32Array; r: Float32Array }
+  | { type: 'dispose' };
+
+const RIG_BLOCK = 128;
+/** o JIT já compilou o código do rack nesta thread de áudio */
+let rigWarm = false;
+
+class RigProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'wah', defaultValue: 800, minValue: 1, maxValue: 24000, automationRate: 'k-rate' },
+      { name: 'rotary', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      // automação ligada (1): o wah segue 'wah' (Hz) e o rotary segue 'rotary' (≥ 0,5 = rápido). São parâmetros
+      // e não mensagens porque na exportação offline uma mensagem só chegaria depois do áudio já processado
+      { name: 'wahExt', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'rotaryExt', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ];
+  }
+  private queue = new BuildQueue();
+  private proc: RtRigProcessor;
+  private L = new Float64Array(RIG_BLOCK);
+  private R = new Float64Array(RIG_BLOCK);
+  private dead = false;
+  constructor(options: { processorOptions: RigWorkletOptions }) {
+    super();
+    const o = options.processorOptions;
+    // 1º rack desta thread (ao abrir o projeto): roda todos os circuitos em silêncio para o JIT compilar antes
+    // de tocar (senão o 1º bloco de cada pedal sairia lento e estalaria)
+    if (!rigWarm) {
+      rigWarm = true;
+      warmupRig(sampleRate, RIG_BLOCK, 8);
+    }
+    // ao vivo, o reverb (IR de até ~9 s) é montado aos poucos dentro do processamento (aqui não há setTimeout)
+    this.proc = new RtRigProcessor(sampleRate, RIG_BLOCK, o.offline ? buildNow : this.queue.schedule);
+    if (o.cab) this.proc.setIr(o.cab.key, o.cab.a, o.cab.b, true);
+    this.proc.setRig(o.rig);
+    if (o.reverb) this.proc.setReverbIr(o.reverb, o.offline);
+    this.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as RigWorkletMessage;
+      if (m.type === 'rig') this.proc.setRig(m.rig);
+      else if (m.type === 'reverb') this.proc.setReverbIr(m);
+      else this.dead = true;
+    };
+  }
+  process(inputs: Float32Array[][], outputs: Float32Array[][], params: Record<string, Float32Array>) {
+    if (this.dead) return false;
+    const out = outputs[0];
+    const n = out[0].length;
+    const x = mono(inputs[0], n);
+    if (n !== RIG_BLOCK) {
+      for (const ch of out) ch.set(x.subarray(0, n));
+      return true;
+    }
+    const L = this.L, R = this.R;
+    for (let i = 0; i < n; i++) L[i] = x[i];
+    this.proc.external(params.wahExt[0] >= 0.5 ? params.wah[0] : null, params.rotaryExt[0] >= 0.5 ? params.rotary[0] >= 0.5 : null);
+    this.proc.process(L, R);
+    out[0].set(L);
+    if (out.length > 1) out[1].set(R);
+    // montagens pendentes (IR do reverb): poucos passos por bloco, para não pesar
+    this.queue.step(2);
+    return true;
+  }
+}
+registerProcessor('mm-rig', RigProcessor);

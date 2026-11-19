@@ -2109,7 +2109,22 @@ export function prepIr(ctx: BaseAudioContext, raw: AudioBuffer): AudioBuffer {
   return out;
 }
 
-export class Rig {
+/**
+ * O que o mixer usa de um rack: o de nós do Web Audio (Rig, abaixo) ou o do AudioWorklet (WorkletRig em
+ * rigNode.ts, o mesmo código da monitoração de baixa latência).
+ */
+export interface RigLike {
+  key: string;
+  input: AudioNode;
+  output: AudioNode;
+  /** wah: a automação agenda `freq` (Hz) */
+  wah: { freq: AudioParam; toHz(pos: number): number; override(v: WahOverride): void };
+  rotary: { override(v: SpeedOverride): void; schedule(startFast: boolean, at: number, changes: { time: number; fast: boolean }[]): void; hold(now: number): void };
+  update(rig: AmpRig, bpm?: number, song?: MusicKey): void;
+  dispose(): void;
+}
+
+export class Rig implements RigLike {
   input: GainNode;
   output: GainNode;
   private slots = new Map<string, Slot>();

@@ -503,11 +503,55 @@ export class LongConvolver {
   }
 }
 
+/** Quem roda uma montagem aos poucos (ver LongConvolver.build): devolve como cancelar. */
+export type BuildScheduler = <T>(gen: Generator<void, T>, done: (v: T) => void) => { cancel(): void };
+
+/** Monta tudo na hora (exportação offline, testes). */
+export const buildNow: BuildScheduler = (gen, done) => {
+  for (;;) {
+    const r = gen.next();
+    if (r.done) {
+      done(r.value);
+      break;
+    }
+  }
+  return { cancel() {} };
+};
+
+/**
+ * Fila de montagens drenada por quem processa o áudio (no AudioWorklet não há setTimeout nem relógio): a cada
+ * bloco, `step(n)` avança até n passos (cada passo é uma FFT de partição, ~0,1 ms).
+ */
+export class BuildQueue {
+  private jobs: { gen: Generator<void, unknown>; done: (v: unknown) => void; dead: boolean }[] = [];
+  schedule: BuildScheduler = (gen, done) => {
+    const job = { gen: gen as Generator<void, unknown>, done: done as (v: unknown) => void, dead: false };
+    this.jobs.push(job);
+    return { cancel: () => void (job.dead = true) };
+  };
+  step(n: number) {
+    while (n > 0 && this.jobs.length) {
+      const j = this.jobs[0];
+      if (j.dead) {
+        this.jobs.shift();
+        continue;
+      }
+      const r = j.gen.next();
+      n--;
+      if (r.done) {
+        this.jobs.shift();
+        j.done(r.value);
+      }
+    }
+  }
+}
+
 /**
  * Roda um gerador de montagem em fatias de até `sliceMs`, cedendo a vez entre elas (o callback de áudio roda
  * no mesmo processo). `cancel()` abandona a montagem (chegou outra mais nova).
  */
-export function buildInSlices<T>(gen: Generator<void, T>, done: (v: T) => void, sliceMs = 0.3) {
+export const buildInSlices: BuildScheduler = (gen, done) => slices(gen, done, 0.3);
+function slices<T>(gen: Generator<void, T>, done: (v: T) => void, sliceMs: number) {
   let cancelled = false;
   const tick = () => {
     if (cancelled) return;

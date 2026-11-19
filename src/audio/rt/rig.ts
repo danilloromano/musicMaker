@@ -6,10 +6,12 @@
 // Não depende do navegador nem do amp.ts (que usa o Web Audio): roda no processo de áudio (electron/host).
 import type { RtPedal, RtRig } from '../lowLatencyProtocol';
 import { AMPS, AmpModel, gainPot, magnitude, outGain, powerDrive, toneStackZ } from '../ampCircuits';
-import { Biquad, Highpass1, Iir3, LongConvolver, Param, Shaper, VarBiquad, applyGain, buildInSlices } from './dsp';
+import { Biquad, Highpass1, Iir3, LongConvolver, Param, Shaper, VarBiquad, applyGain, buildInSlices, buildNow } from './dsp';
+import type { BuildScheduler } from './dsp';
 import { Fx, RigEnv, SMOOTH, add, copy, scale, tubeTable } from './base';
 import { RT_PEDALS, makeFx } from './pre';
-import { Reverb, ReverbIr, StereoFx, makePostFx } from './post';
+import { Reverb, ReverbIr, Rotary, StereoFx, makePostFx } from './post';
+import { Wah } from './pre';
 
 export { RT_PEDALS };
 /** Pedais de depois da caixa que a monitoração processa (todos os do app). */
@@ -176,7 +178,7 @@ class Cab extends Fx {
     this.lp = this.vb('lowpass', (sr / 2) * 0.95, 0.707);
   }
   /** Monta as convoluções aos poucos (IRs de até 1 s) e troca quando prontas; `now` = na hora (testes). */
-  setIr(key: string, a: Float32Array | null, b: Float32Array | null, onReady: () => void, now = false) {
+  setIr(key: string, a: Float32Array | null, b: Float32Array | null, onReady: () => void, schedule: BuildScheduler) {
     this.building?.cancel();
     const B = this.B;
     function* both() {
@@ -191,14 +193,7 @@ class Cab extends Fx {
       this.key = key;
       onReady();
     };
-    if (now) {
-      const g = both();
-      for (;;) {
-        const r = g.next();
-        if (r.done) return done(r.value);
-      }
-    }
-    this.building = buildInSlices(both(), done);
+    this.building = schedule(both(), done);
   }
   get loaded() {
     return !!(this.a || this.b);
@@ -313,7 +308,8 @@ export class RtRigProcessor {
   private reverbIr: ReverbIr | null = null;
   private k: number;
   private first = true;
-  constructor(private sr: number, private B: number) {
+  /** `schedule`: como montar os IRs aos poucos (host: fatias com setTimeout; worklet: fila drenada a cada bloco) */
+  constructor(private sr: number, private B: number, private schedule: BuildScheduler = buildInSlices) {
     this.k = 1 - Math.exp(-B / (SMOOTH * sr));
     this.cab = new Cab(sr, B);
   }
@@ -349,7 +345,7 @@ export class RtRigProcessor {
   setIr(key: string, a: Float32Array | null, b: Float32Array | null, now = false) {
     this.cab.setIr(key, a, b, () => {
       if (this.rig?.cab) this.cab.setCab(this.rig.cab, true);
-    }, now);
+    }, now ? buildNow : this.schedule);
   }
 
   /** IR do reverb (estéreo, na taxa da placa, já com a normalização do ConvolverNode). */
@@ -362,14 +358,29 @@ export class RtRigProcessor {
     const fx = this.post.find((s) => s.id === 'reverb')?.fx as Reverb | undefined;
     const ir = this.reverbIr;
     if (!fx || !ir || fx.irKey !== ir.key || fx.loadedKey === ir.key) return;
-    if (now) fx.setIrNow(ir);
-    else fx.setIr(ir);
+    fx.setIr(ir, now ? buildNow : this.schedule);
   }
 
   /** Chave da IR de reverb que os botões pedem agora (null = reverb desligado ou sem rack). */
   get reverbWant(): string | null {
     const s = this.post.find((x) => x.id === 'reverb');
     return s ? (s.fx as Reverb).irKey : null;
+  }
+
+  /**
+   * Controle externo (automação da trilha): frequência do wah em Hz e velocidade do rotary; null = os botões.
+   * Chamado antes de cada bloco.
+   */
+  external(wahHz: number | null, rotaryFast: boolean | null) {
+    const wah = this.slots.find((s) => s.id === 'wah')?.fx as Wah | undefined;
+    if (wah) wah.ext = wahHz;
+    const rot = this.post.find((s) => s.id === 'rotary')?.fx as Rotary | undefined;
+    rot?.external(rotaryFast);
+  }
+
+  /** Modo Auto do wah (a automação converte a posição do pedal em Hz conforme ele). */
+  get wahAuto() {
+    return (this.slots.find((s) => s.id === 'wah')?.fx as Wah | undefined)?.auto ?? false;
   }
 
   /** Processa um bloco de B amostras: entra mono em `L`, sai estéreo em `L` e `R`. */
@@ -398,7 +409,7 @@ export class RtRigProcessor {
  * Roda um rack com todos os circuitos ligados em silêncio por alguns blocos: o JIT do V8 compila o código de
  * todos antes do áudio começar (senão os primeiros blocos de cada pedal saem lentos e estalam).
  */
-export function warmupRig(sr: number, B: number) {
+export function warmupRig(sr: number, B: number, blocks = 40) {
   const p = new RtRigProcessor(sr, B);
   const ir = new Float32Array(Math.round(0.3 * sr));
   ir[0] = 1;
@@ -413,7 +424,7 @@ export function warmupRig(sr: number, B: number) {
     p.setRig({ pedals, post, amp: m.id, knobs, bpm: 120, song: null, cab: { mix: 0.5, blend: 0.5, low: 80, high: 8000, irKey: 'warm' } });
     const want = p.reverbWant;
     if (want) p.setReverbIr({ key: want, l: ir, r: ir }, true);
-    for (let k = 0; k < 40; k++) {
+    for (let k = 0; k < blocks; k++) {
       for (let i = 0; i < B; i++) L[i] = Math.sin(k * B + i) * 0.1;
       p.process(L, R);
     }

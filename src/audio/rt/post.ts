@@ -1,7 +1,8 @@
 // Pedais de depois da caixa (estéreo), como os do rack do app (amp.ts): chorus, phaser, flanger, vibrato,
 // rotary, tremolo, delay e reverb. Cada um recebe e devolve os dois canais (L, R) no lugar. Onde o grafo do
 // app junta canais (ChannelMerger), aqui entra a média dos dois, como o navegador faz.
-import { Biquad, BiquadType, DelayLine, LongConvolver, Param, Shaper, VarBiquad, applyGain, buildInSlices } from './dsp';
+import { Biquad, BiquadType, DelayLine, LongConvolver, Param, Shaper, VarBiquad, applyGain } from './dsp';
+import type { BuildScheduler } from './dsp';
 import { PhaserCore, ReverseCore } from './cores';
 import { RigEnv, clipTable, f32, num, table } from './base';
 import { sampleCurve } from './curves';
@@ -234,7 +235,7 @@ class Vibrato extends StereoFx {
 // ---------- Rotary ----------
 
 /** Caixa rotativa: saturação valvulada, divisor em 800 Hz, corneta e tambor girando com Doppler e volume. */
-class Rotary extends StereoFx {
+export class Rotary extends StereoFx {
   private mono = this.buf();
   private sat = new Shaper(clipTable('soft'), this.sr, true);
   private drive = this.p(1.6);
@@ -311,10 +312,23 @@ class Rotary extends StereoFx {
     const m = num(mix, 1);
     this.dry.set(1 - m, snap);
     this.wet.set(m * 0.9, snap);
-    const want = num(knob, 0) >= 0.5;
+    this.knobFast = num(knob, 0) >= 0.5;
+    this.applySpeed();
+  }
+  private knobFast = false;
+  private extFast: boolean | null = null;
+  /** velocidade vinda da automação (null = a da chave Lento/Rápido) */
+  external(fast: boolean | null) {
+    if (fast === this.extFast) return;
+    this.extFast = fast;
+    this.applySpeed();
+  }
+  private applySpeed() {
+    const want = this.extFast ?? this.knobFast;
     if (want === this.fast) return;
     const first = this.fast === null;
     this.fast = want;
+    // troca de velocidade: os rotores vão para o alvo com a inércia de cada um
     for (const rt of this.rotors) {
       rt.target = want ? rt.r.fast : rt.r.slow;
       if (first) rt.freq = rt.target;
@@ -580,7 +594,7 @@ class Reverb extends StereoFx {
   get loadedKey() {
     return this.pending || this.cur?.key || '';
   }
-  setIr(ir: ReverbIr) {
+  setIr(ir: ReverbIr, schedule: BuildScheduler) {
     if (ir.key !== this.want) return;
     this.building?.cancel();
     // monta as duas convoluções aos poucos, sem travar o áudio; quando prontas, entra com crossfade
@@ -591,7 +605,7 @@ class Reverb extends StereoFx {
       return [l, r];
     }
     this.pending = ir.key;
-    this.building = buildInSlices(both(), (conv) => {
+    this.building = schedule(both(), (conv) => {
       this.building = null;
       this.pending = '';
       this.old = this.cur;

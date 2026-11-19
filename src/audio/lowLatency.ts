@@ -8,12 +8,11 @@
 // manda mais a entrada para o canal da trilha (senão a guitarra tocaria duas vezes).
 import { savePref, useStore } from '../store';
 import type { Track } from '../types';
-import { CABS, PEDALS, cabIR, convolverScale, modelOf, pedalOf, prepIr, reverbIR } from './amp';
-import { AMPS } from './ampCircuits';
+import { PEDALS, modelOf, pedalOf } from './amp';
+import { cabIrs, reverbIrData, reverbKeyOf, toRtRig } from './rtBridge';
 import { engine } from './engine';
 import { faderGain } from './mixer';
-import type { HostEvent, HostRequest, RtRig } from './lowLatencyProtocol';
-import { REVERB_TYPES, reverbStep, reverbType } from './rt/pedalMath';
+import type { HostEvent, HostRequest } from './lowLatencyProtocol';
 import { RT_PEDALS, RT_POST } from './rt/rig';
 
 interface Bridge {
@@ -106,55 +105,6 @@ function sync() {
   }
 }
 
-/** O rack da trilha como o processo de áudio recebe (null = sem rack: sinal limpo). */
-function rtRig(t: Track | undefined, rate: number): RtRig | null {
-  const a = t?.kind === 'audio' && t.amp?.on ? t.amp : null;
-  if (!a) return null;
-  const pedal = (d: (typeof PEDALS)[number]) => {
-    const st = pedalOf(a, d);
-    return { id: d.models ? modelOf(d, st.model)!.id : d.id, on: st.on, p: st.p };
-  };
-  const p = useStore.getState().project;
-  const has = (cab: string | undefined, id: string | undefined) =>
-    cab === 'user' ? !!id && engine.buffers.has(id) : CABS.some((c) => c.id === cab);
-  const hasA = has(a.cab, a.irId), hasB = has(a.cabB, a.irB);
-  return {
-    pedals: PEDALS.filter((d) => !d.post).map(pedal),
-    post: PEDALS.filter((d) => d.post).map(pedal),
-    bpm: p.bpm,
-    song: p.key ?? null,
-    amp: AMPS.some((m) => m.id === a.amp) ? a.amp : null,
-    knobs: a.knobs,
-    cab: hasA || hasB
-      ? {
-          mix: a.cabMix,
-          blend: a.cabBlend ?? 0.5,
-          low: a.cabLow ?? 0,
-          high: a.cabHigh ?? 0,
-          irKey: `${rate}|${hasA ? (a.cab === 'user' ? `u:${a.irId}` : a.cab) : '-'}|${hasB ? (a.cabB === 'user' ? `u:${a.irB}` : a.cabB) : '-'}`,
-        }
-      : null,
-  };
-}
-
-/**
- * IR de uma caixa na taxa da placa, com o mesmo volume que tem no rack do app: as embutidas tocam com a
- * normalização do ConvolverNode (aplicada aqui), as do usuário já vêm igualadas por prepIr. IR estéreo vira mono.
- */
-function irData(rate: number, cab: string | undefined, id: string | undefined): Float32Array | null {
-  const ctx = new OfflineAudioContext(1, 1, rate);
-  const user = cab === 'user' && id ? engine.buffers.get(id) : undefined;
-  const b = cab === 'user' ? (user ? prepIr(ctx, user) : null) : cab ? cabIR(ctx, cab) : null;
-  if (!b) return null;
-  const g = cab === 'user' ? 1 : convolverScale(b);
-  const out = new Float32Array(b.length);
-  for (let c = 0; c < b.numberOfChannels; c++) {
-    const d = b.getChannelData(c);
-    for (let i = 0; i < b.length; i++) out[i] += (d[i] * g) / b.numberOfChannels;
-  }
-  return out;
-}
-
 /**
  * Fila de envio dos IRs em pedaços: um pedaço a cada CHUNK_MS (o processo de áudio desserializa cada um sem
  * atrasar o callback). Um envio novo do mesmo tipo (caixa ou reverb) descarta o que sobrou do anterior.
@@ -190,27 +140,23 @@ function sendIr(kind: 'cab' | 'reverb', arrays: (Float32Array | null)[], done: (
 
 /** Manda o rack (e os IRs, se mudaram) da trilha monitorada. */
 function syncRig(t: Track | undefined, rate: number) {
-  const r = rtRig(t, rate);
-  if (r?.cab && r.cab.irKey !== lastIr && t?.amp) {
+  const a = t?.kind === 'audio' && t.amp?.on ? t.amp : null;
+  const p = useStore.getState().project;
+  const get = (id: string) => engine.buffers.get(id);
+  const r = a ? toRtRig(a, rate, p.bpm, p.key, get) : null;
+  if (a && r?.cab && r.cab.irKey !== lastIr) {
     lastIr = r.cab.irKey;
-    const a = t.amp;
     const key = lastIr;
-    sendIr('cab', [irData(rate, a.cab, a.irId), irData(rate, a.cabB, a.irB)], ([ia, ib]) => ({ type: 'ir', key, a: ia, b: ib }));
+    const irs = cabIrs(a, rate, get);
+    sendIr('cab', [irs.a, irs.b], ([ia, ib]) => ({ type: 'ir', key, a: ia, b: ib }));
   }
   // reverb ligado: a IR do tipo/tempo escolhidos (gerada aqui, como no rack do app), com a normalização do
   // ConvolverNode; a chave é a mesma que o pedal calcula lá (taxa|tipo|passo do tempo)
-  const rv = r?.post.find((x) => x.id === 'reverb');
-  if (rv?.on) {
-    const type = REVERB_TYPES[reverbType(rv.p[3] ?? 0)].id;
-    const step = reverbStep(rv.p[0] ?? 0.4);
-    const key = `${rate}|${type}|${step}`;
-    if (key !== lastReverb) {
-      lastReverb = key;
-      const b = reverbIR(new OfflineAudioContext(2, 1, rate), type, step);
-      const g = convolverScale(b);
-      const ch = (c: number) => Float32Array.from(b.getChannelData(Math.min(c, b.numberOfChannels - 1)), (v) => v * g);
-      sendIr('reverb', [ch(0), ch(1)], ([l, rr]) => ({ type: 'reverb', key, l: l!, r: rr! }));
-    }
+  const rk = r && reverbKeyOf(r, rate);
+  if (rk && rk !== lastReverb) {
+    lastReverb = rk;
+    const ir = reverbIrData(rk);
+    sendIr('reverb', [ir.l, ir.r], ([l, rr]) => ({ type: 'reverb', key: rk, l: l!, r: rr! }));
   }
   const key = JSON.stringify(r);
   if (key !== lastRig) {
