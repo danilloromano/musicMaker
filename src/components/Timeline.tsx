@@ -3,7 +3,7 @@ import { engine } from '../audio/engine';
 import { importFiles } from '../audio/importFiles';
 import { DRUM_STYLES, FILL_CHOICES, LOOPS, addLoop, applyDrumStyle, extendPattern, setTrackFills } from '../audio/loops';
 import { presetGroups } from '../audio/instruments';
-import { useStore } from '../store';
+import { savePref, useStore } from '../store';
 import { AutoPoint, Region, barBeatLabel, barBeats, Track, TrackKind, activeFreeze, fitFades, projectEnd, regionLen, uid } from '../types';
 import { activeLanes, autoParams, laneOf } from '../audio/routing';
 import { KIND_ICON, Meter, Slider, Spectrum, useRaf } from './ui';
@@ -472,17 +472,40 @@ function TrackHeader({ track: t }: { track: Track }) {
   );
 }
 
-/** Atalho no cabeçalho das trilhas de áudio para a configuração da entrada (aba Efeitos). */
+/**
+ * Canal de entrada no cabeçalho das trilhas de áudio: trocar o canal já liga (ou reabre) a entrada.
+ * "Desligada" fecha a entrada; "Configurar…" abre a aba Efeitos (dispositivo, monitoração, medidor).
+ */
 function InputButton() {
   const open = useStore((s) => s.inputOpen);
+  const channel = useStore((s) => s.inputChannel);
   return (
-    <button
+    <select
       className={`th-input ${open ? 'on' : ''}`}
-      title="Escolher a entrada de áudio (placa, guitarra, microfone)"
-      onClick={() => useStore.getState().set({ bottomTab: 'fx' })}
+      title="Canal da placa de áudio onde a guitarra ou o microfone está ligado"
+      value={open ? String(channel) : 'off'}
+      onChange={(e) => {
+        const v = e.target.value;
+        e.currentTarget.blur();
+        if (v === 'config') {
+          useStore.getState().set({ bottomTab: 'fx' });
+          return;
+        }
+        if (v === 'off') {
+          engine.closeInput();
+          return;
+        }
+        useStore.getState().set({ inputChannel: +v });
+        savePref('mm.inputChannel', v);
+        void engine.openInput();
+      }}
     >
-      {open ? '● Entrada ligada' : 'Entrada…'}
-    </button>
+      <option value="off">Entrada desligada</option>
+      <option value="0">● Entrada 1</option>
+      <option value="1">● Entrada 2</option>
+      <option value="2">● Entradas 1 + 2</option>
+      <option value="config">Configurar…</option>
+    </select>
   );
 }
 
