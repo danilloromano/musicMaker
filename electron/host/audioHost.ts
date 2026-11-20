@@ -35,7 +35,7 @@ let gain = 0;
 
 // rack da trilha: o último pedido fica guardado para remontar quando a placa reabre (outra taxa/buffer)
 let rig: RtRig | null = null;
-let ir: { key: string; a: Float32Array | null; b: Float32Array | null } | null = null;
+let ir: { key: string; a: Float32Array[] | null; b: Float32Array[] | null } | null = null;
 let reverb: { key: string; l: Float32Array; r: Float32Array } | null = null;
 /** IRs chegando em pedaços (ver 'chunk' no protocolo) */
 const parts = new Map<string, Float32Array>();
@@ -244,7 +244,8 @@ function onMessage(m: HostRequest) {
       break;
     }
     case 'ir':
-      ir = { key: m.key, a: take(m.a), b: take(m.b) };
+      const chans = (ids: string[] | null) => (ids ? ids.map(take).filter((x): x is Float32Array => !!x) : null);
+      ir = { key: m.key, a: chans(m.a), b: chans(m.b) };
       dropStale('cab');
       proc?.setIr(ir.key, ir.a, ir.b);
       break;

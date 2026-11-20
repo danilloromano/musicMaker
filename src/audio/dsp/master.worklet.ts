@@ -253,7 +253,7 @@ registerProcessor('mm-pitch', PitchProcessor);
 /** Rack recebido na criação do nó (na exportação offline ele precisa estar completo antes do 1º bloco). */
 export interface RigWorkletOptions {
   rig: RtRig | null;
-  cab: { key: string; a: Float32Array | null; b: Float32Array | null } | null;
+  cab: { key: string; a: Float32Array[] | null; b: Float32Array[] | null } | null;
   reverb: { key: string; l: Float32Array; r: Float32Array } | null;
   /** exportação/congelamento: monta os IRs na hora (não há pressa de tempo real) */
   offline: boolean;

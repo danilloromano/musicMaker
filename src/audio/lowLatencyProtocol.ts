@@ -32,8 +32,8 @@ export type HostRequest =
    * mensagem de uma vez, e um IR de reverb inteiro (~3 MB) travaria o áudio por alguns milissegundos.
    */
   | { type: 'chunk'; id: string; offset: number; total: number; data: Float32Array }
-  /** IRs das caixas A e B na taxa da placa (ids dos pedaços já enviados; `key` liga ao RtRig.cab.irKey) */
-  | { type: 'ir'; key: string; a: string | null; b: string | null }
+  /** IRs das caixas A e B na taxa da placa: ids dos canais (1 = mono, 2 = estéreo); `key` liga ao RtRig.cab.irKey */
+  | { type: 'ir'; key: string; a: string[] | null; b: string[] | null }
   /** IR estéreo do reverb (`key` = taxa|tipo|passo do tempo, a mesma que o pedal calcula) */
   | { type: 'reverb'; key: string; l: string; r: string };
 

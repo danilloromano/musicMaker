@@ -43,19 +43,15 @@ export function toRtRig(
 
 /**
  * IR de uma caixa na taxa pedida, com o mesmo volume do ConvolverNode do rack de nós: as embutidas com a
- * normalização dele (aplicada aqui), as do usuário já igualadas por prepIr. IR estéreo vira mono (média).
+ * normalização dele (aplicada aqui), as do usuário já igualadas por prepIr. Um canal por canal do IR (até 2).
  */
-export function cabIrData(rate: number, cab: string | undefined, user: AudioBuffer | undefined): Float32Array | null {
+export function cabIrData(rate: number, cab: string | undefined, user: AudioBuffer | undefined): Float32Array[] | null {
   const ctx = new OfflineAudioContext(1, 1, rate);
   const b = cab === 'user' ? (user ? prepIr(ctx, user) : null) : cab ? cabIR(ctx, cab) : null;
   if (!b) return null;
   const g = cab === 'user' ? 1 : convolverScale(b);
-  const out = new Float32Array(b.length);
-  for (let c = 0; c < b.numberOfChannels; c++) {
-    const d = b.getChannelData(c);
-    for (let i = 0; i < b.length; i++) out[i] += (d[i] * g) / b.numberOfChannels;
-  }
-  return out;
+  const chans = Math.min(2, b.numberOfChannels);
+  return Array.from({ length: chans }, (_, c) => Float32Array.from(b.getChannelData(c), (v) => v * g));
 }
 
 /** IRs das caixas A e B do rack. */

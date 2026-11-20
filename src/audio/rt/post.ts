@@ -66,9 +66,9 @@ const lfoAt = (t: Float32Array, ph: number) => {
 class Chorus extends StereoFx {
   private bases = [0.0072, 0.0094, 0.0118];
   private pans = [-1, 1, 0];
-  // a entrada do chorus é sempre mono (é o primeiro pedal depois da caixa, que é mono)
-  private lines = [new DelayLine(this.sr * 0.05)];
-  private tones = [0, 1, 2].map(() => [this.bq('lowpass', 5500, 0.6)]);
+  // os dois lados passam pelas vozes (diferem quando a caixa usa um IR estéreo)
+  private lines = [new DelayLine(this.sr * 0.05), new DelayLine(this.sr * 0.05)];
+  private tones = [0, 1, 2].map(() => [this.bq('lowpass', 5500, 0.6), this.bq('lowpass', 5500, 0.6)]);
   private phase = 0;
   private analog = true;
   private stereo = true;
@@ -77,22 +77,24 @@ class Chorus extends StereoFx {
   private wet = this.p(0.5);
   private out = this.p(1);
   private netG = this.p(0.5);
-  private panG = [0, 1, 2].map(() => [this.p(1), this.p(0)]);
+  /** StereoPanner de cada voz: [L←L, L←R, R←L, R←R] */
+  private panG = [0, 1, 2].map(() => [this.p(1), this.p(0), this.p(0), this.p(1)]);
   run(L: Float64Array, R: Float64Array, n: number) {
     const sr = this.sr;
     const waves = [0, 1, 2].map((k) => lfoTable(k / 3, this.analog));
     for (let i = 0; i < n; i++) {
       const xl = L[i], xr = R[i];
-      this.lines[0].write((xl + xr) / 2);
+      this.lines[0].write(xl);
+      this.lines[1].write(xr);
       const amt = at(this.amt, i, n), g = at(this.netG, i, n) * at(this.wet, i, n);
       let wl = 0, wr = 0;
       for (let k = 0; k < 3; k++) {
         const d = (this.bases[k] + amt * lfoAt(waves[k], this.phase)) * sr;
-        // entrada mono (a caixa é mono): a voz é a mesma nos dois canais antes do pan
-        const v = this.tones[k][0].tick(this.lines[0].read(d));
-        const [pl, pr] = this.panG[k];
-        wl += v * at(pl, i, n);
-        wr += v * at(pr, i, n);
+        const vl = this.tones[k][0].tick(this.lines[0].read(d));
+        const vr = this.tones[k][1].tick(this.lines[1].read(d));
+        const [ll, lr, rl, rr] = this.panG[k];
+        wl += vl * at(ll, i, n) + vr * at(lr, i, n);
+        wr += vl * at(rl, i, n) + vr * at(rr, i, n);
       }
       const o = at(this.out, i, n);
       L[i] = (xl + wl * g) * o;
@@ -114,15 +116,17 @@ class Chorus extends StereoFx {
     const m = num(mix, 0.5);
     this.wet.set(m, snap);
     this.out.set(1 / (1 + m * 0.6), snap);
-    // StereoPanner com entrada estéreo de lados iguais: no app o sinal já é estéreo aqui (o DynamicsCompressorNode
-    // do pedal de compressor sempre sai com 2 canais, ligado ou não). Pan 0 passa inteiro; nas pontas, um lado
-    // recebe os dois canais somados e o outro nada.
-    this.panG.forEach(([pl, pr], k) => {
+    // StereoPanner com entrada estéreo: no app o sinal já é estéreo aqui (o DynamicsCompressorNode do pedal de
+    // compressor sempre sai com 2 canais, ligado ou não). Para a esquerda, o lado esquerdo fica e recebe parte do
+    // direito; para a direita, o contrário (pan 0 passa os dois inteiros).
+    this.panG.forEach(([ll, lr, rl, rr], k) => {
       const pan = this.stereo ? this.pans[k] : 0;
       const x = pan <= 0 ? pan + 1 : pan;
       const c = Math.cos((x * Math.PI) / 2), s = Math.sin((x * Math.PI) / 2);
-      pl.set(pan <= 0 ? 1 + c : c, snap);
-      pr.set(pan <= 0 ? s : 1 + s, snap);
+      ll.set(pan <= 0 ? 1 : c, snap);
+      lr.set(pan <= 0 ? c : 0, snap);
+      rl.set(pan <= 0 ? 0 : s, snap);
+      rr.set(pan <= 0 ? s : 1, snap);
     });
   }
 }

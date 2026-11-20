@@ -148,7 +148,13 @@ function syncRig(t: Track | undefined, rate: number) {
     lastIr = r.cab.irKey;
     const key = lastIr;
     const irs = cabIrs(a, rate, get);
-    sendIr('cab', [irs.a, irs.b], ([ia, ib]) => ({ type: 'ir', key, a: ia, b: ib }));
+    const na = irs.a?.length ?? 0;
+    sendIr('cab', [...(irs.a ?? []), ...(irs.b ?? [])], (ids) => ({
+      type: 'ir',
+      key,
+      a: irs.a ? (ids.slice(0, na) as string[]) : null,
+      b: irs.b ? (ids.slice(na) as string[]) : null,
+    }));
   }
   // reverb ligado: a IR do tipo/tempo escolhidos (gerada aqui, como no rack do app), com a normalização do
   // ConvolverNode; a chave é a mesma que o pedal calcula lá (taxa|tipo|passo do tempo)

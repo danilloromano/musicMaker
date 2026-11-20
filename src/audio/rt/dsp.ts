@@ -344,6 +344,8 @@ export class Convolver {
  * de entrada só é ouvido N amostras depois de ele ficar completo, a conta (FFT, multiplicações, FFT inversa) é
  * repartida entre os N/B callbacks seguintes: nenhum bloco de áudio fica com a conta pesada inteira.
  */
+let lagSeed = 0;
+
 class TailStage {
   private M: number;
   private half: number;
@@ -362,13 +364,20 @@ class TailStage {
   private cur: Float64Array;
   private next: Float64Array;
   private outPos = 0;
+  /** passo em que entra a FFT (e, contando do fim, a inversa): cada convolução usa um, para os picos não coincidirem */
+  private lag: number;
   constructor(private Hr: Float32Array[], private Hi: Float32Array[], private N: number, B: number) {
     this.M = 2 * N;
     this.half = N;
     this.fft = new FFT(this.M);
     const P = Hr.length;
-    this.Xr = Array.from({ length: P }, () => new Float32Array(N + 1));
-    this.Xi = Array.from({ length: P }, () => new Float32Array(N + 1));
+    // uma alocação só para o histórico de espectros (menos objetos para o coletor de lixo)
+    const mem = new Float32Array(2 * P * (N + 1));
+    const view = (k: number) => mem.subarray(k * (N + 1), (k + 1) * (N + 1));
+    this.Xr = Array.from({ length: P }, (_, p) => view(2 * p));
+    this.Xi = Array.from({ length: P }, (_, p) => view(2 * p + 1));
+    const S = N / B;
+    this.lag = Math.min(lagSeed++ % 4, Math.max(0, Math.floor((S - 3) / 2)));
     this.hist = new Float64Array(this.M);
     this.re = new Float64Array(this.M);
     this.im = new Float64Array(this.M);
@@ -406,8 +415,8 @@ class TailStage {
     }
   }
   private step(k: number) {
-    const P = this.Hr.length, S = this.S, half = this.half;
-    if (k === 0) {
+    const P = this.Hr.length, S = this.S, half = this.half, lag = this.lag;
+    if (k === lag) {
       this.im.fill(0);
       this.fft.run(this.re, this.im, false);
       this.xpos = this.xpos + 1 === P ? 0 : this.xpos + 1;
@@ -419,9 +428,9 @@ class TailStage {
       this.ar.fill(0);
       this.ai.fill(0);
     }
-    // multiplicações: nos passos do meio (ou junto com as FFTs, se houver só 2 passos)
-    const macSteps = S >= 3 ? S - 2 : S;
-    const mk = S >= 3 ? k - 1 : k;
+    // multiplicações: nos passos entre a FFT e a inversa
+    const macSteps = S - 2 - 2 * lag;
+    const mk = k - lag - 1;
     if (mk >= 0 && mk < macSteps) {
       const p0 = Math.floor((mk * P) / macSteps), p1 = Math.floor(((mk + 1) * P) / macSteps);
       const ar = this.ar, ai = this.ai;
@@ -435,7 +444,7 @@ class TailStage {
         }
       }
     }
-    if (k === S - 1) {
+    if (k === S - 1 - lag) {
       const re = this.re, im = this.im, M = this.M;
       for (let i = 0; i <= half; i++) {
         re[i] = this.ar[i];
@@ -473,6 +482,8 @@ export class LongConvolver {
     const P = Math.ceil((ir.length - H) / N);
     const fft = new FFT(2 * N);
     const re = new Float64Array(2 * N), im = new Float64Array(2 * N);
+    // espectros das partições numa alocação só (centenas de vetores separados pesariam no coletor de lixo)
+    const mem = new Float32Array(2 * P * (N + 1));
     const Hr: Float32Array[] = [], Hi: Float32Array[] = [];
     for (let p = 0; p < P; p++) {
       re.fill(0);
@@ -480,8 +491,13 @@ export class LongConvolver {
       const s = H + p * N;
       for (let i = 0; i < N && s + i < ir.length; i++) re[i] = ir[s + i];
       fft.run(re, im, false);
-      Hr.push(Float32Array.from(re.subarray(0, N + 1)));
-      Hi.push(Float32Array.from(im.subarray(0, N + 1)));
+      const hr = mem.subarray(2 * p * (N + 1), (2 * p + 1) * (N + 1)), hi = mem.subarray((2 * p + 1) * (N + 1), (2 * p + 2) * (N + 1));
+      for (let i = 0; i <= N; i++) {
+        hr[i] = re[i];
+        hi[i] = im[i];
+      }
+      Hr.push(hr);
+      Hi.push(hi);
       yield;
     }
     return new LongConvolver(head, new TailStage(Hr, Hi, N, B));

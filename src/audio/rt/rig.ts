@@ -159,34 +159,46 @@ class Amp extends Fx {
 
 // ---------- Caixa ----------
 
-/** Caixa A e B (convolução com os IRs) misturadas, cortes de grave/agudo e mistura com o sinal sem caixa. */
+/** IR de uma caixa: 1 canal (mono) ou 2 (estéreo: cada lado com o seu, como o ConvolverNode faz). */
+export type CabIr = Float32Array[];
+
+/**
+ * Caixa A e B (convolução com os IRs) misturadas, cortes de grave/agudo e mistura com o sinal sem caixa.
+ * Entra mono; sai estéreo quando algum IR é estéreo (como o ConvolverNode com IR de 2 canais).
+ */
 class Cab extends Fx {
-  private a: LongConvolver | null = null;
-  private b: LongConvolver | null = null;
+  private a: LongConvolver[] | null = null;
+  private b: LongConvolver[] | null = null;
   private gA = this.p(1);
   private gB = this.p(0);
   private wetG = this.p(1);
   private dryG = this.p(0);
-  private hp = this.vb('highpass', 10, 0.707);
-  private lp: VarBiquad;
+  private hp = [this.vb('highpass', 10, 0.707), this.vb('highpass', 10, 0.707)];
+  private lp: VarBiquad[];
   private dry = this.buf();
   private wb = this.buf();
   private building: { cancel(): void } | null = null;
   key = '';
   constructor(sr: number, B: number) {
     super(sr, B);
-    this.lp = this.vb('lowpass', (sr / 2) * 0.95, 0.707);
+    this.lp = [this.vb('lowpass', (sr / 2) * 0.95, 0.707), this.vb('lowpass', (sr / 2) * 0.95, 0.707)];
   }
-  /** Monta as convoluções aos poucos (IRs de até 1 s) e troca quando prontas; `now` = na hora (testes). */
-  setIr(key: string, a: Float32Array | null, b: Float32Array | null, onReady: () => void, schedule: BuildScheduler) {
+  /** Monta as convoluções aos poucos (IRs de até 1 s) e troca quando prontas. */
+  setIr(key: string, a: CabIr | null, b: CabIr | null, onReady: () => void, schedule: BuildScheduler) {
     this.building?.cancel();
     const B = this.B;
+    function* build(ir: CabIr | null) {
+      if (!ir?.length) return null;
+      const out: LongConvolver[] = [];
+      for (const ch of ir.slice(0, 2)) out.push(yield* LongConvolver.build(ch, B));
+      return out;
+    }
     function* both() {
-      const ca = a ? yield* LongConvolver.build(a, B) : null;
-      const cb = b ? yield* LongConvolver.build(b, B) : null;
+      const ca = yield* build(a);
+      const cb = yield* build(b);
       return [ca, cb] as const;
     }
-    const done = ([ca, cb]: readonly [LongConvolver | null, LongConvolver | null]) => {
+    const done = ([ca, cb]: readonly [LongConvolver[] | null, LongConvolver[] | null]) => {
       this.building = null;
       this.a = ca;
       this.b = cb;
@@ -198,6 +210,10 @@ class Cab extends Fx {
   get loaded() {
     return !!(this.a || this.b);
   }
+  /** algum dos IRs é estéreo: a saída tem lados diferentes */
+  get stereo() {
+    return (this.a?.length ?? 0) > 1 || (this.b?.length ?? 0) > 1;
+  }
   set(): void {}
   setCab(c: NonNullable<RtRig['cab']>, snap: boolean) {
     this.dryG.set(1 - c.mix, snap);
@@ -207,29 +223,40 @@ class Cab extends Fx {
     this.gA.set(Math.cos((bl * Math.PI) / 2), snap);
     this.gB.set(Math.sin((bl * Math.PI) / 2), snap);
     const nyq = this.sr / 2;
-    this.hp.f.set(c.low ? Math.min(nyq * 0.9, c.low) : 10, snap);
-    this.lp.f.set(c.high ? Math.min(nyq * 0.9, c.high) : nyq * 0.95, snap);
+    for (const f of this.hp) f.f.set(c.low ? Math.min(nyq * 0.9, c.low) : 10, snap);
+    for (const f of this.lp) f.f.set(c.high ? Math.min(nyq * 0.9, c.high) : nyq * 0.95, snap);
   }
-  run(x: Float64Array, n: number) {
-    if (!this.a && !this.b) return;
-    copy(x, this.dry, n);
-    x.fill(0);
-    const w = this.wb;
-    if (this.a) {
-      this.a.run(this.dry, x, n);
-      applyGain(x, n, this.gA);
+  run(): void {}
+  /** Entra mono em `L`; sai em `L` e `R` (iguais se os IRs forem mono). */
+  runStereo(L: Float64Array, R: Float64Array, n: number) {
+    if (!this.a && !this.b) return R.set(L);
+    copy(L, this.dry, n);
+    const chans = this.stereo ? 2 : 1;
+    for (let c = 0; c < chans; c++) {
+      const x = c === 0 ? L : R;
+      x.fill(0);
+      const w = this.wb;
+      // IR mono numa caixa estéreo: o mesmo sinal nos dois lados
+      if (this.a) {
+        this.a[Math.min(c, this.a.length - 1)].run(this.dry, x, n);
+        applyGain(x, n, this.gA);
+      }
+      if (this.b) {
+        w.fill(0);
+        this.b[Math.min(c, this.b.length - 1)].run(this.dry, w, n);
+        applyGain(w, n, this.gB);
+        add(x, w, n);
+      }
+      this.hp[c].run(x, n);
+      this.lp[c].run(x, n);
     }
-    if (this.b) {
-      w.fill(0);
-      this.b.run(this.dry, w, n);
-      applyGain(w, n, this.gB);
-      add(x, w, n);
-    }
-    this.hp.run(x, n);
-    this.lp.run(x, n);
-    applyGain(x, n, this.wetG);
+    // os parâmetros avançam uma vez por bloco: aplica nos dois lados com os mesmos valores
+    applyGain(L, n, this.wetG);
+    if (chans === 2) applyGain(R, n, this.wetG);
     applyGain(this.dry, n, this.dryG);
-    add(x, this.dry, n);
+    add(L, this.dry, n);
+    if (chans === 2) add(R, this.dry, n);
+    else R.set(L);
   }
 }
 
@@ -342,7 +369,7 @@ export class RtRigProcessor {
   }
 
   /** IRs das caixas (já na taxa da placa e com o volume ajustado pelo app). */
-  setIr(key: string, a: Float32Array | null, b: Float32Array | null, now = false) {
+  setIr(key: string, a: CabIr | null, b: CabIr | null, now = false) {
     this.cab.setIr(key, a, b, () => {
       if (this.rig?.cab) this.cab.setCab(this.rig.cab, true);
     }, now ? buildNow : this.schedule);
@@ -398,9 +425,8 @@ export class RtRigProcessor {
     }
     if (r.cab && r.cab.irKey === this.cab.key && this.cab.loaded) {
       this.cab.tick(k);
-      this.cab.run(L, n);
-    }
-    R.set(L);
+      this.cab.runStereo(L, R, n);
+    } else R.set(L);
     for (const s of this.post) s.run(L, R, n, k);
   }
 }
@@ -414,7 +440,7 @@ export function warmupRig(sr: number, B: number, blocks = 40) {
   const ir = new Float32Array(Math.round(0.3 * sr));
   ir[0] = 1;
   ir[ir.length - 1] = 0.1;
-  p.setIr('warm', ir, ir, true);
+  p.setIr('warm', [ir, ir], [ir], true);
   const knobs = { gain: 0.5, bass: 0.5, mid: 0.5, treble: 0.5, presence: 0.5, master: 0.5 };
   const on = (id: string) => ({ id, on: true, p: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5] });
   const pedals = [...RT_PEDALS].map(on);
