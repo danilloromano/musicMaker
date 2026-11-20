@@ -81,13 +81,18 @@ function sync() {
   const s = useStore.getState();
   // aberta enquanto a entrada do app está ligada e o motor de baixa latência está escolhido
   const want = s.llAvailable && s.monitorEngine === 'low' && s.inputOpen && s.llDeviceId !== null;
-  const key = want ? `${s.llDeviceId}:${s.llBuffer}:${s.llSafe}` : '';
+  // taxa: a mesma em que a entrada do app (Windows/WDM) está rodando. O ASIO muda a taxa da placa inteira; numa
+  // taxa diferente, a entrada normal do sistema (por onde o app grava) para de funcionar
+  const dev0 = s.llDevices.find((d) => d.id === s.llDeviceId);
+  const sysRate = s.inputRate ?? s.appRate ?? 0;
+  const rate = dev0 && dev0.rates.includes(sysRate) ? sysRate : dev0?.preferredRate ?? 0;
+  const key = want ? `${s.llDeviceId}:${s.llBuffer}:${s.llSafe}:${rate}` : '';
   if (key !== openKey) {
     if (key) {
       const dev = s.llDevices.find((d) => d.id === s.llDeviceId);
       if (!dev) return;
       openKey = key;
-      send({ type: 'start', deviceId: dev.id, buffer: s.llBuffer, safety: s.llSafe ? 1 : 0, rate: dev.preferredRate });
+      send({ type: 'start', deviceId: dev.id, buffer: s.llBuffer, safety: s.llSafe ? 1 : 0, rate });
     } else {
       openKey = '';
       if (s.llStatus.running) send({ type: 'stop' });
