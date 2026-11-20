@@ -63,12 +63,26 @@ export function AmpHead({ rig, power, set }: { rig: AmpRig; power: boolean; set:
   );
 }
 
-/** Gabinete com grade de tecido e falantes; abaixo, o seletor, o IR do usuário e o mix. */
+// cortes depois da caixa: botão 0..1 ↔ Hz (nas pontas, desligado)
+const LOW_A = 30, LOW_B = 400, HIGH_A = 2000, HIGH_B = 16000;
+const lowHz = (v: number) => (v <= 0.01 ? 0 : Math.round(LOW_A * (LOW_B / LOW_A) ** v));
+const lowV = (hz?: number) => (hz ? Math.log(hz / LOW_A) / Math.log(LOW_B / LOW_A) : 0);
+const highHz = (v: number) => (v >= 0.99 ? 0 : Math.round(HIGH_A * (HIGH_B / HIGH_A) ** v));
+const highV = (hz?: number) => (hz ? Math.log(hz / HIGH_A) / Math.log(HIGH_B / HIGH_A) : 1);
+const fmtHz = (hz: number) => (hz >= 1000 ? `${(hz / 1000).toFixed(1)}k` : `${hz}`);
+
+/** Gabinete com grade de tecido e falantes; abaixo, as caixas A e B, a biblioteca de IRs, o mix e os cortes. */
 export function CabView({
-  rig, set, onLoadIr, irMissing,
-}: { rig: AmpRig; set: (p: Partial<AmpRig>, history?: boolean) => void; onLoadIr: () => void; irMissing: boolean }) {
+  rig, set, onLibrary, irMissing,
+}: { rig: AmpRig; set: (p: Partial<AmpRig>, history?: boolean) => void; onLibrary: () => void; irMissing: boolean }) {
   const ids = [...CABS.map((c) => c.id), ...(rig.irId ? ['user'] : []), 'none'];
   const choose = (dir: 1 | -1) => set({ cab: cycle(ids, rig.cab, dir) }, true);
+  const idsB = ['none', ...CABS.map((c) => c.id), ...(rig.irB ? ['user'] : [])];
+  const chooseB = (dir: 1 | -1) => {
+    const cabB = cycle(idsB, rig.cabB ?? 'none', dir);
+    set({ cabB: cabB === 'none' ? undefined : cabB, cabBlend: rig.cabBlend ?? 0.5 }, true);
+  };
+  const nameB = rig.cabB === 'user' ? `IR: ${rig.irBName}` : CABS.find((c) => c.id === rig.cabB)?.name ?? 'Sem caixa B';
   const spec = CABS.find((c) => c.id === rig.cab);
   const name = rig.cab === 'user' ? `IR: ${rig.irName}` : rig.cab === 'none' ? 'Sem caixa (linha)' : spec?.name ?? rig.cab;
   const art = CAB_ART[rig.cab] ?? CAB_ART.none;
@@ -80,8 +94,22 @@ export function CabView({
       </div>
       <div className="cab-tools">
         <Picker label="Caixa" name={name} onPrev={() => choose(-1)} onNext={() => choose(1)} />
-        <button onClick={onLoadIr} title="Carregar um arquivo de impulse response (.wav) de caixa e microfone">Carregar IR…</button>
+        <button onClick={onLibrary} title="Biblioteca de IRs: carregar arquivos .wav de caixa e microfone e escolher para a caixa A ou B">IRs…</button>
         <div className="cab-mix"><RotaryKnob label="Mix" size={26} value={rig.cabMix} reset={1} onChange={(v) => set({ cabMix: v })} /></div>
+      </div>
+      <div className="cab-tools">
+        <Picker label="Caixa B" name={nameB} onPrev={() => chooseB(-1)} onNext={() => chooseB(1)} />
+        {rig.cabB && (
+          <div className="cab-mix" title="Mistura entre a caixa A e a B (como dois microfones na mesma caixa)">
+            <RotaryKnob label="A / B" size={26} value={rig.cabBlend ?? 0.5} reset={0.5} fmt={(v) => `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}`} onChange={(v) => set({ cabBlend: v })} />
+          </div>
+        )}
+        <div className="cab-mix" title="Corte de graves depois da caixa (tira o embolado)">
+          <RotaryKnob label="Graves" size={26} value={lowV(rig.cabLow)} reset={0} fmt={(v) => (lowHz(v) ? `${fmtHz(lowHz(v))} Hz` : 'off')} onChange={(v) => set({ cabLow: lowHz(v) || undefined })} />
+        </div>
+        <div className="cab-mix" title="Corte de agudos depois da caixa (tira o chiado)">
+          <RotaryKnob label="Agudos" size={26} value={highV(rig.cabHigh)} reset={1} fmt={(v) => (highHz(v) ? `${fmtHz(highHz(v))} Hz` : 'off')} onChange={(v) => set({ cabHigh: highHz(v) || undefined })} />
+        </div>
       </div>
       {irMissing && <small className="warn">Arquivo do IR não encontrado.</small>}
     </div>

@@ -1,5 +1,5 @@
 ; Extensões do instalador (electron-builder / NSIS).
-; Página "Atalhos": o usuário escolhe se quer um ícone do MusicMaker na área de trabalho.
+; Página "Atalhos": o usuário escolhe se quer um ícone do Alien Studio na área de trabalho.
 ; O atalho do Menu Iniciar é sempre criado pelo electron-builder.
 
 !ifndef BUILD_UNINSTALLER
@@ -20,10 +20,10 @@
       ${if} ${isUpdated}
         Abort
       ${endif}
-      !insertmacro MUI_HEADER_TEXT "Atalhos" "Escolha onde o MusicMaker vai aparecer no seu computador."
+      !insertmacro MUI_HEADER_TEXT "Atalhos" "Escolha onde o Alien Studio vai aparecer no seu computador."
       nsDialogs::Create 1018
       Pop $0
-      ${NSD_CreateLabel} 0 0 100% 24u "O MusicMaker sempre aparece no Menu Iniciar. Se quiser, ele também ganha um ícone na área de trabalho para abrir com dois cliques."
+      ${NSD_CreateLabel} 0 0 100% 24u "O Alien Studio sempre aparece no Menu Iniciar. Se quiser, ele também ganha um ícone na área de trabalho para abrir com dois cliques."
       Pop $0
       ${NSD_CreateCheckbox} 0 34u 100% 12u "Criar um ícone na área de trabalho"
       Pop $mmDesktopCheckbox

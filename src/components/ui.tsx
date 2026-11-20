@@ -74,10 +74,14 @@ export function Spectrum({ trackId, color, points, labels = false, className = '
   const ref = useRef<HTMLCanvasElement>(null);
   const data = useRef(new Uint8Array(SPECTRUM_BINS));
   const idle = useRef(false);
+  const frame = useRef(0);
 
   useRaf(() => {
     const cv = ref.current;
     if (!cv) return;
+    // os espectros pequenos (um por trilha) a 30 quadros/s: com muitas trilhas, calcular todos a 60 tomava
+    // tempo do processador que a reprodução precisa, e no tamanho deles a diferença não se vê
+    if (points <= 64 && frame.current++ % 2) return;
     const dpr = window.devicePixelRatio || 1;
     const w = Math.round(cv.clientWidth * dpr), h = Math.round(cv.clientHeight * dpr);
     if (!w || !h) return;
@@ -104,7 +108,7 @@ export function Spectrum({ trackId, color, points, labels = false, className = '
         const x = Math.round(fx(f) * w);
         g.fillStyle = 'rgba(255,255,255,0.08)';
         g.fillRect(x, 0, 1, ph);
-        g.fillStyle = '#8d93a0';
+        g.fillStyle = '#a7aaa6';
         g.fillText(text, x, h - 2 * dpr);
       }
     }
@@ -154,4 +158,25 @@ export function Spectrum({ trackId, color, points, labels = false, className = '
   return <canvas className={`spectrum ${className}`} ref={ref} />;
 }
 
-export const KIND_ICON = { instrument: '🎹', drums: '🥁', audio: '🎤' } as const;
+const fmtDb = (v: number) => (Number.isFinite(v) ? v.toFixed(1).replace('.', ',') : '–∞');
+
+/** Barra de redução de ganho (0 a -12 dB), atualizada a cada quadro. */
+export function Reduction({ get }: { get: () => number }) {
+  const bar = useRef<HTMLDivElement>(null);
+  const txt = useRef<HTMLSpanElement>(null);
+  const shown = useRef(0);
+  useRaf(() => {
+    const r = Math.min(0, get());
+    shown.current = r < shown.current ? r : shown.current * 0.9 + r * 0.1;
+    if (bar.current) bar.current.style.width = `${Math.min(100, (-shown.current / 12) * 100)}%`;
+    if (txt.current) txt.current.textContent = `${fmtDb(shown.current)} dB`;
+  });
+  return (
+    <div className="m-gr" title="Redução de ganho">
+      <div className="m-gr-track"><div className="m-gr-fill" ref={bar} /></div>
+      <span ref={txt} />
+    </div>
+  );
+}
+
+export const KIND_ICON = { instrument: '🎹', drums: '🥁', audio: '🎤', bus: '🎚️' } as const;

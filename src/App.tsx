@@ -1,9 +1,12 @@
 import { useEffect } from 'react';
 import { engine } from './audio/engine';
 import { BottomPanel, KEY_ROW } from './components/BottomPanel';
+import { LoadingOverlay } from './components/ShipProgress';
+import { jumpMarker } from './components/Markers';
 import { Timeline } from './components/Timeline';
 import { Transport, saveProject } from './components/Transport';
 import { useStore } from './store';
+import { practice } from './audio/practice';
 
 const isTyping = (el: EventTarget | null) => {
   if (!(el instanceof HTMLElement)) return false;
@@ -27,7 +30,9 @@ function useShortcuts() {
         e.preventDefault();
         if (e.repeat) return;
         (document.activeElement as HTMLElement | null)?.blur?.();
-        engine.toggle();
+        // na aba Tirar Música, o Espaço é da música de estudo
+        if (useStore.getState().bottomTab === 'study' && practice.state.name) practice.toggle();
+        else engine.toggle();
         return;
       }
       if (isTyping(e.target)) return;
@@ -52,8 +57,16 @@ function useShortcuts() {
 
       if (k === 'enter') engine.seek(0);
       else if (k === 'c' && !e.repeat) s.toggleLoop(engine.getBeat());
+      else if (k === 'm' && !e.repeat) s.addMarker(engine.getBeat());
+      else if (k === 'i' && !e.repeat) s.togglePunch(engine.getBeat());
+      else if (k === ',') jumpMarker(-1);
+      else if (k === '.') jumpMarker(1);
       else if (k === 'r' && !e.repeat) void engine.toggleRecord();
-      else if (k === 'escape') s.set({ audioSel: null });
+      // Esc: tira a seleção do editor de áudio, se houver; senão volta o cursor ao início
+      else if (k === 'escape') {
+        if (s.audioSel) s.set({ audioSel: null });
+        else engine.seek(0);
+      }
       else if ((k === 'delete' || k === 'backspace') && s.audioSel && s.bottomTab === 'audio') {
         // trecho selecionado no editor de áudio: apaga só ele
         s.deleteAudioRange(s.audioSel.trackId, s.audioSel.start, s.audioSel.end);
@@ -135,6 +148,7 @@ export function App() {
       <Transport />
       <Timeline />
       <BottomPanel />
+      <LoadingOverlay />
     </div>
   );
 }

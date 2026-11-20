@@ -1,27 +1,43 @@
 // Salvamento: automático no IndexedDB e manual em arquivo .mmproj (JSON com o áudio embutido).
-import { Project } from '../types';
+import { Project, Region } from '../types';
 
 interface RawBuffer {
   sampleRate: number;
   channels: Float32Array[];
 }
 
-const toRaw = (b: AudioBuffer): RawBuffer => ({
+export interface RawAudio {
+  sampleRate: number;
+  channels: Float32Array[];
+}
+
+export const toRaw = (b: AudioBuffer): RawBuffer => ({
   sampleRate: b.sampleRate,
   channels: Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c).slice()),
 });
 
-function fromRaw(r: RawBuffer): AudioBuffer {
+export function fromRaw(r: RawBuffer): AudioBuffer {
   const b = new AudioBuffer({ length: r.channels[0].length, numberOfChannels: r.channels.length, sampleRate: r.sampleRate });
   r.channels.forEach((d, c) => b.getChannelData(c).set(d));
   return b;
 }
 
-/** Áudios que o projeto usa: das regiões e dos IRs carregados nos racks de amp. */
-function bufferIds(p: Project): string[] {
+/**
+ * Áudios que o projeto usa: das regiões e dos IRs carregados nos racks de amp. `frozen`: também os das
+ * trilhas congeladas (ficam no salvamento automático; no arquivo, não: são grandes e dá para recongelar).
+ */
+function bufferIds(p: Project, frozen = true): string[] {
   const ids = new Set<string>();
-  for (const r of p.regions) if (r.bufferId) ids.add(r.bufferId);
-  for (const t of p.tracks) if (t.amp?.irId) ids.add(t.amp.irId);
+  for (const r of [...p.regions, ...(p.takes ?? [])]) {
+    if (r.bufferId) ids.add(r.bufferId);
+    if (r.src) ids.add(r.src.bufferId); // o original (o esticado pode ser refeito a partir dele)
+  }
+  for (const t of p.tracks) {
+    if (t.amp?.irId) ids.add(t.amp.irId);
+    if (t.amp?.irB) ids.add(t.amp.irB);
+  }
+  if (frozen) for (const t of p.tracks) if (t.frozen) ids.add(t.frozen.bufferId);
+  if (p.reference) ids.add(p.reference.bufferId);
   return [...ids];
 }
 
@@ -37,7 +53,7 @@ function db(): Promise<IDBDatabase> {
   }));
 }
 
-async function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+export async function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const d = await db();
   return new Promise((res, rej) => {
     const rq = fn(d.transaction('kv', mode).objectStore('kv'));
@@ -55,10 +71,15 @@ export async function loadLocal(buffers: Map<string, AudioBuffer>): Promise<Proj
   const used = new Set(bufferIds(p));
   for (const id of used) {
     if (buffers.has(id)) continue;
-    const raw = (await idb('readonly', (s) => s.get(`buf:${id}`))) as RawBuffer | undefined;
+    // IRs da biblioteca ficam em "ir:" (não são apagados com o projeto)
+    const raw = ((await idb('readonly', (s) => s.get(`buf:${id}`))) ?? (await idb('readonly', (s) => s.get(`ir:${id}`)))) as RawBuffer | undefined;
     if (raw) buffers.set(id, fromRaw(raw));
   }
-  p.regions = p.regions.filter((r) => !r.bufferId || buffers.has(r.bufferId));
+  // áudio esticado que se perdeu: volta ao original (e é esticado de novo ao abrir)
+  const heal = (r: Region): Region => (r.bufferId && !buffers.has(r.bufferId) && r.src && buffers.has(r.src.bufferId) ? { ...r, bufferId: r.src.bufferId, bufRatio: 1 } : r);
+  p.regions = p.regions.map(heal).filter((r) => !r.bufferId || buffers.has(r.bufferId));
+  if (p.takes) p.takes = p.takes.map(heal).filter((r) => !r.bufferId || buffers.has(r.bufferId));
+  p.tracks = p.tracks.map((t) => (t.frozen && !buffers.has(t.frozen.bufferId) ? { ...t, frozen: undefined } : t));
   // limpa áudios que nenhuma região usa mais
   const keys = (await idb('readonly', (s) => s.getAllKeys())) as string[];
   for (const k of keys) {
@@ -92,14 +113,18 @@ export function download(blob: Blob, filename: string) {
 }
 
 export function saveProjectFile(p: Project, buffers: Map<string, AudioBuffer>) {
+  // áudio esticado para o andamento não vai no arquivo (só o original; ao abrir, é esticado de novo)
+  const orig = (r: Region): Region => (r.src && r.bufferId !== r.src.bufferId ? { ...r, bufferId: r.src.bufferId, bufRatio: 1 } : r);
+  p = { ...p, regions: p.regions.map(orig), takes: p.takes?.map(orig) };
   const out: Record<string, { sampleRate: number; channels: string[] }> = {};
-  for (const id of bufferIds(p)) {
+  for (const id of bufferIds(p, false)) {
     const b = buffers.get(id);
     if (!b) continue;
     const raw = toRaw(b);
     out[id] = { sampleRate: raw.sampleRate, channels: raw.channels.map(f32ToB64) };
   }
-  const json = JSON.stringify({ version: 1, project: p, buffers: out });
+  const project = { ...p, tracks: p.tracks.map((t) => ({ ...t, frozen: undefined })) };
+  const json = JSON.stringify({ version: 1, project, buffers: out });
   download(new Blob([json], { type: 'application/json' }), `${p.name || 'projeto'}.mmproj`);
 }
 

@@ -1,26 +1,32 @@
 {
-  "name": "musicmaker",
-  "version": "0.4.0",
+  "name": "alien-studio",
+  "version": "0.5.0",
   "description": "Estúdio de produção musical para Windows",
   "private": true,
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "dev": "concurrently -k \"vite\" \"vite build --config vite.host.config.ts --watch\" \"wait-on tcp:5173 file:dist-host/audio-host.cjs && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "dev:web": "vite",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.host.json",
+    "build": "npm run typecheck && vite build && npm run host",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --win",
-    "icon": "node scripts/make-icon.cjs"
+    "icon": "node scripts/make-icon.cjs",
+    "drums": "node scripts/build-drums.cjs",
+    "perc": "node scripts/build-perc.cjs",
+    "instruments": "node scripts/build-instruments.cjs",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "host": "vite build --config vite.host.config.ts"
   },
   "build": {
     "appId": "com.musicmaker.app",
-    "productName": "MusicMaker",
+    "productName": "Alien Studio",
     "files": [
       "dist/**",
       "electron/**",
-      "build/icon.ico"
+      "build/icon.ico",
+      "dist-host/**"
     ],
     "directories": {
       "output": "release"
@@ -35,7 +41,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "MusicMaker",
+      "shortcutName": "Alien Studio",
       "runAfterFinish": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
@@ -45,11 +51,38 @@
       "installerLanguages": [
         "pt_BR"
       ],
-      "artifactName": "MusicMaker-Setup-${version}.exe",
-      "uninstallDisplayName": "MusicMaker"
-    }
+      "artifactName": "AlienStudio-Setup-${version}.exe",
+      "uninstallDisplayName": "Alien Studio"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon-mac.png",
+      "category": "public.app-category.music",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "artifactName": "AlienStudio-${version}-mac-${arch}.${ext}",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "O Alien Studio usa a entrada de áudio para gravar e monitorar guitarra, baixo, voz ou outro instrumento ligado à sua interface de áudio."
+      }
+    },
+    "dmg": {
+      "title": "Alien Studio ${version}"
+    },
+    "asarUnpack": [
+      "node_modules/audify/**"
+    ],
+    "npmRebuild": false
   },
   "dependencies": {
+    "audify": "^1.10.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.1.0"
@@ -62,8 +95,10 @@
     "cross-env": "^10.1.0",
     "electron": "^45.3.0",
     "electron-builder": "^26.18.0",
+    "libflacjs": "^5.6.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "wait-on": "^9.5.1"
+    "wait-on": "^9.5.1",
+    "wasm-media-encoders": "^0.7.0"
   }
 }

@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../audio/engine';
 import { DRUM_MAP } from '../audio/instruments';
 import { useStore } from '../store';
-import { Note, uid } from '../types';
+import { Note, inKey, keyNamePt, uid } from '../types';
+import { NoteWave } from './NoteWave';
+import { HUMANIZE_LEVELS, HumanizeLevel, humanize } from '../audio/humanize';
 import { useRaf } from './ui';
 
 const PPB = 80; // pixels por tempo
-const RH = 16; // altura da linha
+const RH = 22; // altura da linha (alta o bastante para a onda de cada nota ficar legível)
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const HI = 96, LO = 24;
 
@@ -14,8 +16,11 @@ export function PianoRoll() {
   const region = useStore((s) => s.project.regions.find((r) => r.id === s.editingRegionId));
   const track = useStore((s) => s.project.tracks.find((t) => t.id === region?.trackId));
   const selectedNoteId = useStore((s) => s.selectedNoteId);
+  const bpm = useStore((s) => s.project.bpm);
+  const musicKey = useStore((s) => s.project.key);
   const st = useStore.getState();
   const [snap, setSnap] = useState(0.25);
+  const [human, setHuman] = useState<HumanizeLevel>('medio');
   const lastDur = useRef<number | null>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
@@ -126,6 +131,12 @@ export function PianoRoll() {
           title="Nome da região"
           onChange={(e) => st.updateRegion(region.id, { name: e.target.value }, false)}
         />
+        {region.harmony && (
+          <label title="Com a trilha de acordes, este loop toca nos acordes dela (as notas aqui são as originais; o que toca é transposto). Desligado: toca as notas como estão.">
+            <input type="checkbox" checked={!region.noFollow} onChange={(e) => st.updateRegion(region.id, { noFollow: e.target.checked ? undefined : true })} />
+            Segue os acordes
+          </label>
+        )}
         <label>
           Grade
           <select value={snap} onChange={(e) => { setSnap(+e.target.value); e.currentTarget.blur(); }}>
@@ -141,6 +152,17 @@ export function PianoRoll() {
         >
           Quantizar
         </button>
+        <span className="roll-human">
+          <button
+            title="Humanizar: pequenas variações de tempo, força e duração, como um músico tocando (acentua a cabeça do compasso e dos tempos). Acordes continuam juntos. Ctrl+Z desfaz."
+            onClick={() => st.setNotes(region.id, humanize(notes, { level: human, bpm, length: region.length, drums: isDrums }))}
+          >
+            Humanizar
+          </button>
+          <select value={human} title="Quanto humanizar" onChange={(e) => { setHuman(e.target.value as HumanizeLevel); e.currentTarget.blur(); }}>
+            {HUMANIZE_LEVELS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+        </span>
         {selected && (
           <label>
             Intensidade
@@ -162,7 +184,13 @@ export function PianoRoll() {
         <div className="roll-inner" style={{ height: rows.length * RH }}>
           <div className={`keys ${isDrums ? 'drums' : ''}`}>
             {rows.map((r) => (
-              <div key={r.pitch} className={r.black ? 'key black' : 'key'} style={{ height: RH }} onPointerDown={() => preview(r.pitch)}>
+              <div
+                key={r.pitch}
+                className={`${r.black ? 'key black' : 'key'} ${musicKey && !isDrums && inKey(r.pitch, musicKey) ? 'in-key' : ''}`}
+                style={{ height: RH }}
+                title={musicKey && !isDrums && inKey(r.pitch, musicKey) ? `Nota da escala de ${keyNamePt(musicKey)}` : undefined}
+                onPointerDown={() => preview(r.pitch)}
+              >
                 {r.label}
               </div>
             ))}
@@ -174,6 +202,10 @@ export function PianoRoll() {
             onContextMenu={(e) => e.preventDefault()}
           >
             {rows.map((r, i) => r.black && <div key={r.pitch} className="grid-black" style={{ top: i * RH, height: RH }} />)}
+            {/* tom da música: as linhas das notas da escala ficam marcadas (a tônica, mais forte) */}
+            {musicKey && !isDrums && rows.map((r, i) => inKey(r.pitch, musicKey) && (
+              <div key={`k${r.pitch}`} className={`grid-key ${(r.pitch - musicKey.root) % 12 === 0 ? 'root' : ''}`} style={{ top: i * RH, height: RH }} />
+            ))}
             {notes.map((n) => {
               const row = rowOf.get(n.pitch);
               if (row === undefined) return null;
@@ -186,15 +218,26 @@ export function PianoRoll() {
                     top: row * RH + 1,
                     width: Math.max(5, n.duration * PPB - 1),
                     height: RH - 2,
-                    background: track.color,
-                    opacity: 0.45 + (0.55 * n.velocity) / 127,
+                    ['--c' as string]: track.color,
                   }}
+                  title={`Força ${n.velocity}`}
                   onPointerDown={(e) => dragNote(e, n)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     removeNote(n.id);
                   }}
-                />
+                >
+                  <NoteWave
+                    width={Math.max(5, n.duration * PPB - 1) - 2}
+                    height={RH - 4}
+                    pitch={n.pitch}
+                    velocity={n.velocity}
+                    secPerPx={60 / bpm / PPB}
+                    instrument={track.instrument}
+                    drums={isDrums}
+                    seed={n.pitch * 7.13 + n.start * 3.7}
+                  />
+                </div>
               );
             })}
             <div className="playhead" ref={head} />

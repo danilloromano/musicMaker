@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { engine } from '../audio/engine';
-import { useStore } from '../store';
-import { Region, regionGainAt } from '../types';
+import { pref, savePref, useStore } from '../store';
+import { AUDIO_GRIDS, detectOnsets, quantizeAudioRegion } from '../audio/quantizeAudio';
+import { Region, barBeats, regionGainAt } from '../types';
 import { gainDb } from './Timeline';
 import { Slider, useRaf } from './ui';
+import { shortcut } from '../platform';
 
 const RULER_H = 20;
 const HANDLE = 10; // alça de fade (px)
@@ -37,6 +39,16 @@ export function AudioEditor() {
   const sel = useStore((s) => s.audioSel);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const anchor = useRef<{ sec: number; x: number } | null>(null);
+
+  // quantização: grade, força e sensibilidade (lembradas entre sessões)
+  const [qGrid, setQGrid] = useState(() => +(pref('mm.aqGrid') ?? 0.25) || 0.25);
+  const [qStrength, setQStrength] = useState(() => +(pref('mm.aqStrength') ?? 1) || 1);
+  const [qSens, setQSens] = useState(() => +(pref('mm.aqSens') ?? 0.5));
+  /** ataques da região aberta (segundos a partir do começo dela), mostrados como marcas amarelas */
+  const onsets = useMemo(() => {
+    const buf = region?.bufferId && engine.buffers.get(region.bufferId);
+    return buf ? detectOnsets(buf, region.offset ?? 0, region.duration ?? 0, qSens) : [];
+  }, [region?.bufferId, region?.offset, region?.duration, qSens]);
 
   const spb = 60 / bpm;
   const trackRegions = regions.filter((r) => r.trackId === track?.id && r.bufferId);
@@ -143,7 +155,7 @@ export function AudioEditor() {
     const mid = top + (H - top) / 2;
     const amp = ((H - top) / 2 - 4 * dpr) * vzoom;
 
-    g.fillStyle = '#121315';
+    g.fillStyle = '#25282c';
     g.fillRect(0, 0, W, H);
 
     // grade de tempos e compassos
@@ -152,7 +164,8 @@ export function AudioEditor() {
       const b0 = Math.floor(view0 / spb);
       const b1 = Math.ceil((view0 + W / dpps) / spb);
       for (let b = b0; b <= b1; b++) {
-        g.fillStyle = b % 4 === 0 ? '#36383d' : '#222326';
+        const bb = barBeats(useStore.getState().project);
+        g.fillStyle = Math.abs(b / bb - Math.round(b / bb)) < 1e-6 ? '#4b4f56' : '#34373c';
         g.fillRect(Math.round(xOf(b * spb)), top, 1, H - top);
       }
     }
@@ -214,8 +227,19 @@ export function AudioEditor() {
         if (1 / per >= 8) for (let i = a; i <= b; i++) g.fillRect(xs(i) - 1.5 * dpr, ys(i) - 1.5 * dpr, 3 * dpr, 3 * dpr);
       }
 
+      // ataques detectados (o que a quantização vai puxar para a grade)
+      if (sel) {
+        g.fillStyle = 'rgba(255, 207, 63, 0.85)';
+        for (const t of onsets) {
+          const x = Math.round(xOf(rs + t));
+          if (x < x0 - 1 || x > x1) continue;
+          g.fillRect(x, top, Math.max(1, dpr), 7 * dpr);
+          g.fillRect(x, H - 7 * dpr, Math.max(1, dpr), 7 * dpr);
+        }
+      }
+
       // bordas e nome
-      g.fillStyle = sel ? track.color : '#5a606d';
+      g.fillStyle = sel ? track.color : '#6a6f77';
       g.fillRect(Math.round(xOf(rs)), top, Math.max(1, dpr * (sel ? 2 : 1)), H - top);
       g.fillRect(Math.round(xOf(rs + dur)) - 1, top, Math.max(1, dpr * (sel ? 2 : 1)), H - top);
       g.fillStyle = '#d7dbe3';
@@ -251,20 +275,20 @@ export function AudioEditor() {
     if (sel && sel.trackId === track.id) {
       const a = xOf(sel.start * spb);
       const b = xOf(sel.end * spb);
-      g.fillStyle = 'rgba(200,240,49,0.18)';
+      g.fillStyle = 'rgba(0,212,85,0.18)';
       g.fillRect(a, top, b - a, H - top);
-      g.fillStyle = 'rgba(200,240,49,0.9)';
+      g.fillStyle = 'rgba(0,212,85,0.9)';
       g.fillRect(Math.round(a), top, dpr, H - top);
       g.fillRect(Math.round(b), top, dpr, H - top);
     }
 
     // régua em segundos
-    g.fillStyle = '#17181a';
+    g.fillStyle = '#33363b';
     g.fillRect(0, 0, W, top);
-    g.fillStyle = '#2e3034';
+    g.fillStyle = '#4a4e55';
     g.fillRect(0, top - 1, W, 1);
     const step = STEPS.find((s) => s * pps >= 80) ?? 600;
-    g.fillStyle = '#8a8a82';
+    g.fillStyle = '#a7aaa6';
     g.font = `${10 * dpr}px system-ui, sans-serif`;
     for (let t = Math.floor(view0 / step) * step; t <= view0 + W / dpps; t += step) {
       const x = Math.round(xOf(t));
@@ -272,7 +296,7 @@ export function AudioEditor() {
       g.fillText(fmt(t + 1e-9, step), x + 3 * dpr, 13 * dpr);
       for (let k = 1; k < 5; k++) g.fillRect(Math.round(xOf(t + (k * step) / 5)), top - 3 * dpr, 1, 3 * dpr);
     }
-  }, [track, trackRegions, pps, vzoom, spb, size, sel]);
+  }, [track, trackRegions, pps, vzoom, spb, size, sel, onsets]);
 
   useEffect(() => draw());
   useEffect(() => {
@@ -446,6 +470,17 @@ export function AudioEditor() {
     if (u) st.updateRegion(u.r.id, { duration: u.cut });
   };
 
+  const quantize = () => {
+    const buf = engine.buffers.get(region.bufferId!);
+    if (!buf) return;
+    const { project, slices } = quantizeAudioRegion(useStore.getState().project, region.id, buf, qGrid, qStrength, qSens);
+    if (!slices) {
+      alert('Nenhum ataque encontrado nesta região. Aumente a sensibilidade e tente de novo.');
+      return;
+    }
+    st.update(() => project);
+  };
+
   const hasSel = !!sel && sel.trackId === track.id;
   const deleteSel = () => sel && st.deleteAudioRange(sel.trackId, sel.start, sel.end);
 
@@ -455,7 +490,7 @@ export function AudioEditor() {
       <div className="roll-bar">
         <strong className="roll-name" title={track.name}>{region.name}</strong>
         <div className="aed-group">
-          <button title="Cortar a região no cursor (Ctrl+T)" onClick={split}>✂ Cortar</button>
+          <button title={`Cortar a região no cursor (${shortcut('T')})`} onClick={split}>✂ Cortar</button>
           <button title="Apagar o trecho entre o início da região e o cursor" onClick={trimBefore}>⇤ Apagar antes</button>
           <button title="Apagar o trecho entre o cursor e o fim da região" onClick={trimAfter}>Apagar depois ⇥</button>
           {hasSel ? (
@@ -493,6 +528,26 @@ export function AudioEditor() {
             {[1, 2, 4, 8, 16].map((v) => <option key={v} value={v}>{v}×</option>)}
           </select>
         </label>
+        <div className="aed-group aed-tempo">
+          <label title="Ao mudar o BPM do projeto, esta região estica ou encolhe junto (sem mudar a altura) e continua na grade">
+            <input type="checkbox" checked={!region.fixedTempo} onChange={(e) => st.updateRegion(region.id, { fixedTempo: e.target.checked ? undefined : true })} />
+            Segue o BPM
+          </label>
+          <select title="Grade da quantização" value={qGrid} onChange={(e) => { setQGrid(+e.target.value); savePref('mm.aqGrid', e.target.value); e.currentTarget.blur(); }}>
+            {AUDIO_GRIDS.map((g) => <option key={g.name} value={g.beats}>{g.name}</option>)}
+          </select>
+          <select title="Força: quanto do caminho até a grade cada ataque anda (menos de 100% mantém um pouco do balanço)" value={qStrength} onChange={(e) => { setQStrength(+e.target.value); savePref('mm.aqStrength', e.target.value); e.currentTarget.blur(); }}>
+            {[1, 0.75, 0.5, 0.25].map((v) => <option key={v} value={v}>{v * 100}%</option>)}
+          </select>
+          <select title="Sensibilidade: quantos ataques são detectados (as marcas amarelas na forma de onda)" value={qSens} onChange={(e) => { setQSens(+e.target.value); savePref('mm.aqSens', e.target.value); e.currentTarget.blur(); }}>
+            <option value={0.2}>Só ataques fortes</option>
+            <option value={0.5}>Sensibilidade média</option>
+            <option value={0.8}>Ataques fracos também</option>
+          </select>
+          <button title={`Quantizar: corta a região nos ataques marcados (${onsets.length}) e puxa cada um para a grade`} onClick={quantize}>
+            ⊞ Quantizar
+          </button>
+        </div>
         <span className="hint">
           Clique = cursor · Clique e arraste = selecionar (Delete apaga) · Bordas = aparar · Quadrados = fades · Roda = zoom
         </span>
