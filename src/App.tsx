@@ -4,6 +4,7 @@ import { BottomPanel, KEY_ROW } from './components/BottomPanel';
 import { LoadingOverlay } from './components/ShipProgress';
 import { jumpMarker } from './components/Markers';
 import { Timeline } from './components/Timeline';
+import { LyricsSide } from './components/LyricsPanel';
 import { Transport, saveProject } from './components/Transport';
 import { useStore } from './store';
 
@@ -146,11 +147,17 @@ export function App() {
   useShortcuts();
   useMidiInput();
   useAudioDevices();
+  const lyricsOpen = useStore((s) => s.lyricsOpen);
   return (
     <div className="app">
       <Transport />
-      <Timeline />
-      <BottomPanel />
+      <div className="workspace">
+        <div className="workspace-main">
+          <Timeline />
+          <BottomPanel />
+        </div>
+        {lyricsOpen && <LyricsSide />}
+      </div>
       <LoadingOverlay />
     </div>
   );
