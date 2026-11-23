@@ -50,7 +50,7 @@ export function savePref(key: string, value: string) {
   }
 }
 
-export type BottomTab = 'editor' | 'fx' | 'amp' | 'loops' | 'keys' | 'audio' | 'mixer' | 'master' | 'tab' | 'study';
+export type BottomTab = 'editor' | 'fx' | 'amp' | 'loops' | 'keys' | 'audio' | 'mixer' | 'master' | 'tab';
 
 interface State {
   project: Project;
@@ -67,6 +67,8 @@ interface State {
   recording: { trackId: string; startBeat: number; punch?: { start: number; end: number } } | null;
   ppb: number; // pixels por tempo na timeline
   bottomTab: BottomTab;
+  /** painel lateral da letra aberto (preferência, lembrada entre sessões) */
+  lyricsOpen: boolean;
   countIn: boolean; // conta 1 compasso no metrônomo antes de gravar
   /** metrônomo: subdivisão, volume e o treino de velocidade (preferências, não vão no projeto) */
   metro: MetroSettings;
@@ -180,6 +182,7 @@ export const useStore = create<State>((set, get) => ({
   recording: null,
   ppb: 24,
   bottomTab: 'loops',
+  lyricsOpen: pref('mm.lyricsOpen') === '1',
   countIn: pref('mm.countIn') === '1',
   metro: loadMetro(),
   setMetro: (patch) => {

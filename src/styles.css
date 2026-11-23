@@ -994,48 +994,74 @@ button.toggle.on, .presets button.on { box-shadow: var(--glow); text-shadow: 0 0
 .chart-bar { display: flex; gap: 10px; align-items: center; padding: 6px 10px; border-right: 2px solid #333; border-bottom: 1px solid #ccc; font: 700 14px var(--mono); color: #1d1d1d; min-height: 30px; }
 .chart-bar .rep { color: #999; font-weight: 400; }
 
+/* editor de tablatura */
+.tabview .tab-tools { gap: 6px 10px; }
+.tabview .tab-tools .seg button { padding: 2px 8px; min-width: 28px; font-family: var(--mono); }
+.tabview .tab-tools .play { min-width: 84px; }
+.tabview .tab-tools .play.on { border-color: var(--accent); color: var(--accent); }
+.tabview .seg button:disabled { opacity: 0.4; }
+.tab-spacer { flex: 1; }
+.tab-editor { outline: none; }
+.tab-editor .tab-line { cursor: text; }
+.tab-help { margin: 0 0 8px; font-size: 11px; color: #777; }
+.tab-help kbd { font: 10px var(--mono); padding: 0 4px; border: 1px solid #bbb; border-bottom-width: 2px; border-radius: 3px; background: #fff; color: #333; margin: 0 1px; }
+.tab-beat { stroke: #e2ddd2; stroke-width: 1; }
+.tab-cursor-col { fill: rgba(75, 58, 168, 0.06); }
+.tab-cursor-cell { fill: rgba(75, 58, 168, 0.16); stroke: #9a90c8; stroke-width: 1; }
+.tab-editor:focus .tab-cursor-col { fill: rgba(0, 160, 70, 0.08); }
+.tab-editor:focus .tab-cursor-cell { fill: rgba(0, 190, 80, 0.28); stroke: #00a046; stroke-width: 1.5; }
+.tab-pm { font: 700 9px var(--mono); fill: #666; }
+.tab-rhythm line { stroke: #333; stroke-width: 1.2; }
+.tab-rhythm circle { fill: #333; }
+.tab-rhythm .tab-whole { fill: none; stroke: #333; stroke-width: 1.2; }
+.tab-head { stroke: #00a046; stroke-width: 2; }
+.tab-empty { max-width: 560px; margin: 30px auto; text-align: center; }
+.tab-empty p { color: #555; }
+.tab-empty-actions { display: flex; gap: 16px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+.tab-empty-actions label { display: flex; gap: 6px; align-items: center; color: #555; }
+
+/* ---------- Letra (painel lateral) ---------- */
+.workspace { flex: 1; min-height: 0; display: flex; }
+.workspace-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lyrics-side { position: relative; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
+.lyrics-resize { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: ew-resize; z-index: 20; touch-action: none; }
+.lyrics-resize:hover, .resizing-h .lyrics-resize { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+body.resizing-h, body.resizing-h * { cursor: ew-resize !important; user-select: none; }
+.ly-head, .ly-tools { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); flex: none; }
+.ly-head b { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+.ly-tools { flex-wrap: wrap; gap: 6px 8px; }
+.ly-tools button, .ly-head button { padding: 2px 9px; }
+.lyrics-side .seg { display: flex; }
+.lyrics-side .seg button { border-radius: 0; }
+.lyrics-side .seg button:first-child { border-radius: 4px 0 0 4px; }
+.lyrics-side .seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
+.lyrics-side button.on { border-color: var(--accent); color: var(--accent); position: relative; }
+.ly-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; gap: 6px; }
+.lyrics-text { flex: 1; min-height: 0; resize: none; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--well); color: var(--text); font: 15px/1.6 system-ui, sans-serif; outline: none; }
+.lyrics-text:focus { border-color: var(--accent); }
+.lyrics-text::placeholder { color: var(--faint); }
+.ly-foot { font-size: 11px; color: var(--faint); }
+.ly-read { flex: 1; min-height: 0; overflow: auto; padding: 14px 20px 40vh; line-height: 1.55; color: var(--text); font-family: system-ui, sans-serif; }
+.ly-block { padding: 6px 10px 10px; margin: 0 -10px 8px; border-left: 3px solid transparent; border-radius: 0 6px 6px 0; transition: background 200ms, border-color 200ms, opacity 200ms; scroll-margin-top: 10px; }
+.ly-block h4 { margin: 0 0 4px; font-size: 0.68em; letter-spacing: 0.1em; text-transform: uppercase; color: #b7a8ff; }
+.ly-block p { margin: 0; white-space: pre-wrap; }
+.ly-block.on { background: rgba(var(--accent-rgb), 0.08); border-left-color: var(--accent); }
+.ly-block.on h4 { color: var(--accent); }
+.ly-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 40px; color: var(--dim); font-size: 14px; }
+.lyrics-print { display: none; }
+
 @media print {
+  .lyrics-print { display: block; color: #111; font: 13pt/1.5 system-ui, sans-serif; padding: 0 !important; }
+  .lyrics-print h2 { margin: 0 0 12px; }
+  .lyrics-print h3 { margin: 14px 0 2px; font-size: 11pt; color: #b0402a; text-transform: uppercase; letter-spacing: 0.05em; }
+  .lyrics-print p { margin: 0; white-space: pre-wrap; }
   body * { visibility: hidden !important; }
   .print-area, .print-area * { visibility: visible !important; }
   .print-area { position: absolute; left: 0; top: 0; width: 100%; overflow: visible !important; background: #fff !important; padding: 0 !important; }
   .tab-bg { fill: #fff; }
+  .tab-help, .tab-cursor, .tab-head, .tab-beat { display: none; }
 }
 
-/* ---------- Tirar Música ---------- */
-.practice { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: auto; }
-.practice .roll-bar { flex-wrap: wrap; gap: 6px 12px; }
-.practice-name { font-size: 13px; }
-.practice-wave { position: relative; flex: none; height: 110px; margin: 10px 14px 6px; background: var(--well); border: 1px solid var(--line); border-radius: 6px; cursor: crosshair; overflow: hidden; }
-.practice-wave canvas { width: 100%; height: 100%; display: block; }
-.practice-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); box-shadow: 0 0 6px rgba(var(--accent-rgb), 0.8); pointer-events: none; }
-.practice-controls { display: flex; flex-direction: column; gap: 10px; padding: 4px 14px 14px; }
-.practice-transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.practice-transport .play { min-width: 96px; }
-.practice-clock { font: 600 13px var(--mono); color: var(--text); min-width: 120px; }
-.practice-knobs { display: flex; flex-wrap: wrap; gap: 12px 26px; align-items: flex-start; }
-.practice-knobs > label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--dim); min-width: 200px; }
-.practice-knobs b { color: var(--text); margin-left: 6px; }
-.practice-quick { display: flex; gap: 3px; flex-wrap: wrap; }
-.practice-quick button { padding: 1px 7px; font-size: 11px; }
-.practice-quick button.on { border-color: var(--accent); color: var(--accent); }
-.practice-chord { display: flex; flex-direction: column; align-items: center; padding: 6px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--well); }
-.practice-chord small { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
-.practice-chord span { font: 800 28px var(--mono); color: #b7a8ff; min-width: 80px; text-align: center; }
-.practice-busy { color: var(--accent); }
-
-/* Tirar Música: separação */
-.sep { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding-top: 10px; border-top: 1px solid var(--line); }
-.sep .hint { white-space: normal; margin: 0; max-width: 760px; }
-.sep-bar { flex: 1; min-width: 200px; max-width: 420px; height: 6px; border-radius: 3px; background: var(--well); overflow: hidden; }
-.sep-bar i { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
-.sep-rows { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: 6px 26px; }
-.sep-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.sep-row.off .sep-name { color: var(--faint); text-decoration: line-through; }
-.sep-name { width: 170px; color: var(--text); }
-.sep-row input { flex: 1; min-width: 80px; }
-.sep-val { width: 36px; text-align: right; color: var(--dim); font: 11px var(--mono); }
-.sep-row button { padding: 1px 8px; font-size: 11px; }
-.sep-actions { display: flex; gap: 8px; }
 
 /* ---------- Nas plataformas ---------- */
 .platforms .eq-tip b { color: var(--text); }

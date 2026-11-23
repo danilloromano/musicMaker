@@ -27,6 +27,7 @@ export function Transport() {
   const canRedo = useStore((s) => s.future.length > 0);
   const countIn = useStore((s) => s.countIn);
   const loopOn = useStore((s) => !!s.project.loop?.on);
+  const lyricsOpen = useStore((s) => s.lyricsOpen);
   const st = useStore.getState();
 
   const lcd = useRef<HTMLSpanElement>(null);
@@ -146,6 +147,16 @@ export function Transport() {
       </button>
       <button className={tuner ? 'toggle on' : 'toggle'} title="Afinador: afine a guitarra ou o baixo plugado na entrada" onClick={() => setTuner(true)}>
         <span className="ico">♮</span><span className="lbl"> Afinador</span>
+      </button>
+      <button
+        className={lyricsOpen ? 'toggle on' : 'toggle'}
+        title="Letra da música: abre ao lado da timeline para ler enquanto toca e grava"
+        onClick={() => {
+          savePref('mm.lyricsOpen', lyricsOpen ? '0' : '1');
+          st.set({ lyricsOpen: !lyricsOpen });
+        }}
+      >
+        <span className="ico">📝</span><span className="lbl"> Letra</span>
       </button>
       {tuner && <TunerModal onClose={() => setTuner(false)} />}
       {gen && <SongGenModal onClose={() => setGen(false)} />}

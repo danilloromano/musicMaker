@@ -4,9 +4,9 @@ import { BottomPanel, KEY_ROW } from './components/BottomPanel';
 import { LoadingOverlay } from './components/ShipProgress';
 import { jumpMarker } from './components/Markers';
 import { Timeline } from './components/Timeline';
+import { LyricsSide } from './components/LyricsPanel';
 import { Transport, saveProject } from './components/Transport';
 import { useStore } from './store';
-import { practice } from './audio/practice';
 
 const isTyping = (el: EventTarget | null) => {
   if (!(el instanceof HTMLElement)) return false;
@@ -30,9 +30,13 @@ function useShortcuts() {
         e.preventDefault();
         if (e.repeat) return;
         (document.activeElement as HTMLElement | null)?.blur?.();
-        // na aba Tirar Música, o Espaço é da música de estudo
-        if (useStore.getState().bottomTab === 'study' && practice.state.name) practice.toggle();
-        else engine.toggle();
+        engine.toggle();
+        return;
+      }
+      // Ctrl+S salva até no meio da digitação (letra, nomes…)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveProject();
         return;
       }
       if (isTyping(e.target)) return;
@@ -143,11 +147,17 @@ export function App() {
   useShortcuts();
   useMidiInput();
   useAudioDevices();
+  const lyricsOpen = useStore((s) => s.lyricsOpen);
   return (
     <div className="app">
       <Transport />
-      <Timeline />
-      <BottomPanel />
+      <div className="workspace">
+        <div className="workspace-main">
+          <Timeline />
+          <BottomPanel />
+        </div>
+        {lyricsOpen && <LyricsSide />}
+      </div>
       <LoadingOverlay />
     </div>
   );

@@ -284,6 +284,34 @@ export interface Project {
   sends?: SendFx[];
   /** música de referência para comparar (A/B) com a mix */
   reference?: { bufferId: string; name: string };
+  /** letra da música (aba Letra), com as seções entre colchetes: [Refrão] */
+  lyrics?: string;
+  /** tablaturas escritas pelo usuário (aba Tablatura & Cifra) */
+  tabs?: Tablature[];
+}
+
+// ---------- Tablatura ----------
+
+/** Técnicas de uma nota da tablatura: ligado (h/p), slide, bend, vibrato e abafada (PM). */
+export type TabTech = 'h' | 'p' | '/' | '\\' | 'b' | '~' | 'pm';
+
+/** Uma nota escrita na tablatura. `string`: 0 = a corda mais grave da afinação. */
+export interface TabNote {
+  id: string;
+  beat: number; // tempos desde o começo da tablatura
+  string: number;
+  fret: number; // -1 = nota morta (x)
+  duration: number; // tempos
+  tech?: TabTech;
+}
+
+export interface Tablature {
+  id: string;
+  name: string;
+  /** id da afinação (ver audio/tuner.ts: TUNINGS) */
+  tuning: string;
+  bars: number;
+  notes: TabNote[];
 }
 
 /** Tempos (semínimas) por compasso dos loops prontos, que são em 4/4. Para o projeto, use barBeats(p). */

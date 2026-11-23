@@ -3,14 +3,14 @@
 import type { ChordEvent, ChordQ } from './chords';
 import { chordName } from './chords';
 
-export interface TabNote {
+export interface PitchNote {
   start: number; // tempos desde o começo da música
   duration: number;
   pitch: number;
 }
 
 /** Uma nota posicionada: corda (0 = a mais grave) e casa. `shifted`: tocada uma oitava acima/abaixo (fora da extensão). */
-export interface Fretted extends TabNote {
+export interface Fretted extends PitchNote {
   string: number;
   fret: number;
   shifted?: boolean;
@@ -25,7 +25,7 @@ const BEAM = 16; // quantos caminhos guardar entre um grupo de notas e o próxim
  * poucas mudanças de posição e, no empate, casas mais baixas. `strings`: afinação, da corda mais grave
  * para a mais aguda (MIDI).
  */
-export function fingering(notes: TabNote[], strings: number[], maxFret = 22): Fretted[] {
+export function fingering(notes: PitchNote[], strings: number[], maxFret = 22): Fretted[] {
   if (!notes.length || !strings.length) return [];
   const lo = Math.min(...strings);
   const hi = Math.max(...strings) + maxFret;
@@ -133,20 +133,30 @@ export function fingering(notes: TabNote[], strings: number[], maxFret = 22): Fr
 const STRING_LETTERS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 export const stringLabel = (midi: number) => STRING_LETTERS[((midi % 12) + 12) % 12];
 
+/** Uma nota na tablatura em texto: casa (-1 = x) e a marca da técnica logo depois (h, p, /, b…). */
+export interface AsciiNote {
+  start: number;
+  string: number;
+  fret: number;
+  mark?: string;
+}
+
 /**
  * Tablatura em texto (para colar em qualquer lugar): `barsPerLine` compassos por linha, cada semicolcheia
- * vira 3 caracteres. `labels`: textos por cima (seções e cifras) por tempo.
+ * vira uma célula (3 caracteres ou mais). `labels`: textos por cima (seções e cifras) por tempo.
  */
 export function asciiTab(
-  frets: Fretted[],
+  frets: AsciiNote[],
   strings: number[],
   barBeats: number,
   totalBars: number,
   barsPerLine = 4,
   labels: { beat: number; text: string }[] = [],
 ): string {
-  const STEP = 0.25;
-  const CH = 3;
+  // semicolcheias; com notas fora dessa grade (fusas), cada célula vira 1/32
+  const STEP = frets.some((f) => Math.abs(f.start * 4 - Math.round(f.start * 4)) > 1e-6) ? 0.125 : 0.25;
+  const txt = (f: AsciiNote) => (f.fret < 0 ? 'x' : String(f.fret)) + (f.mark ?? '');
+  const CH = Math.max(3, ...frets.map((f) => txt(f).length + 1));
   const lines: string[] = [];
   for (let b0 = 0; b0 < totalBars; b0 += barsPerLine) {
     const b1 = Math.min(totalBars, b0 + barsPerLine);
@@ -160,7 +170,7 @@ export function asciiTab(
         const rel = f.start - bar * barBeats;
         if (rel < -1e-6 || rel >= barBeats - 1e-6) continue;
         const i = Math.min(slots - 1, Math.round(rel / STEP));
-        cells[f.string][i] = String(f.fret).padEnd(CH, '-');
+        cells[f.string][i] = txt(f).padEnd(CH, '-');
       }
       for (const l of labels) {
         const rel = l.beat - bar * barBeats;
