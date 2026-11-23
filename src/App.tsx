@@ -6,7 +6,6 @@ import { jumpMarker } from './components/Markers';
 import { Timeline } from './components/Timeline';
 import { Transport, saveProject } from './components/Transport';
 import { useStore } from './store';
-import { practice } from './audio/practice';
 
 const isTyping = (el: EventTarget | null) => {
   if (!(el instanceof HTMLElement)) return false;
@@ -30,9 +29,7 @@ function useShortcuts() {
         e.preventDefault();
         if (e.repeat) return;
         (document.activeElement as HTMLElement | null)?.blur?.();
-        // na aba Tirar Música, o Espaço é da música de estudo
-        if (useStore.getState().bottomTab === 'study' && practice.state.name) practice.toggle();
-        else engine.toggle();
+        engine.toggle();
         return;
       }
       if (isTyping(e.target)) return;
