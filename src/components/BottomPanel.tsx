@@ -12,6 +12,7 @@ import { MasterPanel } from './MasterPanel';
 import { MixerPanel } from './MixerPanel';
 import { PianoRoll } from './PianoRoll';
 import { TabView } from './TabView';
+import { LyricsPanel } from './LyricsPanel';
 import { LOOP_MIME } from './Timeline';
 import { KIND_ICON, Meter, Slider, Spectrum } from './ui';
 import { inputSettingsPath, isMac } from '../platform';
@@ -24,6 +25,7 @@ const TABS: [BottomTab, string][] = [
   ['keys', 'Teclado'],
   ['audio', 'Editor de Áudio'],
   ['tab', 'Tablatura & Cifra'],
+  ['lyrics', 'Letra'],
   ['mixer', 'Mixer'],
   ['master', 'Master'],
 ];
@@ -93,6 +95,7 @@ export function BottomPanel() {
         {tab === 'mixer' && <MixerPanel />}
         {tab === 'master' && <MasterPanel />}
         {tab === 'tab' && <TabView />}
+        {tab === 'lyrics' && <LyricsPanel />}
         {tab === 'fx' && (track ? <Fx track={track} /> : <div className="empty">Selecione uma trilha.</div>)}
         {tab === 'amp' && (track ? <AmpRack track={track} /> : <div className="empty">Selecione uma trilha.</div>)}
         {tab === 'keys' && (track && track.kind !== 'audio' && track.kind !== 'bus' ? <Keys track={track} /> : <div className="empty">Selecione uma trilha de instrumento ou bateria para tocar.</div>)}

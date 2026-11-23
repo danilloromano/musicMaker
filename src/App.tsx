@@ -32,6 +32,12 @@ function useShortcuts() {
         engine.toggle();
         return;
       }
+      // Ctrl+S salva até no meio da digitação (letra, nomes…)
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveProject();
+        return;
+      }
       if (isTyping(e.target)) return;
       const s = useStore.getState();
       const k = e.key.toLowerCase();

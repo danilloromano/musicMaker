@@ -284,6 +284,8 @@ export interface Project {
   sends?: SendFx[];
   /** música de referência para comparar (A/B) com a mix */
   reference?: { bufferId: string; name: string };
+  /** letra da música (aba Letra), com as seções entre colchetes: [Refrão] */
+  lyrics?: string;
   /** tablaturas escritas pelo usuário (aba Tablatura & Cifra) */
   tabs?: Tablature[];
 }
